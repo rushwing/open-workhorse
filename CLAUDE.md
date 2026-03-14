@@ -73,6 +73,21 @@ open-workhorse/
 
 ---
 
+## 商业背景（kaigongba-pro）
+
+本项目是"开工吧 (Kaigongba)"产品体系的开源核心。
+
+| 文件 | 内容 |
+|------|------|
+| `/Users/danielwong/Dev/kaigongba-pro/BUSINESS_PLAN.md` | 商业企划书（定位、护城河、竞对）|
+| `/Users/danielwong/Dev/kaigongba-pro/ACTION_PLAN.md` | 行动计划与里程碑 |
+| `/Users/danielwong/Dev/kaigongba-pro/GAP_ANALYSIS.md` | 当前 P0/P1/P2 Gap 清单 |
+| `/Users/danielwong/Dev/kaigongba-pro/SYNC_ARCHITECTURE.md` | 三仓同步体系设计 |
+
+**当前 P0 优先级**：补 `.env.example`、补 CI、修正 `package.json` name、更新 `docs/PUBLISHING.md`。
+
+---
+
 ## 改造原则
 
 1. **不破坏上游兼容性**：上游 openclaw-control-center 是 MIT License，改动应清晰标记
