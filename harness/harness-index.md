@@ -42,11 +42,12 @@ flowchart LR
 | 2 | Implementation | 功能实现 | **claude_code** | [requirement-standard](requirement-standard.md) §9.1 | ✅ active |
 | 3 | Test Automation | 测试自动化 | claude_code | [testing-standard](testing-standard.md) §2 | ✅ active |
 | 4 | Quality Gate | 质量门禁 | CI (automated) | [ci-standard](ci-standard.md) | ✅ active |
-| 5 | Code Review | 代码审查 | HITL (Daniel) | [review-standard](review-standard.md) | 🔲 stub |
+| 5 | Code Review | 代码审查 | **Huahua**（review owner） | [review-standard](review-standard.md) | 🔲 stub |
 | 6 | Bug Fix & Regression | 缺陷修复与回归 | **claude_code** | [bug-standard](bug-standard.md) §5–6 | ✅ active |
 | 7 | Delivery | 合并交付 | HITL (PR merge) | [requirement-standard](requirement-standard.md) §9.3 | ✅ active |
 
-> **HITL checkpoint**：阶段 5→7 的 PR merge 必须 Daniel 人工确认，不允许自动合入。
+> **Review owner**：阶段 5 由 Huahua 主责 code review，findings 回传 claude_code 修复。
+> **HITL checkpoint**：阶段 7 的 PR merge 必须 Daniel 人工拍板，不允许自动合入。
 
 ---
 
@@ -70,7 +71,8 @@ flowchart LR
 | 角色 | 主导阶段 | 说明 |
 |---|---|---|
 | claude_code | 1–3, 6 | 认领任务、实现代码、测试自动化、Bug 修复 |
-| human (Daniel) | 5, 7 | Code review、PR merge（HITL checkpoint） |
+| huahua | 5 | Code review（review owner）；findings 回传 pandas / claude_code |
+| human (Daniel) | 7 | PR merge judgment（HITL gate）—— 不做 code review，只做合并决策 |
 
 ---
 

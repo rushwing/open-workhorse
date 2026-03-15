@@ -1,56 +1,42 @@
 ---
-phase_id: PHASE-001
-title: Phase 1 — MVP 工程启动
-status: in_progress
-goal: 让 open-workhorse 在树莓派上可靠运行，CI 门禁就绪，Harness 规程落地
+phase_id: phase-1
+title: Single-Agent MVP
+status: draft
+priority: P1
 last_updated: 2026-03-15
 ---
 
-# Phase 1 — MVP 工程启动
+# P1 Single-Agent MVP
 
 ## Goal
 
-让 open-workhorse 在树莓派上可靠运行，CI 门禁就绪，Harness 规程落地。
+Lion 在 Telegram 完成端到端任务：用户发起 → Agent 响应 → 结果可验证。
 
 ## In Scope
 
-- CI 全绿（release:audit + build + test + req-coverage）
-- Harness 规程文档 v0.1 完成并合入 main
-- GitHub Actions workflow 接入
-- 至少一个 REQ 通过完整 harness 流程（draft → done）
-- Pi 部署文档（docs/SETUP.md）可操作
+- Lion 接入 Telegram Bot，可收发消息
+- openclaw 作为运行时，Lion AGENTS.md 加载并生效
+- 至少一个端到端任务场景跑通（用户问题 → Lion 回答 → 用户确认）
+- open-workhorse 监控页面可显示 Lion 健康状态
 
 ## Out of Scope
 
-- 多 Agent 编排（当前阶段单 Claude Code + Daniel）
-- LLM API 集成（open-workhorse 本身不调用 LLM）
-- Daily / Weekly 定时构建
-- 高覆盖率测试（当前目标：全部通过即达标）
-- Memory Bank（架构决策记忆层，列入 Phase 2 Todo）
-
-## Todo（Phase 2+）
-
-- [ ] **Memory Bank**：参考 Cline Memory Bank 模式，新增 `memory/` 目录（`productContext.md`、`systemPatterns.md`、`activeContext.md` 等），补充架构决策背景，增强 Claude Code 跨 session 上下文恢复能力
-
-## Entry Criteria
-
-- open-workhorse 可以 `npm run dev:ui` 本地启动
-- `npm test` 有至少一个通过的测试
+- 多 Agent 编排（Phase 1 只有 Lion 单 Agent）
+- 订阅 / 付费墙
+- Pi 自动化部署（列入 P2）
 
 ## Exit Criteria
 
-- [ ] CI 全绿（release:audit + build + test）
-- [ ] GitHub Actions `.github/workflows/ci.yml` 接入并在 main 上运行
-- [ ] Harness 规程文档 v0.1 完成并合入 main（harness/ 目录）
-- [ ] `./scripts/harness.sh status` 可执行，输出 claimable tasks 或 "no claimable tasks"
-- [ ] `bash scripts/check-req-coverage.sh` 在空 tasks/ 时 exit 0
-- [ ] 至少一个 REQ 从 draft 走到 done
+- [ ] Lion 在 Telegram 完成端到端任务（用户发起 → Agent 响应 → 结果可验证）
+- [ ] open-workhorse `/healthz` 返回 `status: ok`（监控进程正常，非 Lion 连通证明）
+- [ ] Telegram Bot 实际收到并回复至少一条消息（有聊天记录截图或日志）
+- [ ] Telegram 消息收发延迟 < 5 s（p95）
 
-## Active REQs
+## Dependencies
 
-（待添加）
+- Phase 0 exit：CI 全绿 + Harness 规程落地
+- openclaw binary 可在目标环境（Mac / Pi）执行
 
-## Agent Notes
+## Notes
 
-Phase 1 是 Harness Engineering 迁移的第一个阶段。
-主要工作：完成 harness/ 规程文档、scripts/ 工具、GitHub Actions CI、tasks/ 目录骨架。
+Lion 是第一个真实用户可见的 Agent。MVP 只需证明端到端链路可用，不追求功能完整性。

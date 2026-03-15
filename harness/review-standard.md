@@ -32,7 +32,7 @@ last_reviewed: 2026-03-15
 - [ ] 无硬编码密钥、测试凭证或生产配置
 - [ ] `tasks/features/REQ-xxx.md` 已更新为 `status: review`
 
-### Review 关注点（Daniel / HITL）
+### Review 关注点（Huahua — review owner）
 
 **契约一致性**
 - [ ] 实现与 REQ-xxx.md `Acceptance Criteria` 逐条对应
@@ -52,11 +52,11 @@ last_reviewed: 2026-03-15
 - [ ] 命名清晰，无缩写歧义
 - [ ] 复杂逻辑有注释说明 why，而非 what
 
-### HITL 合并条件
+### HITL 合并条件（Daniel — merge approver）
 
 - [ ] CI 全部通过（release-audit + build + test + req-coverage）
-- [ ] Daniel review 无 blocking comment
-- [ ] PR merge 不允许自动化
+- [ ] Huahua review 无 blocking comment（或 blocking comment 已由 claude_code 修复）
+- [ ] PR merge 不允许自动化；Daniel 最终拍板
 
 ---
 
