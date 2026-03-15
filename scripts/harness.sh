@@ -380,6 +380,19 @@ cmd_tc_review() {
   pr_title="$(gh pr view "$pr_num" --json title --jq '.title' 2>/dev/null || echo "")"
   req_hint="$(echo "$pr_title" | grep -oE 'REQ-[0-9]+' | head -1 || true)"
 
+  # 加载 REQ 文件内容（acceptance criteria + test case design notes）供 prompt 引用
+  local req_contract=""
+  if [[ -n "$req_hint" ]]; then
+    local req_file="tasks/features/${req_hint}.md"
+    if [[ -f "$req_file" ]]; then
+      req_contract="$(cat "$req_file")"
+    else
+      warn "REQ 文件 ${req_file} 未找到，TC review 将缺少 acceptance criteria 上下文" >&2
+    fi
+  else
+    warn "无法从 PR #${pr_num} 标题中提取 REQ id，TC review 将缺少 acceptance criteria 上下文" >&2
+  fi
+
   log_session "tc-review" "#$pr_num"
 
   local prompt
@@ -388,6 +401,9 @@ Do not ask clarifying questions — proceed with your best judgment at every ste
 
 ## Pre-fetched context for TC PR #${pr_num}${req_hint:+ (${req_hint})}
 
+### REQ contract (acceptance criteria + test case design notes)
+${req_contract:-"(REQ file not found — judge TCs against PR description only)"}
+
 ### Top-level review summaries
 ${top_comments}
 
@@ -395,7 +411,8 @@ ${top_comments}
 ${inline_comments}
 
 ## Your task
-Review TC coverage in PR #${pr_num}${req_hint:+ for ${req_hint}} against the REQ acceptance criteria.
+Review TC coverage in PR #${pr_num}${req_hint:+ for ${req_hint}} against the REQ contract above.
+Each acceptance criterion must be traceable to at least one TC.
 
 For each TC, label it exactly one of:
 - **adequate** — covers the stated acceptance criterion
