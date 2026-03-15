@@ -1,0 +1,221 @@
+---
+harness_id: TEST-001
+component: testing / verification
+owner: Engineering
+version: 0.1
+status: active
+last_reviewed: 2026-03-15
+---
+
+# Harness Standard — 测试与验证规程
+
+> 本规范定义 open-workhorse 在 Harness Engineering 范式下的测试分层、
+> mock 策略、运行门禁与验收口径。
+> 技术栈：TypeScript / Node.js，node:test 内置测试框架，无 Python/React/Playwright E2E。
+
+---
+
+## 1. 适用范围
+
+- **组件**：runtime 监控、UI 服务器、clients 适配器、脚本工具
+- **输入类型**：代码、配置、测试夹具、mock 数据
+- **触发时机**：
+  - [ ] 新增测试框架、测试目录或运行脚本时
+  - [ ] 新增外部依赖时
+  - [ ] 修改 PR / CI 测试门禁时
+
+---
+
+## 2. 测试分层规范
+
+> 当前阶段：全部通过即达标，无覆盖率数字要求。
+
+| 层 | 名称 | 工具 | 命令 | CI 时机 |
+|----|------|------|------|---------|
+| L1 | 单元测试 | node:test + tsx | `npm test` | PR gate |
+| L2 | UI Smoke | ui-smoke.js | `npm run smoke:ui` | 本地预 PR（需 openclaw binary）|
+| L3 | 构建验证 | tsc | `npm run build` | PR gate |
+| L4 | 发布门禁 | release-audit.sh | `npm run release:audit` | PR gate |
+
+> **smoke:ui 不进 CI**：`npm run smoke:ui` 需要真实 openclaw binary 在 PATH，CI 环境无法满足，仅作本地门禁。
+
+---
+
+## 2.1 单元测试（L1）
+
+| 项目 | 内容 |
+|---|---|
+| 框架 | Node.js 内置 `node:test`，运行器用 `tsx`（TypeScript 直接执行）|
+| 文件位置 | `test/**/*.test.ts` |
+| 运行命令 | `npm test`（即 `node --import tsx --test test/**/*.test.ts`）|
+| 隔离要求 | 必须隔离真实 openclaw CLI 调用（`execFile` 层 mock）；隔离文件系统副作用 |
+| mock 机制 | `node:test` 内置 `mock.fn()` + `mock.method()`；fixture JSON 文件 |
+| 好示例 | mock `execFile` 返回固定 JSON，验证 runtime 状态解析逻辑 |
+| 坏示例 | 单元测试里真实调用 openclaw CLI 或发起 HTTP 请求 |
+
+### 2.1.1 Mock 策略
+
+```typescript
+import { mock } from 'node:test';
+
+// mock execFile
+mock.method(childProcess, 'execFile', (cmd, args, opts, callback) => {
+  callback(null, JSON.stringify(fixture), '');
+});
+```
+
+### 2.1.2 Fixture 目录
+
+```
+test/fixtures/
+  openclaw/    # openclaw CLI 输出 fixture（JSON 格式）
+  sessions/    # 会话数据 fixture
+```
+
+---
+
+## 2.2 UI Smoke（L2）
+
+| 项目 | 内容 |
+|---|---|
+| 脚本 | `scripts/ui-smoke.js` |
+| 命令 | `npm run smoke:ui` |
+| 前提 | openclaw binary 在 PATH，`.env` 已配置 |
+| 验证范围 | UI 服务器启动、/healthz 返回 ok、基本路由可达 |
+| CI | 不进 CI（需真实 binary） |
+
+---
+
+## 2.3 构建验证（L3）
+
+| 项目 | 内容 |
+|---|---|
+| 工具 | TypeScript 编译器（`tsc`）|
+| 命令 | `npm run build` |
+| 验证范围 | 全量类型检查，输出 `dist/` |
+| 失败含义 | 类型错误或缺失文件 |
+
+---
+
+## 2.4 发布门禁（L4）
+
+| 项目 | 内容 |
+|---|---|
+| 脚本 | `scripts/release-audit.sh` |
+| 命令 | `npm run release:audit` |
+| 检查项 | 无绝对路径（macOS home 路径、Linux home 路径）、无硬编码 token、必需文件存在 |
+| 失败含义 | 有安全或可移植性问题，不能发布 |
+
+---
+
+## 3. 断言规范
+
+### 3.1 运行时状态断言
+
+| 项目 | 内容 |
+|---|---|
+| 规则 | 优先断言业务语义（健康状态、任务状态机、配置有效性），而非字符串字面量 |
+| 应检查 | `status` 枚举值、`timestamp` 类型、`error` 字段存在性 |
+| 不推荐 | 对完整 JSON 快照逐字断言（fragile，配置变更即失效）|
+
+### 3.2 UI / HTTP 断言
+
+| 项目 | 内容 |
+|---|---|
+| 规则 | 优先断言 HTTP 状态码、响应体关键字段 |
+| 应检查 | 状态码、Content-Type、`status` 字段、错误格式 |
+| 不推荐 | 断言完整 HTML 内容快照 |
+
+---
+
+## 4. 测试数据与 Fixture 规范
+
+### 4.1 Fixture 目录结构
+
+```
+test/
+  fixtures/
+    openclaw/         # openclaw CLI stdout fixture（每个命令场景一个 JSON）
+    sessions/         # 会话列表 fixture
+```
+
+### 4.2 命名约定
+
+- 文件名体现命令 + 场景 + 成功/失败语义，例如：`openclaw/list-sessions-empty.json`
+- fixture 必须可读，不使用难以维护的压缩快照
+
+### 4.3 更新规则
+
+- 修复产品逻辑后，先确认旧 fixture 是否仍代表目标行为
+- 若更新 fixture，需在 PR 描述中说明"为什么旧 fixture 不再有效"
+
+---
+
+## 5. 运行门禁
+
+### 5.1 本地开发（提 PR 前）
+
+```bash
+npm run release:audit   # L4：无绝对路径/token
+npm run build           # L3：类型检查
+npm test                # L1：单元测试
+npm run smoke:ui        # L2：UI smoke（需 openclaw binary）
+```
+
+### 5.2 PR Gate（GitHub Actions 自动）
+
+```bash
+npm run release:audit   # L4
+npm run build           # L3
+npm test                # L1
+bash scripts/check-req-coverage.sh  # REQ frontmatter 校验
+```
+
+> smoke:ui 不进 CI（见 2.2）。
+
+---
+
+## 6. 审查清单
+
+### 自动可检查（脚本 / CI）
+
+- [ ] `npm test` 通过，无 skip 或 fail
+- [ ] `npm run build` 无 TypeScript 错误
+- [ ] `npm run release:audit` 通过
+- [ ] 新增测试目录 / 脚本已写入 `CLAUDE.md` 或文档
+
+### 人工检查
+
+- [ ] 测试分层合理，没有把单元测试写成集成测试
+- [ ] mock 策略符合 §3.1
+- [ ] fixture 可维护、可解释
+- [ ] 失败后能快速判断是代码问题还是 fixture 过期
+
+---
+
+## 7. 验收标准
+
+- **通过**：PR 默认测试全通过（release:audit + build + test）
+- **打回**：
+  - 任一 L1–L4 检查失败
+  - 测试断言依赖不稳定的字符串快照
+  - 新增关键逻辑没有对应测试
+
+---
+
+## 8. 速查词汇表
+
+| 标准术语 | 含义 | 禁用同义词 |
+|---|---|---|
+| 单元测试 | 隔离单个模块/函数行为的 node:test 测试 | 小测试 |
+| Smoke | 快速验证系统整体启动和基本路由可用 | 集成测试（不加说明时）|
+| Mock | node:test 内置 mock.fn() 的受控替代 | 随机假数据 |
+| Fixture | 固定可复现的测试样本 JSON | 临时数据 |
+
+---
+
+## 9. 变更日志
+
+| 版本 | 日期 | 变更摘要 |
+|---|---|---|
+| 0.1 | 2026-03-15 | 初始版本；完整重写（从 hydro-om-copilot 改写）；删去 Playwright E2E、LLM Canary、Vitest、Python/FastAPI；改为 node:test + tsx；定义四层测试（L1–L4）；smoke:ui 不进 CI |
