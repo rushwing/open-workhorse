@@ -12,6 +12,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# 解析当前仓库的 owner/repo（供 gh api 调用使用）
+GH_REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
+
 # harness.sh 主动触发时默认跳过逐步权限确认
 CLAUDE_CMD=(claude --dangerously-skip-permissions -p)
 if [[ -n "${CLAUDE_APPROVAL+x}" && -z "${CLAUDE_APPROVAL}" ]]; then
@@ -42,6 +45,41 @@ get_field() {
   awk -F': ' "/^${field}:/{gsub(/^[[:space:]]+|[[:space:]]+$/, \"\", \$2); print \$2; exit}" "$file"
 }
 
+# 检查 depends_on 中所有项是否已 done
+# 返回值：0=全部完成（或无依赖），1=有未完成项
+# 副作用：打印阻塞项 warn 信息
+check_depends_done() {
+  local file="$1"
+  local depends_raw
+  depends_raw="$(awk -F': ' '/^depends_on:/{for(i=2;i<=NF;i++) printf $i; print ""}' "$file" | tr -d '[]')"
+  [[ -z "$(echo "$depends_raw" | tr -d ' ')" ]] && return 0
+
+  local any_blocked=false
+  IFS=',' read -ra deps <<< "$depends_raw"
+  for dep in "${deps[@]}"; do
+    dep="$(echo "$dep" | tr -d ' ')"
+    [[ -z "$dep" ]] && continue
+    local dep_status=""
+    for search_path in \
+      "tasks/features/${dep}.md" \
+      "tasks/bugs/${dep}.md" \
+      "tasks/archive/done/${dep}.md"; do
+      if [[ -f "$search_path" ]]; then
+        dep_status="$(get_field "$search_path" "status")"
+        break
+      fi
+    done
+    if [[ -z "$dep_status" ]]; then
+      warn "depends_on '${dep}' 未找到对应文件"
+      any_blocked=true
+    elif [[ "$dep_status" != "done" ]]; then
+      warn "depends_on '${dep}' 尚未完成（status=${dep_status}）"
+      any_blocked=true
+    fi
+  done
+  $any_blocked && return 1 || return 0
+}
+
 # 列出可认领的 REQ 任务
 list_claimable_reqs() {
   local count=0
@@ -61,6 +99,13 @@ list_claimable_reqs() {
     elif [[ "$status" == "ready" && "$owner" == "unassigned" ]]; then
       if [[ "$tc_policy" == "optional" || "$tc_policy" == "exempt" ]]; then
         claimable=true
+      fi
+    fi
+
+    if $claimable; then
+      # depends_on 全部 done 才真正可认领
+      if ! check_depends_done "$f" 2>/dev/null; then
+        claimable=false
       fi
     fi
 
@@ -87,11 +132,14 @@ list_claimable_bugs() {
     owner="$(get_field "$f" "owner")"
 
     if [[ "$status" == "confirmed" && "$owner" == "unassigned" ]]; then
-      local bug_id priority
-      bug_id="$(get_field "$f" "bug_id")"
-      priority="$(get_field "$f" "priority")"
-      echo "  ${RED}BUG${NC}  $bug_id  [${priority}]  ${f}"
-      (( count++ )) || true
+      # depends_on 全部 done 才真正可认领
+      if check_depends_done "$f" 2>/dev/null; then
+        local bug_id priority
+        bug_id="$(get_field "$f" "bug_id")"
+        priority="$(get_field "$f" "priority")"
+        echo "  ${RED}BUG${NC}  $bug_id  [${priority}]  ${f}"
+        (( count++ )) || true
+      fi
     fi
   done
   echo "$count"
@@ -170,6 +218,15 @@ cmd_implement() {
     exit 1
   fi
 
+  # depends_on 检查（FORCE 可绕过）
+  if [[ "${FORCE:-}" != "true" ]]; then
+    if ! check_depends_done "$req_file"; then
+      err "${req_id} depends_on 中存在未完成项，无法认领（见上方 warn）"
+      warn "如需强制执行，设置 FORCE=true 或使用 --force 参数"
+      exit 1
+    fi
+  fi
+
   info "触发 Claude Code 实现 ${req_id}..."
   log_session "implement" "$req_id"
 
@@ -201,6 +258,29 @@ cmd_bugfix() {
   if [[ ! -f "$bug_file" ]]; then
     err "未找到 Bug 文件：${bug_file}"
     exit 1
+  fi
+
+  # 认领前提检查（requirement: status=confirmed, owner=unassigned, depends_on done）
+  if [[ "${FORCE:-}" != "true" ]]; then
+    local b_status b_owner
+    b_status="$(get_field "$bug_file" "status")"
+    b_owner="$(get_field "$bug_file" "owner")"
+
+    if [[ "$b_status" != "confirmed" ]]; then
+      err "${bug_id} status=${b_status}，期望 status=confirmed（见 bug-standard.md §6.1）"
+      warn "如需强制执行，设置 FORCE=true 或使用 --force 参数"
+      exit 1
+    fi
+    if [[ "$b_owner" != "unassigned" ]]; then
+      err "${bug_id} owner=${b_owner}，期望 owner=unassigned（已被认领）"
+      warn "如需强制执行，设置 FORCE=true 或使用 --force 参数"
+      exit 1
+    fi
+    if ! check_depends_done "$bug_file"; then
+      err "${bug_id} depends_on 中存在未完成项，无法认领（见上方 warn）"
+      warn "如需强制执行，设置 FORCE=true 或使用 --force 参数"
+      exit 1
+    fi
   fi
 
   info "触发 Claude Code 修复 ${bug_id}..."
@@ -235,7 +315,11 @@ cmd_fix_review() {
   # 获取 review 顶层 comment
   local top_comments inline_comments
   top_comments="$(gh pr view "$pr_num" --json reviews --jq '.reviews[] | "### Review by \(.author.login) [\(.state)]\n\(.body)"' 2>/dev/null || echo "(无法获取 review，请确认 gh 已认证)")"
-  inline_comments="$(gh api "repos/{owner}/{repo}/pulls/${pr_num}/comments" --jq '.[] | "File: \(.path) line \(.line // .original_line)\nComment: \(.body)\nID: \(.id)"' 2>/dev/null || echo "(无法获取 inline comments)")"
+  if [[ -z "$GH_REPO" ]]; then
+    err "无法解析仓库 owner/repo，请确认 gh 已认证且当前目录是 GitHub 仓库"
+    exit 1
+  fi
+  inline_comments="$(gh api "repos/${GH_REPO}/pulls/${pr_num}/comments" --jq '.[] | "File: \(.path) line \(.line // .original_line)\nComment: \(.body)\nID: \(.id)"' 2>/dev/null || echo "(无法获取 inline comments)")"
 
   log_session "fix-review" "#$pr_num"
 
@@ -257,7 +341,7 @@ Address every finding in both sections:
 3. If a finding is invalid, note why — do not silently ignore
 4. After all fixes are pushed:
    a) Inline comments (have ID above) → reply via:
-      gh api repos/{owner}/{repo}/pulls/${pr_num}/comments/<id>/replies -X POST -f body='Fixed in <sha>: <summary>'
+      gh api repos/${GH_REPO}/pulls/${pr_num}/comments/<id>/replies -X POST -f body='Fixed in <sha>: <summary>'
    b) Top-level review summaries → one general comment:
       gh pr review ${pr_num} --comment -b 'Addressed review findings: ...'
 Do NOT merge the PR — HITL merge only.
