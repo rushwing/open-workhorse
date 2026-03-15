@@ -57,25 +57,29 @@ _get_fm_field() {
   awk -F': ' "/^${field}:/{gsub(/^[[:space:]]+|[[:space:]]+$/, \"\", \$2); print \$2; exit}" "$file"
 }
 
-# ── 任务状态回退：blocked/unassigned（防止任务卡死在 in_progress）────────────
+# ── 任务状态回退（防止任务卡死在 in_progress）────────────────────────────────
+# REQ → status=blocked  （REQ 状态机允许 blocked）
+# BUG → status=confirmed（BUG 状态机：open/confirmed/in_progress/fixed/… 无 blocked）
 _rollback_task() {
   local req_id="$1"
-  local task_file=""
-  # 查找任务文件（features 或 bugs）
-  if [[ -f "$REPO_ROOT/tasks/features/${req_id}.md" ]]; then
-    task_file="$REPO_ROOT/tasks/features/${req_id}.md"
-  elif [[ -f "$REPO_ROOT/tasks/bugs/${req_id}.md" ]]; then
+  local task_file="" rollback_status
+  # 确定回退状态和文件路径
+  if [[ "$req_id" == BUG-* ]]; then
+    rollback_status="confirmed"
     task_file="$REPO_ROOT/tasks/bugs/${req_id}.md"
+  else
+    rollback_status="blocked"
+    task_file="$REPO_ROOT/tasks/features/${req_id}.md"
   fi
-  if [[ -z "$task_file" ]]; then
+  if [[ ! -f "$task_file" ]]; then
     warn "rollback: 找不到任务文件 ${req_id}，跳过回退"
     return 0
   fi
   sed -i \
-    -e 's/^status: .*/status: blocked/' \
+    -e "s/^status: .*/status: ${rollback_status}/" \
     -e 's/^owner: .*/owner: unassigned/' \
     "$task_file"
-  warn "rollback: ${req_id} → status=blocked, owner=unassigned (${task_file})"
+  warn "rollback: ${req_id} → status=${rollback_status}, owner=unassigned"
 }
 
 # ── Failsafe: 失败通知 Pandas ─────────────────────────────────────────────────
