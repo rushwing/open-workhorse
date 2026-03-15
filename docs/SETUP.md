@@ -24,17 +24,17 @@ npm run build
 ```bash
 cp .env.example .env
 # Edit .env — required values:
-#   LOCAL_API_TOKEN  — generate with: openssl rand -hex 24
-#   OPENCLAW_HOME    — set to your OpenClaw home, e.g. /home/openclaw/.openclaw
-#   MONITOR_CONTINUOUS=true  — required for healthz to stay "ok"
+#   LOCAL_API_TOKEN      — generate with: openssl rand -hex 24
+#   OPENCLAW_HOME        — absolute path to your .openclaw dir
+#   MONITOR_CONTINUOUS   — set to true (required for healthz to stay "ok")
 nano .env
 ```
 
-Minimum `.env` for Pi deployment:
+Minimum `.env` for Pi deployment (substitute your actual home path):
 
 ```dotenv
 GATEWAY_URL=ws://127.0.0.1:18789
-OPENCLAW_HOME=/home/openclaw/.openclaw
+OPENCLAW_HOME=/path/to/.openclaw
 LOCAL_API_TOKEN=<openssl rand -hex 24>
 LOCAL_TOKEN_AUTH_REQUIRED=true
 READONLY_MODE=true
@@ -65,21 +65,26 @@ https://<your-hostname>.tail<id>.ts.net (tailnet only)
 
 ## 4. Systemd User Service (auto-start on reboot)
 
+The service uses `%h` (systemd's home directory specifier) so no absolute paths are needed.
+Run `which node` after `source ~/.nvm/nvm.sh` to get your actual node binary path.
+
 ```bash
+NODE_BIN=$(source ~/.nvm/nvm.sh && which node)
+
 mkdir -p ~/.config/systemd/user
-cat > ~/.config/systemd/user/open-workhorse.service << 'EOF'
+cat > ~/.config/systemd/user/open-workhorse.service << EOF
 [Unit]
 Description=Open Workhorse Control Center
 After=network.target openclaw-gateway.service
 
 [Service]
 Type=simple
-WorkingDirectory=/home/openclaw/open-workhorse
-ExecStart=/home/openclaw/.nvm/versions/node/v24.13.1/bin/node --env-file-if-exists=.env --import tsx src/index.ts
+WorkingDirectory=%h/open-workhorse
+ExecStart=${NODE_BIN} --env-file-if-exists=.env --import tsx src/index.ts
 Restart=always
 RestartSec=3
-StandardOutput=append:/home/openclaw/open-workhorse/runtime/ow.log
-StandardError=append:/home/openclaw/open-workhorse/runtime/ow.log
+StandardOutput=append:%h/open-workhorse/runtime/ow.log
+StandardError=append:%h/open-workhorse/runtime/ow.log
 
 [Install]
 WantedBy=default.target
@@ -89,9 +94,6 @@ systemctl --user daemon-reload
 systemctl --user enable open-workhorse
 systemctl --user start open-workhorse
 ```
-
-> **Note:** Adjust `ExecStart` node path to match your nvm version:
-> `which node` (after `source ~/.nvm/nvm.sh`)
 
 Verify:
 
@@ -112,7 +114,7 @@ mkdir -p ~/github-kb
 cat > ~/github-kb/CLAUDE.md << 'EOF'
 # GitHub KB — Repository Index
 
-Local path: `/home/openclaw/github-kb`
+Local path: ~/github-kb
 
 ## Repositories
 
@@ -135,8 +137,8 @@ To change the default agent workspace (e.g. to `workspace-lion`):
 # Backup first
 cp ~/.openclaw/openclaw.json ~/.openclaw/openclaw.json.bak.$(date +%Y%m%d)
 
-# Update with jq
-jq '.agents.defaults.workspace = "/home/openclaw/workspace-lion"' \
+# Update with jq (substitute your actual workspace path)
+jq '.agents.defaults.workspace = "/path/to/workspace-lion"' \
   ~/.openclaw/openclaw.json > /tmp/oc.json && mv /tmp/oc.json ~/.openclaw/openclaw.json
 
 # Restart gateway to apply

@@ -1,16 +1,16 @@
-# OpenClaw Control Center Install Prompt
+# open-workhorse Install Prompt
 
 Language: [中文](INSTALL_PROMPT.md) | **English**
 
-Give the full prompt below to your own OpenClaw so it can install and connect `OpenClaw Control Center` to this machine's OpenClaw environment.
+Give the full prompt below to your own OpenClaw so it can install and connect `open-workhorse` to this machine's OpenClaw environment.
 
 ```text
-You are installing and connecting OpenClaw Control Center to this machine's OpenClaw environment.
+You are installing and connecting open-workhorse to this machine's OpenClaw environment.
 
 Your goal is not to explain theory. Your goal is to complete a safe first-run setup end to end.
 
 Hard rules:
-1. Work only inside the control-center repository.
+1. Work only inside the open-workhorse repository.
 2. Do not modify application source code unless I explicitly ask.
 3. Do not modify OpenClaw's own config files.
 4. Do not enable live import or approval mutations.
@@ -42,7 +42,7 @@ Phase 1: inspect the environment
 8. Do not assume any fixed agent names. If `openclaw.json` is readable, treat it as the source of truth. If not, fall back to runtime-visible agents and explicitly say that roster confidence is lower.
 
 Phase 2: install the project
-9. Confirm that the current directory is the control-center repo root.
+9. Confirm that the current directory is the open-workhorse repo root.
 10. First verify the repo is complete. At minimum, confirm these paths exist:
    - `package.json`
    - `src/runtime`
@@ -50,7 +50,7 @@ Phase 2: install the project
    - `.env.example`
 11. If `src/runtime`, `src/ui`, or `package.json` is missing, do not continue and do not guess where the code should come from. Classify it as "wrong repo / incomplete checkout / wrong working directory", then:
    - leave the incorrect directory
-   - re-clone `https://github.com/TianyiDataScience/openclaw-control-center.git`
+   - re-clone `https://github.com/rushwing/open-workhorse.git`
    - continue only after entering the new repo root
 12. Install dependencies.
 13. If `.env` does not exist, create it from `.env.example`. If it already exists, update it while preserving safe first-run defaults. Do not delete unrelated user settings; only change the keys required for this connection.

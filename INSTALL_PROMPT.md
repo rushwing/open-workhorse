@@ -1,16 +1,16 @@
-# OpenClaw Control Center 安装 Prompt
+# open-workhorse 安装 Prompt
 
 默认语言：**中文** | [English](INSTALL_PROMPT.en.md)
 
-把下面整段原样交给你自己的 OpenClaw，让它帮你把 `OpenClaw Control Center` 安装并接到这台机器自己的 OpenClaw 环境上。
+把下面整段原样交给你自己的 OpenClaw，让它帮你把 `open-workhorse` 安装并接到这台机器自己的 OpenClaw 环境上。
 
 ```text
-你现在要帮我把 OpenClaw Control Center 安装并接到这台机器自己的 OpenClaw 环境上。
+你现在要帮我把 open-workhorse 安装并接到这台机器自己的 OpenClaw 环境上。
 
 你的目标不是解释原理，而是直接完成一次安全的首次接入。
 
 严格约束：
-1. 只允许在 control-center 仓库里工作。
+1. 只允许在 open-workhorse 仓库里工作。
 2. 除非我明确要求，否则不要修改应用源码。
 3. 不要修改 OpenClaw 自己的配置文件。
 4. 不要开启 live import，不要开启 approval mutation。
@@ -42,7 +42,7 @@
 8. 不要假设任何固定 agent 名称。若 `openclaw.json` 可读，就以它为准；若不可读，再回退到运行时可见 agent，并明确说明可信度下降。
 
 第二阶段：安装项目
-9. 确认当前目录是 control-center 仓库根目录。
+9. 确认当前目录是 open-workhorse 仓库根目录。
 10. 先确认仓库本体完整。至少检查这些路径真实存在：
    - `package.json`
    - `src/runtime`
@@ -50,7 +50,7 @@
    - `.env.example`
 11. 如果缺少 `src/runtime`、`src/ui` 或 `package.json`，不要继续安装，也不要猜源码去哪了。直接把它判定为“错误仓库 / 不完整 checkout / 错误工作目录”，并执行：
    - 退出当前错误目录
-   - 重新 clone：`https://github.com/TianyiDataScience/openclaw-control-center.git`
+   - 重新 clone：`https://github.com/rushwing/open-workhorse.git`
    - 进入新 clone 的仓库根目录后再继续
 12. 运行依赖安装。
 13. 如果 `.env` 不存在，就从 `.env.example` 创建；如果存在，就在保留安全默认值的前提下修正它。不要删除用户已有的无关安全配置，只改这次接线真正需要的项。

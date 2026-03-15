@@ -3,13 +3,13 @@
 This project is safest to publish as its own standalone repository.
 
 ## Recommended release boundary
-- Publish only the `control-center/` directory.
+- Publish only the `open-workhorse/` directory.
 - Do not publish the larger parent workspace/repository.
 - Keep runtime output, build output, local env files, and internal planning artifacts out of the public repo.
 
 ## Best-practice flow
 
-### 1. Work inside `control-center/`
+### 1. Work inside `open-workhorse/`
 All release checks and commits should happen from this directory.
 
 ### 2. Run the public-release audit
@@ -36,7 +36,7 @@ git commit -m "Initial public release"
 ```
 
 ### 5. Create an empty GitHub repository
-Create a new empty repository on GitHub for `control-center` only.
+Create a new empty repository on GitHub for `open-workhorse`.
 
 ### 6. Connect and push
 ```bash
