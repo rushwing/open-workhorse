@@ -76,9 +76,9 @@ async function start(): Promise<void> {
   }
 }
 
-void start();
-
 const execFileAsync = promisify(execFile);
+
+void start();
 
 async function runCommand(
   command: "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat" | "pandas-heartbeat",
