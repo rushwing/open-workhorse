@@ -9,7 +9,7 @@
 #   有消息    → 读取 type/req_id → 调用 harness.sh 处理 → 删除消息文件
 #
 # 依赖环境变量（.env）:
-#   SHARED_RESOURCES_ROOT  — 共享收件箱根目录（默认 ~/shared-resources）
+#   SHARED_RESOURCES_ROOT  — 共享收件箱根目录（默认 ~/Dev/everything_openclaw/personas/shared-resources）
 #   REPO_ROOT              — open-workhorse 仓库根目录（自动检测）
 
 set -euo pipefail
@@ -28,7 +28,7 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
   done < "$REPO_ROOT/.env"
 fi
 
-INBOX="${SHARED_RESOURCES_ROOT:-${HOME}/shared-resources}/inbox/for-menglan"
+INBOX="${SHARED_RESOURCES_ROOT:-${HOME}/Dev/everything_openclaw/personas/shared-resources}/inbox/for-menglan"
 
 # ── 辅助函数 ──────────────────────────────────────────────────────────────────
 CYAN='\033[0;36m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -62,8 +62,11 @@ main() {
 
     case "$type" in
       implement)
-        info "路由 implement → harness.sh implement ${req_id}"
-        bash "$REPO_ROOT/scripts/harness.sh" implement "$req_id"
+        # Pandas already claimed the task (owner=claude_code, status=in_progress).
+        # FORCE=true bypasses the claim gate so Menglan can start implementation
+        # without re-claiming. (PANDAS-ORCHESTRATION §2 DEV_ACTIVE)
+        info "路由 implement → FORCE=true harness.sh implement ${req_id}"
+        FORCE=true bash "$REPO_ROOT/scripts/harness.sh" implement "$req_id"
         ;;
       bugfix)
         info "路由 bugfix → harness.sh bugfix ${req_id}"
