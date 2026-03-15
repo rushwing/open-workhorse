@@ -33,7 +33,15 @@ else
   exit 1
 fi
 
-CRON_CMD="cd ${REPO_ROOT} && APP_COMMAND=pandas-heartbeat node --env-file-if-exists=.env --import tsx src/index.ts >> ${REPO_ROOT}/runtime/pandas-heartbeat.log 2>&1"
+# Resolve node absolute path at install time so cron (which has a minimal
+# PATH and no nvm shims) can find it regardless of how node was installed.
+NODE_BIN="$(command -v node 2>/dev/null || true)"
+if [[ -z "$NODE_BIN" ]]; then
+  echo "ERROR: node not found in PATH — run this script from a shell where node is available" >&2
+  exit 1
+fi
+
+CRON_CMD="cd ${REPO_ROOT} && APP_COMMAND=pandas-heartbeat ${NODE_BIN} --env-file-if-exists=.env --import tsx src/index.ts >> ${REPO_ROOT}/runtime/pandas-heartbeat.log 2>&1"
 CRON_MARKER="# pandas-heartbeat managed by install-pandas-cron.sh"
 
 # ── 子命令 ────────────────────────────────────────────────────────────────────
