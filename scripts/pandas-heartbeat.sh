@@ -63,8 +63,9 @@ inbox_init() {
            "${INBOX_ROOT}/for-menglan"
 }
 
-# inbox_write <target> <type> <req_id> <summary> [pr_number] [status] [blocking_reason] [iteration]
+# inbox_write <target> <type> <req_id> <summary> [pr_number] [status] [blocking_reason] [iteration] [body]
 # 写入消息到 inbox/for-<target>/
+# body（第 9 参数）会追加在 frontmatter 之后，供接收 agent 读取完整上下文
 inbox_write() {
   local target="$1"
   local type="$2"
@@ -74,6 +75,7 @@ inbox_write() {
   local status="${6:-success}"
   local blocking_reason="${7:-}"
   local iteration="${8:-}"
+  local body="${9:-}"
 
   local date_str
   date_str="$(date +%Y-%m-%d)"
@@ -94,6 +96,7 @@ inbox_write() {
     [[ -n "$blocking_reason" ]] && echo "blocking_reason: ${blocking_reason}"
     [[ -n "$iteration" ]] && echo "iteration: ${iteration}"
     echo "---"
+    [[ -n "$body" ]] && echo "" && echo "$body"
   } > "${target_dir}/${filename}"
 
   info "inbox_write → for-${target}/${filename}"
@@ -183,7 +186,11 @@ _handle_tc_complete() {
 
   if [[ "$status" == "success" ]]; then
     info "tc_complete(success): ${req_id} — 路由 implement 到 Menglan"
-    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（TC 已通过 review）"
+    local req_body=""
+    local _req_f="tasks/features/${req_id}.md"
+    [[ -f "$_req_f" ]] && req_body="$(cat "$_req_f")"
+    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（TC 已通过 review）" \
+      "" "success" "" "" "$req_body"
   elif [[ $iter_num -lt 2 ]]; then
     local next_iter=$(( iter_num + 1 ))
     info "tc_complete(blocked) iter=${next_iter}: ${req_id} — 路由修复请求到 Huahua"
@@ -441,12 +448,16 @@ auto_claim() {
   ok "已认领 ${req_id}"
 
   # 路由：test_designed (tier=0) 或 ready+optional/exempt (tier=1) 均跳过 TC 设计，直接 implement
+  local req_body=""
+  [[ -f "$best_file" ]] && req_body="$(cat "$best_file")"
   if [[ $best_status_tier -eq 0 ]]; then
     # status=test_designed: TC 已完成，直接路由到 Menglan 实现
-    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（TC 已完成 / test_designed）"
+    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（TC 已完成 / test_designed）" \
+      "" "success" "" "" "$req_body"
   else
     # status=ready, tc_policy=optional/exempt: 跳过 TC，直接路由到 Menglan 实现
-    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（tc_policy=exempt/optional，跳过 TC 设计）"
+    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（tc_policy=exempt/optional，跳过 TC 设计）" \
+      "" "success" "" "" "$req_body"
   fi
 }
 
@@ -481,9 +492,12 @@ auto_claim_specific() {
   ok "Telegram 触发认领: ${req_id}"
 
   # TC 已完成或无需 TC → 直接路由到 Menglan；否则路由到 Huahua 做 TC 设计
+  local req_body=""
+  [[ -f "$req_file" ]] && req_body="$(cat "$req_file")"
   if [[ "$orig_status" == "test_designed" || \
         "$tc_policy" == "exempt" || "$tc_policy" == "optional" ]]; then
-    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（Telegram 触发）：${title}"
+    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（Telegram 触发）：${title}" \
+      "" "success" "" "" "$req_body"
   else
     inbox_write "huahua" "tc_design" "$req_id" "TC 设计请求（Telegram 触发）：${title}"
   fi
