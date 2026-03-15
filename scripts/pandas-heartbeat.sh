@@ -41,8 +41,12 @@ if [[ -f "$REPO_ROOT/scripts/telegram.sh" ]]; then
   source "$REPO_ROOT/scripts/telegram.sh" 2>/dev/null || true
 fi
 
-# ── 颜色 ──────────────────────────────────────────────────────────────────────
-CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
+# ── 颜色（仅 TTY 输出时启用）────────────────────────────────────────────────
+if [[ -t 1 ]]; then
+  CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
+else
+  CYAN=''; YELLOW=''; RED=''; GREEN=''; NC=''
+fi
 info()  { echo -e "${CYAN}[pandas]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[pandas]${NC} $*"; }
 err()   { echo -e "${RED}[pandas]${NC} $*" >&2; }
