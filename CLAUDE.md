@@ -65,6 +65,30 @@ npm run smoke:ui
 - Hardcoded bearer tokens or API keys
 - Missing required files (README, LICENSE, .env.example, src/ui/server.ts, etc.)
 
+## Harness Engineering
+
+After reading this file, read `harness/harness-index.md` for the full development process.
+
+Key rules:
+- All active work items live in `tasks/` — read them before starting any implementation
+- Claim a task with a single commit (`owner=claude_code`, `status=in_progress`) before writing code
+- Run all pre-commit checks before opening a PR: `npm run release:audit && npm run build && npm test`
+- All PRs require Daniel (HITL) approval — no auto-merge
+
+```bash
+./scripts/harness.sh status          # see claimable tasks
+./scripts/harness.sh implement REQ-N # claim + implement a requirement
+npm run req:check                    # validate REQ frontmatter (same as CI)
+```
+
+Harness standards live in `harness/`:
+- `harness-index.md` — process overview and stage table
+- `requirement-standard.md` — REQ state machine, claiming rules
+- `testing-standard.md` — test layers L1–L4, mock strategy
+- `bug-standard.md` — bug lifecycle, regression requirements
+- `ci-standard.md` — CI jobs, PR gate
+- `agent-cli-playbook.md` — invocation templates A–J
+
 ## Pi Deployment
 
 See `docs/SETUP.md` for the full step-by-step guide.

@@ -34,7 +34,9 @@
     "health:snapshot:periodic": "node --import tsx scripts/periodic-snapshot.ts",
     "worker:resident": "node --import tsx scripts/resident-worker.ts",
     "supervisor:resident": "node --import tsx scripts/resident-supervisor.ts",
-    "dod:check": "node --import tsx scripts/dod-check.ts"
+    "dod:check": "node --import tsx scripts/dod-check.ts",
+    "req:check": "bash scripts/check-req-coverage.sh",
+    "harness:status": "bash scripts/harness.sh status"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
