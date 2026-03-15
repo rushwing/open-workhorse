@@ -2,37 +2,61 @@
 harness_id: REV-STD-001
 component: code review / PR quality
 owner: Engineering
-version: 0.1
-status: stub
+version: 0.2
+status: active
 last_reviewed: 2026-03-15
 ---
 
-# Harness Standard — 代码审查规程 [STUB]
+# Harness Standard — 代码审查规程
 
-> **当前状态：stub。** 已知原则已记录，可作为临时执行依据。
-> 完整规程待 Daniel 在实际 review 中积累模式后补充。
-> 本规程明确：`review` 的事实源是 GitHub PR，而不是 `tasks/`。
+> **当前状态：active。** 完整 review 循环已定义：Pandas 触发 → Huahua 执行 → Claude Code 修复 → Daniel HITL 合并。
+> review 的事实源是 GitHub PR，不在 `tasks/` 中重复维护状态机。
 
 ---
 
-## 已确定原则
+## Agent 角色边界
 
-### Review Work Item 边界
+| 角色 | Review 职责 | 限制 |
+|---|---|---|
+| **Pandas**（orchestrator） | 在 Menglan 开 PR 后通知 Huahua 进行 review（via GH issue 或任务队列） | **不读 PR diff，不发 review comments** — 避免上下文污染 |
+| **Huahua**（review owner） | 执行 code review，输出 findings | 使用 CodeX + GH LLM Issue Orchestrator skill |
+| **Menglan / claude_code**（implementer） | 实现功能、修复 review findings | 不做自己 PR 的 review |
+| **Daniel**（HITL） | 最终合并决策 | 不做 code review — 只做合并拍板 |
 
-- [ ] Review 工作项的事实源是 GitHub PR：reviewer、review comments、review decision、merge gate 都以 GitHub 为准
-- [ ] 不在 `tasks/` 中重复维护 `review_claimed` / `review_done`
-- [ ] repo 内只保留 review 规则与 checklist，不保留 review 状态机
-- [ ] 若需要追踪 review 责任，优先使用 GitHub reviewer / assignee / labels
+---
 
-### PR 提交前（claude_code 自检）
+## Review 触发流程
+
+```
+Menglan 开 PR
+    └─▶ Pandas 检测到新 PR（轮询 gh pr list 或 GH webhook）
+            └─▶ Pandas 在 GitHub Issue / 任务队列 通知 Huahua：
+                "PR #N ready for review: <url>"
+                └─▶ Huahua 使用 CodeX + GH LLM Issue Orchestrator
+                        └─▶ Findings 输出为 PR review comments
+                                └─▶ Pandas 检测 review 完成
+                                        └─▶ 通知 Menglan：
+                                            "Fix review findings: harness.sh fix-review N"
+                                                └─▶ Daniel Telegram 通知：
+                                                    "PR #N review complete, fixes pushed — merge?"
+```
+
+---
+
+## PR 提交前自检（Menglan / claude_code）
 
 - [ ] 本地测试全通过：`npm run release:audit && npm run build && npm test`
 - [ ] `test_case_ref` 中所有 TC 对应测试通过
 - [ ] 无遗留调试代码（`console.log` 临时调试）
 - [ ] 无硬编码密钥、测试凭证或生产配置
 - [ ] `tasks/features/REQ-xxx.md` 已更新为 `status: review`
+- [ ] PR 使用 `gh pr create --fill` 创建（不留交互提示）
 
-### Review 关注点（Huahua — review owner）
+---
+
+## Review 关注点（Huahua）
+
+Huahua 使用 **CodeX + GH LLM Issue Orchestrator** skill 执行 review，输出 findings 为 GitHub PR review comments。
 
 **契约一致性**
 - [ ] 实现与 REQ-xxx.md `Acceptance Criteria` 逐条对应
@@ -52,20 +76,32 @@ last_reviewed: 2026-03-15
 - [ ] 命名清晰，无缩写歧义
 - [ ] 复杂逻辑有注释说明 why，而非 what
 
-### HITL 合并条件（Daniel — merge approver）
+### Finding 分级
 
-- [ ] CI 全部通过（release-audit + build + test + req-coverage）
-- [ ] Huahua review 无 blocking comment（或 blocking comment 已由 claude_code 修复）
-- [ ] PR merge 不允许自动化；Daniel 最终拍板
+| 级别 | 标记 | 说明 |
+|---|---|---|
+| blocking | `[BLOCK]` | 必须修复才能合并（安全、逻辑错误、契约违反） |
+| non-blocking | `[NIT]` / `[SUGGEST]` | 建议改进，不阻碍合并 |
 
 ---
 
-## 待补充
+## Fix Review Findings（Menglan / claude_code）
 
-- [ ] 正式 review checklist 模板（含评分标准）
-- [ ] blocking vs non-blocking comment 区分规则
-- [ ] 特殊场景处理：hotfix、文档 PR、依赖升级 PR
-- [ ] review 时间 SLA
+收到 Pandas 通知或 Daniel 指令后，执行：
+
+```bash
+./scripts/harness.sh fix-review <PR号>
+```
+
+harness.sh 会预注入所有 review comments，Claude Code 全量处理后回复每条 comment。
+
+---
+
+## HITL 合并条件（Daniel）
+
+- [ ] CI 全部通过（release-audit + build + test + req-coverage）
+- [ ] Huahua review 无 blocking comment（或 blocking comment 已由 claude_code 修复）
+- [ ] PR merge 不允许自动化；Daniel 最终拍板（可通过 Telegram [Merge] 按钮触发）
 
 ---
 
@@ -74,3 +110,4 @@ last_reviewed: 2026-03-15
 | 版本 | 日期 | 变更摘要 |
 |---|---|---|
 | 0.1 | 2026-03-15 | 初始 stub（从 hydro-om-copilot REV-STD-001 改写）；删去 openai_codex reviewer；改为 Daniel HITL；更新 pre-commit 命令为 TypeScript 栈 |
+| 0.2 | 2026-03-15 | stub → active；新增 Pandas orchestrator 角色边界（不读 PR diff）；定义 Huahua review 触发流程（CodeX + GH LLM Issue Orchestrator）；新增 finding 分级（blocking/non-blocking）；明确 Telegram HITL 合并路径 |

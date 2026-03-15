@@ -8,14 +8,14 @@ FILES=()
 while IFS= read -r file; do
   FILES+=("$file")
 done < <(
-  rg --files --hidden \
-    -g '!.git/**' \
-    -g '!.pr-reviews/**' \
-    -g '!node_modules/**' \
-    -g '!dist/**' \
-    -g '!runtime/**' \
-    -g '!coverage/**' \
-    -g '!scripts/release-audit.sh'
+  find . -type f \
+    -not -path './.git/*' \
+    -not -path './.pr-reviews/*' \
+    -not -path './node_modules/*' \
+    -not -path './dist/*' \
+    -not -path './runtime/*' \
+    -not -path './coverage/*' \
+    -not -path './scripts/release-audit.sh'
 )
 
 if [ "${#FILES[@]}" -eq 0 ]; then
@@ -26,7 +26,7 @@ fi
 check_no_match() {
   local description="$1"
   local pattern="$2"
-  if rg -n --no-heading -P -e "$pattern" "${FILES[@]}" >/tmp/release-audit-match.txt 2>/dev/null; then
+  if grep -Pn -e "$pattern" "${FILES[@]}" >/tmp/release-audit-match.txt 2>/dev/null; then
     echo "release-audit: failed: ${description}" >&2
     cat /tmp/release-audit-match.txt >&2
     rm -f /tmp/release-audit-match.txt
@@ -60,7 +60,7 @@ check_no_match "hard-coded local API tokens" 'LOCAL_API_TOKEN=(?!<)[^[:space:]]+
 check_no_match "hard-coded x-local-token header values" 'x-local-token:[[:space:]]*(?!<)[^[:space:]]+'
 
 if [ -d ".git" ]; then
-  if git ls-files | rg '^(runtime|dist|node_modules|coverage|plans|workflows)/' >/tmp/release-audit-match.txt 2>/dev/null; then
+  if git ls-files | grep -E '^(runtime|dist|node_modules|coverage|plans|workflows)/' >/tmp/release-audit-match.txt 2>/dev/null; then
     echo "release-audit: failed: ignored build/runtime/internal-only paths are tracked" >&2
     cat /tmp/release-audit-match.txt >&2
     rm -f /tmp/release-audit-match.txt

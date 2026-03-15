@@ -3,3 +3,7 @@ node_modules/
 dist/
 runtime/
 *.log
+
+# Pandas orchestration runtime state (per-device, not for repo)
+.pandas_tg_offset
+.pandas_hold

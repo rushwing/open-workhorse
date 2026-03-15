@@ -129,6 +129,47 @@ Do NOT merge the PR — HITL merge only.
 
 ---
 
+### 模板 K · Pandas 编排流程（Orchestrator Loop）
+
+> Pandas 是 orchestrator/PM，负责轮询任务队列、协调 Menglan 实现与 Huahua review。
+> **Pandas 不读 PR diff，不发 review comments** — 避免上下文污染。
+
+```bash
+claude -p "
+Read CLAUDE.md, harness/harness-index.md, and harness/review-standard.md.
+You are Pandas — the orchestrator. Do not ask clarifying questions.
+
+## Orchestration Loop (one iteration)
+
+Step 1 — Scan for claimable tasks:
+  Run: ./scripts/harness.sh status
+  If tasks available → trigger Menglan: ./scripts/harness.sh implement <REQ-N>
+  Wait for PR to be opened (poll: gh pr list --state open --json number,title --jq '.[] | .number')
+
+Step 2 — Notify Huahua to review:
+  Once a new PR is detected, create a GitHub issue or comment:
+  gh issue create --title 'Review PR #<N>' --body 'Huahua: please review PR #<N> using CodeX + GH LLM Issue Orchestrator skill'
+  OR if Huahua is triggered via task queue: update tasks/ accordingly.
+  DO NOT read the PR diff yourself.
+
+Step 3 — Wait for review completion:
+  Poll: gh pr view <N> --json reviewDecision --jq '.reviewDecision'
+  When reviewDecision != '' (or review comments appear) → review is complete.
+
+Step 4 — Trigger fix-review if needed:
+  If blocking review findings: ./scripts/harness.sh fix-review <N>
+  Wait for fixes to be pushed.
+
+Step 5 — Notify Daniel via Telegram:
+  bash scripts/telegram.sh tg_pr_ready '<pr_url>' '<one-line summary>'
+  Log result. Do NOT merge — HITL only.
+
+Loop back to Step 1.
+"
+```
+
+---
+
 ### 模板 J · 代码/文档一致性审查（Claude Code）
 
 ```bash
@@ -148,13 +189,39 @@ Report mismatches. Do NOT modify frozen files or make code changes — report on
 
 ---
 
+## Runbook — 失败恢复指南
+
+> **遇到命令失败时，先查 runbook，再动手修复。**
+> runbook 收录了已知失败模式的根因与修复步骤，可节省重复排查时间。
+
+```bash
+# 列出所有 runbook 条目
+./scripts/harness.sh runbook
+
+# 按关键词搜索（如命令名、错误消息片段）
+./scripts/harness.sh runbook "gh pr create"
+./scripts/harness.sh runbook "interactive"
+./scripts/harness.sh runbook "timeout"
+```
+
+### 贡献新 Runbook 条目
+
+当遇到新失败并借助 LLM 修复时，执行：
+
+1. 复制模板：`cp harness/runbook/_template.md harness/runbook/RB-NNN.md`
+2. 填写：`trigger_command`、`symptom`、`root_cause`、`fix_steps`
+3. 如有可重用修复脚本，填写 `new_tool` 字段
+4. 提交至 main（文档变更，无需完整 CI 门禁）
+
+---
+
 ## 人工触发 Agent Loop（tasks/ 有新任务时）
 
 ```bash
 # 查看当前可认领任务
 ./scripts/harness.sh status
 
-# 手动触发实现（claude_code）
+# 手动触发实现（Menglan / claude_code）
 ./scripts/harness.sh implement REQ-<N>
 
 # Bug 修复
@@ -162,6 +229,15 @@ Report mismatches. Do NOT modify frozen files or make code changes — report on
 
 # 修复 PR review comments（claude_code）
 ./scripts/harness.sh fix-review <PR号>
+
+# Runbook 查询（遇到失败时先查）
+./scripts/harness.sh runbook [keyword]
+
+# 开发周期停滞检测（dry-run）
+DRY_RUN=true bash scripts/dev-cycle-watchdog.sh
+
+# Telegram 测试
+bash scripts/telegram.sh test
 ```
 
 ---
@@ -170,11 +246,14 @@ Report mismatches. Do NOT modify frozen files or make code changes — report on
 
 | 场景 | 建议模式 |
 |---|---|
-| 实现 REQ | `claude -p`（由 harness.sh 调用）|
+| Pandas 编排循环 | `claude -p`（模板 K）|
+| 实现 REQ（Menglan） | `claude -p`（由 harness.sh 调用）|
 | Bug 修复 | `claude -p`（由 harness.sh 调用）|
 | Fix review comments | `claude -p`（由 harness.sh 调用，预注入 comments）|
 | 代码/文档一致性审查 | `claude -p`（模板 J）|
 | 本地质量检查 | `claude -p`（模板 D）|
+| 停滞检测 | `bash scripts/dev-cycle-watchdog.sh`（可 cron）|
+| HITL 通知 | `bash scripts/telegram.sh`（需配置 bot token）|
 
 > **所有 PR 均需 Daniel（HITL）approve 后才能合并。**
 > 不允许任何 PR 自动合入。
@@ -186,3 +265,4 @@ Report mismatches. Do NOT modify frozen files or make code changes — report on
 | 版本 | 日期 | 变更摘要 |
 |---|---|---|
 | 0.1 | 2026-03-15 | 初始版本（从 hydro-om-copilot CLI-PB-001 v0.4 改写）；删去模板 E（TC 设计，Codex）、F（PR Review，Codex）、G/G-Promote（Bug 上报，Codex）、H（一致性审查，Codex）；保留 A/B/C/D/I；新增模板 J（代码/文档一致性审查，Claude Code 版）；删去 Stacked PR / Bundle 自动化 |
+| 0.2 | 2026-03-15 | 新增模板 K（Pandas 编排流程）；新增 §Runbook 节（harness/runbook/ 查询与贡献）；人工触发部分补充 watchdog/telegram 命令；注意事项表新增 Pandas / 停滞检测 / HITL 通知行 |
