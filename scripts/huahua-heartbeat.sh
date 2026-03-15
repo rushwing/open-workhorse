@@ -57,6 +57,27 @@ _get_fm_field() {
   awk -F': ' "/^${field}:/{gsub(/^[[:space:]]+|[[:space:]]+$/, \"\", \$2); print \$2; exit}" "$file"
 }
 
+# ── 任务状态回退：blocked/unassigned（防止任务卡死在 in_progress）────────────
+_rollback_task() {
+  local req_id="$1"
+  local task_file=""
+  # 查找任务文件（features 或 bugs）
+  if [[ -f "$REPO_ROOT/tasks/features/${req_id}.md" ]]; then
+    task_file="$REPO_ROOT/tasks/features/${req_id}.md"
+  elif [[ -f "$REPO_ROOT/tasks/bugs/${req_id}.md" ]]; then
+    task_file="$REPO_ROOT/tasks/bugs/${req_id}.md"
+  fi
+  if [[ -z "$task_file" ]]; then
+    warn "rollback: 找不到任务文件 ${req_id}，跳过回退"
+    return 0
+  fi
+  sed -i \
+    -e 's/^status: .*/status: blocked/' \
+    -e 's/^owner: .*/owner: unassigned/' \
+    "$task_file"
+  warn "rollback: ${req_id} → status=blocked, owner=unassigned (${task_file})"
+}
+
 # ── Failsafe: 失败通知 Pandas ─────────────────────────────────────────────────
 _notify_pandas_failure() {
   local msg_basename="$1" reason="$2" req_id="$3"
@@ -70,7 +91,7 @@ _notify_pandas_failure() {
     echo "req_id: ${req_id}"
     echo "summary: huahua-heartbeat 处理失败 — ${msg_basename}"
     echo "status: blocked"
-    echo "blocking_reason: ${reason}"
+    echo "blocking_reason: ${reason}; task reset to blocked/unassigned — review before re-dispatching"
     echo "---"
   } > "${INBOX_ROOT}/for-pandas/${filename}"
   warn "已写入失败告警 → for-pandas/${filename}"
@@ -180,6 +201,7 @@ main() {
       mkdir -p "$DEAD_LETTER"
       mv "$msg_file" "${DEAD_LETTER}/"
       ok "已移至 dead-letter: $(basename "$msg_file")"
+      _rollback_task "$req_id"
       _notify_pandas_failure "$(basename "$msg_file")" \
         "exit ${exit_code} — 详见 ${DEAD_LETTER}/$(basename "$msg_file")" \
         "$req_id"
