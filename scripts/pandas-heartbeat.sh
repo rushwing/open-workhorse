@@ -468,15 +468,17 @@ auto_claim_specific() {
 
   detect_major_decision "$req_file" || return 0
 
+  # Snapshot routing fields BEFORE mutating the file (orig_status must reflect pre-claim state)
+  local title tc_policy orig_status
+  title="$(_get_fm_field "$req_file" "title")"
+  tc_policy="$(_get_fm_field "$req_file" "tc_policy")"
+  orig_status="$(_get_fm_field "$req_file" "status")"
+
   sed -i.bak "s/^owner: unassigned/owner: claude_code/" "$req_file"
   sed -i.bak "s/^status: [a-z_]*/status: in_progress/" "$req_file"
   rm -f "${req_file}.bak"
 
   ok "Telegram 触发认领: ${req_id}"
-  local title tc_policy orig_status
-  title="$(_get_fm_field "$req_file" "title")"
-  tc_policy="$(_get_fm_field "$req_file" "tc_policy")"
-  orig_status="$(_get_fm_field "$req_file" "status")"
 
   # TC 已完成或无需 TC → 直接路由到 Menglan；否则路由到 Huahua 做 TC 设计
   if [[ "$orig_status" == "test_designed" || \
