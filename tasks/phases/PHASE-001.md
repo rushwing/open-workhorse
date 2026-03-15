@@ -26,6 +26,11 @@ last_updated: 2026-03-15
 - LLM API 集成（open-workhorse 本身不调用 LLM）
 - Daily / Weekly 定时构建
 - 高覆盖率测试（当前目标：全部通过即达标）
+- Memory Bank（架构决策记忆层，列入 Phase 2 Todo）
+
+## Todo（Phase 2+）
+
+- [ ] **Memory Bank**：参考 Cline Memory Bank 模式，新增 `memory/` 目录（`productContext.md`、`systemPatterns.md`、`activeContext.md` 等），补充架构决策背景，增强 Claude Code 跨 session 上下文恢复能力
 
 ## Entry Criteria
 

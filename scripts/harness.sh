@@ -47,7 +47,7 @@ get_field() {
 
 # 检查 depends_on 中所有项是否已 done
 # 返回值：0=全部完成（或无依赖），1=有未完成项
-# 副作用：打印阻塞项 warn 信息
+# 副作用：打印阻塞项 warn 信息（stderr，不污染 $() 捕获）
 check_depends_done() {
   local file="$1"
   local depends_raw
@@ -70,10 +70,10 @@ check_depends_done() {
       fi
     done
     if [[ -z "$dep_status" ]]; then
-      warn "depends_on '${dep}' 未找到对应文件"
+      warn "depends_on '${dep}' 未找到对应文件" >&2
       any_blocked=true
     elif [[ "$dep_status" != "done" ]]; then
-      warn "depends_on '${dep}' 尚未完成（status=${dep_status}）"
+      warn "depends_on '${dep}' 尚未完成（status=${dep_status}）" >&2
       any_blocked=true
     fi
   done

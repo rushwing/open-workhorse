@@ -37,8 +37,10 @@ claude --dangerously-skip-permissions -p "prompt"
 ```bash
 claude -p "
 Read CLAUDE.md, then harness/harness-index.md.
-Scan tasks/features/ for claimable tasks (status=test_designed, owner=unassigned).
-Also check tasks/features/ for status=ready with tc_policy=optional or tc_policy=exempt.
+Scan tasks/features/ for claimable tasks matching ALL of:
+  - status=test_designed AND owner=unassigned
+  - OR status=ready AND owner=unassigned AND tc_policy=optional or tc_policy=exempt
+  - AND all depends_on entries are status=done (blocked tasks are NOT claimable)
 Report what you find — do not claim anything yet.
 "
 ```
@@ -116,8 +118,9 @@ Address every finding in both sections:
 2. Fix the code or doc (do NOT skip any finding)
 3. If a finding is invalid, note why — do not silently ignore
 4. After all fixes are pushed:
-   a) Inline comments (have id) → reply via:
-      gh api repos/{owner}/{repo}/pulls/<PR>/comments/<id>/replies -X POST -f body='Fixed in <sha>: <summary>'
+   a) Inline comments (have id) → reply via (replace REPO with output of
+      `gh repo view --json nameWithOwner -q .nameWithOwner`):
+      gh api repos/REPO/pulls/<PR>/comments/<id>/replies -X POST -f body='Fixed in <sha>: <summary>'
    b) Top-level review summaries (no reply endpoint) → one general comment:
       gh pr review <PR> --comment -b 'Addressed review findings: ...'
 Do NOT merge the PR — HITL merge only.
