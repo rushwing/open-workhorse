@@ -388,7 +388,7 @@ cmd_tc_review() {
   fi
   # 3. changed files（tasks/features/REQ-*.md が含まれていれば）
   if [[ -z "$req_hint" ]]; then
-    req_hint="$(gh pr view "$pr_num" --json files --jq '.[].path' 2>/dev/null \
+    req_hint="$(gh pr view "$pr_num" --json files --jq '.files[].path' 2>/dev/null \
                 | grep -oE 'REQ-[0-9]+' | head -1 || true)"
   fi
 
