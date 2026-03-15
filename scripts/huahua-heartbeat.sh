@@ -23,7 +23,8 @@ cd "$REPO_ROOT"
 export PATH="$HOME/.local/bin:$PATH"
 if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
   # shellcheck source=/dev/null
-  source "$HOME/.nvm/nvm.sh" --no-use 2>/dev/null || true
+  # source without --no-use so nvm activates the default version and adds its bin/ to PATH
+  source "$HOME/.nvm/nvm.sh" 2>/dev/null || true
 fi
 
 # 加载 .env

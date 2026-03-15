@@ -21,10 +21,11 @@ cd "$REPO_ROOT"
 
 # ── cron PATH 修复：确保 claude 和 node 可用 ──────────────────────────────────
 export PATH="$HOME/.local/bin:$PATH"
-# nvm node（取当前激活版本）
+# nvm node（激活默认版本，将其 bin/ 加入 PATH）
 if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
   # shellcheck source=/dev/null
-  source "$HOME/.nvm/nvm.sh" --no-use 2>/dev/null || true
+  # source without --no-use so nvm activates the default version and adds its bin/ to PATH
+  source "$HOME/.nvm/nvm.sh" 2>/dev/null || true
 fi
 
 # 加载 .env
