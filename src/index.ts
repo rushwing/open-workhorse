@@ -1,3 +1,6 @@
+import { execFile } from "node:child_process";
+import { resolve } from "node:path";
+import { promisify } from "node:util";
 import { OpenClawReadonlyAdapter } from "./adapters/openclaw-readonly";
 import { createToolClient } from "./clients/factory";
 import {
@@ -75,11 +78,24 @@ async function start(): Promise<void> {
 
 void start();
 
+const execFileAsync = promisify(execFile);
+
 async function runCommand(
-  command: "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat",
+  command: "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat" | "pandas-heartbeat",
   adapter: OpenClawReadonlyAdapter,
   arg?: string,
 ): Promise<void> {
+  if (command === "pandas-heartbeat") {
+    const scriptPath = resolve(process.cwd(), "scripts/pandas-heartbeat.sh");
+    const { stdout, stderr } = await execFileAsync("bash", [scriptPath], {
+      env: process.env,
+      cwd: process.cwd(),
+    });
+    if (stdout) process.stdout.write(stdout);
+    if (stderr) process.stderr.write(stderr);
+    return;
+  }
+
   assertCommandOperationGate(command);
 
   if (command === "backup-export") {
@@ -205,7 +221,7 @@ async function runCommand(
 }
 
 function assertCommandOperationGate(
-  command: "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat",
+  command: "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat" | "pandas-heartbeat",
 ): void {
   if (!LOCAL_TOKEN_AUTH_REQUIRED) return;
   if (LOCAL_API_TOKEN !== "") return;
@@ -216,7 +232,7 @@ function assertCommandOperationGate(
 
 function normalizeCommand(
   input: string | undefined,
-): "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat" | undefined {
+): "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat" | "pandas-heartbeat" | undefined {
   if (!input) return undefined;
   const trimmed = input.trim().toLowerCase();
   if (trimmed === "") return undefined;
@@ -224,8 +240,9 @@ function normalizeCommand(
   if (trimmed === "import-validate") return "import-validate";
   if (trimmed === "acks-prune") return "acks-prune";
   if (trimmed === "task-heartbeat") return "task-heartbeat";
+  if (trimmed === "pandas-heartbeat") return "pandas-heartbeat";
   throw new Error(
-    `Unknown command '${input}'. Supported: backup-export, import-validate, acks-prune, task-heartbeat.`,
+    `Unknown command '${input}'. Supported: backup-export, import-validate, acks-prune, task-heartbeat, pandas-heartbeat.`,
   );
 }
 
