@@ -78,12 +78,12 @@ Standalone file: [INSTALL_PROMPT.en.md](INSTALL_PROMPT.en.md).
 <summary>Expand install prompt</summary>
 
 ```text
-You are installing and connecting OpenClaw Control Center to this machine's OpenClaw environment.
+You are installing and connecting open-workhorse to this machine's OpenClaw environment.
 
 Your goal is not to explain theory. Your goal is to complete a safe first-run setup end to end.
 
 Hard rules:
-1. Work only inside the control-center repository.
+1. Work only inside the open-workhorse repository.
 2. Do not modify application source code unless I explicitly ask.
 3. Do not modify OpenClaw's own config files.
 4. Do not enable live import or approval mutations.

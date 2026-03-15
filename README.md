@@ -78,12 +78,12 @@ UI_MODE=true npm run dev
 <summary>展开安装指令</summary>
 
 ```text
-你现在要帮我把 OpenClaw Control Center 安装并接到这台机器自己的 OpenClaw 环境上。
+你现在要帮我把 open-workhorse 安装并接到这台机器自己的 OpenClaw 环境上。
 
 你的目标不是解释原理，而是直接完成一次安全的首次接入。
 
 严格约束：
-1. 只允许在 control-center 仓库里工作。
+1. 只允许在 open-workhorse 仓库里工作。
 2. 除非我明确要求，否则不要修改应用源码。
 3. 不要修改 OpenClaw 自己的配置文件。
 4. 不要开启 live import，不要开启 approval mutation。
