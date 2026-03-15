@@ -1,24 +1,12 @@
-const env = {
-  UI_MODE: process.env.UI_MODE ?? "true",
-  UI_PORT: process.env.UI_PORT ?? "4310",
-  READONLY_MODE: process.env.READONLY_MODE ?? "true",
-  LOCAL_TOKEN_AUTH_REQUIRED: process.env.LOCAL_TOKEN_AUTH_REQUIRED ?? "true",
-  MONITOR_CONTINUOUS: process.env.MONITOR_CONTINUOUS ?? "true",
-  GATEWAY_URL: process.env.GATEWAY_URL ?? "ws://127.0.0.1:18789",
-};
-
-if (process.env.LOCAL_API_TOKEN) {
-  env.LOCAL_API_TOKEN = process.env.LOCAL_API_TOKEN;
-}
-
+// All runtime config is read from .env via --env-file-if-exists=.env
+// Do NOT hardcode tokens or environment-specific values here.
 module.exports = {
   apps: [
     {
-      name: "pandas-control-center",
+      name: "open-workhorse",
       cwd: __dirname,
       script: "node",
-      args: "--import tsx src/index.ts",
-      env,
+      args: "--env-file-if-exists=.env --import tsx src/index.ts",
       autorestart: true,
       max_restarts: 10,
       restart_delay: 2000,
