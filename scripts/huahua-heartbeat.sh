@@ -121,8 +121,8 @@ ${pr_diff}
 1. Read the diff above and any referenced files
 2. Check for: bugs, regressions, unsafe assumptions, missing tests, data integrity risks
 3. Post review using: gh pr review ${pr_number} --request-changes -b '<findings>' OR gh pr review ${pr_number} --approve -b 'LGTM'
-4. If approved, write inbox message to ~/shared-resources/inbox/for-pandas/ with type=dev_complete, req_id=${req_id}, pr_number=${pr_number}, status=success
-5. If changes requested, write inbox message with type=review_blocked, req_id=${req_id}, pr_number=${pr_number}, status=blocked, blocking_reason=<summary>"
+4. If approved, write inbox message to ${SHARED_RESOURCES_ROOT:-\${HOME}/Dev/everything_openclaw/personas/shared-resources}/inbox/for-pandas/ with type=dev_complete, req_id=${req_id}, pr_number=${pr_number}, status=success
+5. If changes requested, write inbox message to ${SHARED_RESOURCES_ROOT:-\${HOME}/Dev/everything_openclaw/personas/shared-resources}/inbox/for-pandas/ with type=review_blocked, req_id=${req_id}, pr_number=${pr_number}, status=blocked, blocking_reason=<summary>"
         ;;
       *)
         warn "未知消息类型: ${type}（文件: $(basename "$msg_file")）— 已跳过"
