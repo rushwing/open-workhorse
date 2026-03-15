@@ -42,7 +42,7 @@ flowchart LR
 | 2 | Implementation | 功能实现 | **claude_code** | [requirement-standard](requirement-standard.md) §9.1 | ✅ active |
 | 3 | Test Automation | 测试自动化 | claude_code | [testing-standard](testing-standard.md) §2 | ✅ active |
 | 4 | Quality Gate | 质量门禁 | CI (automated) | [ci-standard](ci-standard.md) | ✅ active |
-| 5 | Code Review | 代码审查 | **Huahua**（review owner） | [review-standard](review-standard.md) | 🔲 stub |
+| 5 | Code Review | 代码审查 | **Huahua**（review owner） | [review-standard](review-standard.md) | ✅ active |
 | 6 | Bug Fix & Regression | 缺陷修复与回归 | **claude_code** | [bug-standard](bug-standard.md) §5–6 | ✅ active |
 | 7 | Delivery | 合并交付 | HITL (PR merge) | [requirement-standard](requirement-standard.md) §9.3 | ✅ active |
 
@@ -60,7 +60,7 @@ flowchart LR
 | 需求管理 | [requirement-standard.md](requirement-standard.md) | ✅ active |
 | 测试规范 | [testing-standard.md](testing-standard.md) | ✅ active |
 | Bug 管理 | [bug-standard.md](bug-standard.md) | ✅ active |
-| 代码审查 | [review-standard.md](review-standard.md) | 🔲 stub — 已知原则可参考，完整规则待补 |
+| 代码审查 | [review-standard.md](review-standard.md) | ✅ active — Pandas 触发→Huahua（CodeX）review→Telegram HITL 合并 |
 | CI / 质量门禁 | [ci-standard.md](ci-standard.md) | ✅ active |
 | Agent CLI 调用模板 | [agent-cli-playbook.md](agent-cli-playbook.md) | ✅ active — 模板 A–J，覆盖实现、Bug 修复、Fix Review、一致性审查 |
 
@@ -70,9 +70,10 @@ flowchart LR
 
 | 角色 | 主导阶段 | 说明 |
 |---|---|---|
-| claude_code | 1–3, 6 | 认领任务、实现代码、测试自动化、Bug 修复 |
-| huahua | 5 | Code review（review owner）；findings 回传 pandas / claude_code |
-| human (Daniel) | 7 | PR merge judgment（HITL gate）—— 不做 code review，只做合并决策 |
+| **pandas**（orchestrator） | 全流程协调 | 轮询任务队列、触发 Menglan 实现、通知 Huahua review、发 Telegram HITL 告警；**不读 PR diff，不发 review comments** |
+| **menglan**（claude_code） | 1–3, 6 | 认领任务、实现代码、测试自动化、Bug 修复、修复 review findings |
+| **huahua** | 5 | Code review（review owner）；使用 CodeX + GH LLM Issue Orchestrator；findings 以 PR review comments 形式输出 |
+| **human (Daniel)** | 7 | PR merge judgment（HITL gate）—— 通过 Telegram [Merge] 按钮或手动合并；不做 code review |
 
 ---
 
@@ -102,20 +103,29 @@ tasks/
 
 ---
 
-## 自动化流程（Git-Native Orchestration）
+## 自动化流程（Semi-Autonomous Loop）
 
-当前阶段采用 Git-Native 方式驱动循环，不依赖常驻服务：
+当前采用半自治循环：Pandas 编排，Daniel 通过 Telegram 做最终决策。
 
 ```
 PR merged to main
     └─▶ GitHub Action: ci.yml (req-coverage job)
             └─▶ 扫描 tasks/features/：frontmatter 校验 + orphan/ghost 检测
-                └─▶ 人工查看 ./scripts/harness.sh status 决定下一步
-                └─▶ 手动触发 claude_code 认领实现（harness.sh implement）
+
+Pandas orchestration loop（模板 K）：
+    └─▶ harness.sh status → 有可认领任务
+            └─▶ harness.sh implement <REQ-N>（触发 Menglan）
+                    └─▶ Menglan 开 PR
+                            └─▶ Pandas 通知 Huahua review（GH issue）
+                                    └─▶ Huahua（CodeX）输出 review comments
+                                            └─▶ Pandas 触发 fix-review（如有 blocking findings）
+                                                    └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
+
+dev-cycle-watchdog（每 5h cron）：
+    └─▶ 检测 in_progress 任务停滞 / PR 无 review → Telegram 告警 Daniel
 ```
 
-> 单 Agent 模式：无 Pass 1/Pass 2 的 TC 设计自动分派。
-> TC 设计（`tc_policy=required`）由 claude_code 在实现前完成，或在 ready 阶段由 Daniel 人工设计。
+> TC 设计（`tc_policy=required`）由 Menglan 在实现前完成，或在 ready 阶段由 Daniel 人工设计。
 
 ---
 
@@ -124,3 +134,4 @@ PR merged to main
 | 版本 | 日期 | 变更摘要 |
 |---|---|---|
 | 0.1 | 2026-03-15 | 初始版本（从 hydro-om-copilot 改写）；适配单 Agent 模式（删去 openai_codex）；TC 设计内嵌为实现前步骤；删去 kb-ingestion-standard |
+| 0.2 | 2026-03-15 | 引入 Pandas orchestrator 角色（不读 PR diff）；将 claude_code 明确为 Menglan；Huahua review 方式改为 CodeX + GH LLM Issue Orchestrator；自动化流程更新为 semi-autonomous loop（Telegram HITL + watchdog cron）；review-standard 更新为 active |

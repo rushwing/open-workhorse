@@ -6,8 +6,13 @@
 #   ./scripts/harness.sh implement <REQ-N>   # Claude Code 认领并实现需求
 #   ./scripts/harness.sh bugfix <BUG-N>      # Claude Code 认领并修复 Bug
 #   ./scripts/harness.sh fix-review <PR#>    # Claude Code 修复 PR review comments
+#   ./scripts/harness.sh tc-review <PR#>     # Menglan 评审 TC PR（adequate/missing-branch/redundant）
 
 set -euo pipefail
+
+# 抑制交互式提示：gh CLI、npm 等工具在 CI=true 时自动非交互
+export CI=true
+export GH_NO_UPDATE_NOTIFIER=1
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -233,6 +238,7 @@ cmd_implement() {
   local prompt
   prompt="Read CLAUDE.md and harness/harness-index.md.
 Your task: implement ${req_id}.
+Do not ask clarifying questions — proceed with your best judgment at every step.
 
 Steps:
 1. Read ${req_file} and all test_case_ref TC files before writing any code
@@ -241,7 +247,7 @@ Steps:
 4. Write tests first (or confirm TC is runnable), then implement
 5. Before opening PR: npm run release:audit && npm run build && npm test
 6. Update ${req_file}: status=review, fill Agent Notes with implementation notes
-7. Open PR with title matching 'feat: ${req_id} ...' or 'fix: ${req_id} ...'
+7. Open PR using: gh pr create --fill
 "
 
   "${CLAUDE_CMD[@]}" "$prompt"
@@ -289,6 +295,7 @@ cmd_bugfix() {
   local prompt
   prompt="Read harness/bug-standard.md.
 Your task: fix ${bug_id}.
+Do not ask clarifying questions — proceed with your best judgment at every step.
 
 Steps:
 1. Create branch: fix/${bug_id}-<short-desc>
@@ -297,7 +304,7 @@ Steps:
 4. Fix the bug + add regression test (node:test)
 5. Final commit: set status=fixed, fill 根因分析 and 修复方案 in ${bug_file}
 6. npm run release:audit && npm run build && npm test must pass
-7. Open PR
+7. Open PR using: gh pr create --fill
 "
 
   "${CLAUDE_CMD[@]}" "$prompt"
@@ -325,6 +332,7 @@ cmd_fix_review() {
 
   local prompt
   prompt="Read harness/review-standard.md.
+Do not ask clarifying questions — proceed with your best judgment at every step.
 
 ## Pre-fetched context for PR #${pr_num}
 
@@ -348,6 +356,118 @@ Do NOT merge the PR — HITL merge only.
 "
 
   "${CLAUDE_CMD[@]}" "$prompt"
+}
+
+cmd_tc_review() {
+  local pr_num="${1:-}"
+  if [[ -z "$pr_num" ]]; then
+    err "用法：./scripts/harness.sh tc-review <PR号>"
+    exit 1
+  fi
+
+  info "获取 TC PR #${pr_num} 的 review comments..."
+
+  local top_comments inline_comments
+  top_comments="$(gh pr view "$pr_num" --json reviews --jq '.reviews[] | "### Review by \(.author.login) [\(.state)]\n\(.body)"' 2>/dev/null || echo "(无法获取 review，请确认 gh 已认证)")"
+  if [[ -z "$GH_REPO" ]]; then
+    err "无法解析仓库 owner/repo，请确认 gh 已认证且当前目录是 GitHub 仓库"
+    exit 1
+  fi
+  inline_comments="$(gh api "repos/${GH_REPO}/pulls/${pr_num}/comments" --jq '.[] | "File: \(.path) line \(.line // .original_line)\nComment: \(.body)\nID: \(.id)"' 2>/dev/null || echo "(无法获取 inline comments)")"
+
+  # 从 PR 标题中提取 REQ id（格式如 "feat: REQ-021 ..."）
+  local pr_title req_hint
+  pr_title="$(gh pr view "$pr_num" --json title --jq '.title' 2>/dev/null || echo "")"
+  req_hint="$(echo "$pr_title" | grep -oE 'REQ-[0-9]+' | head -1 || true)"
+
+  log_session "tc-review" "#$pr_num"
+
+  local prompt
+  prompt="Read harness/testing-standard.md.
+Do not ask clarifying questions — proceed with your best judgment at every step.
+
+## Pre-fetched context for TC PR #${pr_num}${req_hint:+ (${req_hint})}
+
+### Top-level review summaries
+${top_comments}
+
+### Inline review comments
+${inline_comments}
+
+## Your task
+Review TC coverage in PR #${pr_num}${req_hint:+ for ${req_hint}} against the REQ acceptance criteria.
+
+For each TC, label it exactly one of:
+- **adequate** — covers the stated acceptance criterion
+- **missing-branch** — acceptance criterion exists but no TC covers it
+- **redundant** — duplicates another TC without adding coverage value
+
+Rules:
+1. Report findings only — do NOT modify any TC files
+2. Do not ask clarifying questions
+3. After labelling all TCs, conclude with exactly one of:
+   - \`tc-review: APPROVED\` (all TCs adequate, no missing branches)
+   - \`tc-review: NEEDS_CHANGES\` (one or more missing-branch or other issues found)
+"
+
+  "${CLAUDE_CMD[@]}" "$prompt"
+}
+
+cmd_runbook() {
+  local keyword="${1:-}"
+  local runbook_dir="$REPO_ROOT/harness/runbook"
+
+  if [[ ! -d "$runbook_dir" ]]; then
+    warn "harness/runbook/ 目录不存在"
+    return 0
+  fi
+
+  local entries=()
+  for f in "$runbook_dir"/RB-*.md; do
+    [[ -f "$f" ]] || continue
+    entries+=("$f")
+  done
+
+  if [[ ${#entries[@]} -eq 0 ]]; then
+    info "harness/runbook/ 中暂无条目"
+    return 0
+  fi
+
+  if [[ -n "$keyword" ]]; then
+    info "搜索 runbook（关键词：${keyword}）..."
+    echo ""
+    local found=0
+    for f in "${entries[@]}"; do
+      if grep -qi "$keyword" "$f"; then
+        local rb_id title trigger
+        rb_id="$(awk -F': ' '/^runbook_id:/{print $2}' "$f" | tr -d ' ')"
+        title="$(awk -F': ' '/^title:/{print $2}' "$f")"
+        trigger="$(awk -F': ' '/^trigger_command:/{print $2}' "$f")"
+        echo -e "  ${CYAN}${rb_id}${NC}  ${title}"
+        [[ -n "$trigger" ]] && echo -e "           trigger: ${trigger}"
+        echo ""
+        found=$(( found + 1 ))
+      fi
+    done
+    if [[ $found -eq 0 ]]; then
+      info "未找到匹配「${keyword}」的 runbook 条目"
+    else
+      ok "共 ${found} 条匹配"
+    fi
+  else
+    info "所有 runbook 条目："
+    echo ""
+    for f in "${entries[@]}"; do
+      local rb_id title trigger
+      rb_id="$(awk -F': ' '/^runbook_id:/{print $2}' "$f" | tr -d ' ')"
+      title="$(awk -F': ' '/^title:/{print $2}' "$f")"
+      trigger="$(awk -F': ' '/^trigger_command:/{print $2}' "$f")"
+      echo -e "  ${CYAN}${rb_id}${NC}  ${title}"
+      [[ -n "$trigger" ]] && echo -e "           trigger: ${trigger}"
+      echo -e "           文件：${f}"
+      echo ""
+    done
+  fi
 }
 
 # ── 入口 ──────────────────────────────────────────────────────────────────────
@@ -374,6 +494,14 @@ case "$COMMAND" in
     shift
     cmd_fix_review "${1:-}"
     ;;
+  tc-review)
+    shift
+    cmd_tc_review "${1:-}"
+    ;;
+  runbook)
+    shift
+    cmd_runbook "${1:-}"
+    ;;
   "")
     echo "用法：./scripts/harness.sh <命令> [参数]"
     echo ""
@@ -382,10 +510,13 @@ case "$COMMAND" in
     echo "  implement <REQ-N>   Claude Code 认领并实现需求"
     echo "  bugfix <BUG-N>      Claude Code 认领并修复 Bug"
     echo "  fix-review <PR#>    Claude Code 修复 PR review comments"
+    echo "  tc-review <PR#>     Menglan 评审 TC PR（adequate/missing-branch/redundant）"
+    echo "  runbook [keyword]   列出 / 搜索 harness/runbook/ 条目"
     echo ""
     echo "环境变量："
     echo "  CLAUDE_APPROVAL     覆盖 claude 默认的 --dangerously-skip-permissions"
     echo "  FORCE=true          跳过认领前提检查（implement 子命令）"
+    echo "  DRY_RUN=true        dev-cycle-watchdog 专用：仅打印不发 Telegram"
     exit 0
     ;;
   *)
