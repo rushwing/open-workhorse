@@ -63,7 +63,10 @@ case "$CMD" in
 esac
 
 # ── 安装（幂等：先移除旧条目，再写入新条目）──────────────────────────────────
-(crontab -l 2>/dev/null | grep -v "$CRON_MARKER"
+# crontab -l exits non-zero when no crontab exists; capture with || true so
+# set -e does not abort on a clean first-run machine.
+existing_crontab="$(crontab -l 2>/dev/null || true)"
+(echo "$existing_crontab" | grep -v "$CRON_MARKER"
  echo "${CRON_EXPR} ${CRON_CMD} ${CRON_MARKER}") | crontab -
 
 echo "pandas-heartbeat cron installed"
