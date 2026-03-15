@@ -24,7 +24,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 # 加载 .env（如果存在）
 if [[ -f "$REPO_ROOT/.env" ]]; then
