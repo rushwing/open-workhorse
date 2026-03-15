@@ -28,7 +28,7 @@ last_updated: 2026-03-15
 
 - [ ] 一键部署脚本在全新 Pi 上 < 15 min 跑通（有录屏或日志证明）
 - [ ] Tiger 可管控 Pi 设备状态（重启服务、报告健康、触发更新）
-- [ ] `systemctl --user status openclaw` 显示 active
+- [ ] `systemctl --user status open-workhorse` 显示 active（对应 `open-workhorse.service`）
 
 ## Dependencies
 
