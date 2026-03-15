@@ -193,8 +193,9 @@ main() {
 
   for msg_file in "${INBOX}"/*.md; do
     [[ -f "$msg_file" ]] || continue
-    local req_id
+    local req_id msg_type
     req_id="$(_get_fm_field "$msg_file" "req_id")"
+    msg_type="$(_get_fm_field "$msg_file" "type")"
 
     if _process_message "$msg_file"; then
       rm -f "$msg_file"
@@ -205,7 +206,11 @@ main() {
       mkdir -p "$DEAD_LETTER"
       mv "$msg_file" "${DEAD_LETTER}/"
       ok "已移至 dead-letter: $(basename "$msg_file")"
-      _rollback_task "$req_id"
+      # code_review 失败时 REQ 已在 review 状态（dev PR 存在），不回退任务状态
+      # 其他类型（tc_design 等）仍执行回退
+      if [[ "$msg_type" != "code_review" ]]; then
+        _rollback_task "$req_id"
+      fi
       _notify_pandas_failure "$(basename "$msg_file")" \
         "exit ${exit_code} — 详见 ${DEAD_LETTER}/$(basename "$msg_file")" \
         "$req_id"
