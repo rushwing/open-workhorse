@@ -99,24 +99,36 @@ tg_poll_commands() {
   ok="$(echo "$updates" | grep -o '"ok":true' || true)"
   [[ -z "$ok" ]] && return 0
 
-  # 遍历每条 update，仅输出来自目标 CHAT_ID 的文本消息
+  # 用 python3 解析完整 JSON，避免 grep 在嵌套对象中截断
+  local parsed
+  parsed="$(echo "$updates" | python3 - "$CHAT_ID" <<'PYEOF'
+import json, sys
+data = json.load(sys.stdin)
+target_chat = sys.argv[1]
+for u in data.get("result", []):
+    msg = u.get("message", {})
+    if str(msg.get("chat", {}).get("id", "")) == target_chat and msg.get("text"):
+        # 输出 update_id<TAB>text，text 可含空格
+        print(str(u["update_id"]) + "\t" + msg["text"])
+PYEOF
+2>/dev/null || true)"
+
   local max_update_id=""
-  while IFS= read -r line; do
-    local uid chat_id text
-    uid="$(echo "$line"   | grep -o '"update_id":[0-9]*' | head -1 | cut -d: -f2 || true)"
-    chat_id="$(echo "$line" | grep -oP '"chat":\{"id":\K-?[0-9]+' 2>/dev/null \
-               || echo "$line" | grep -o '"id":-\?[0-9]*' | head -1 | cut -d: -f2 || true)"
-    text="$(echo "$line" | grep -o '"text":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+  while IFS=$'\t' read -r uid text; do
+    [[ -z "$uid" ]] && continue
+    echo "$text"
+    max_update_id="$uid"
+  done <<< "$parsed"
 
-    if [[ -n "$uid" && "$chat_id" == "$CHAT_ID" && -n "$text" ]]; then
-      echo "$text"
-      max_update_id="$uid"
-    fi
-  done < <(echo "$updates" | grep -o '"update_id":[0-9]*[^}]*}' || true)
-
-  # 推进 offset，标记已消费
+  # 推进 offset，标记已消费（即使无匹配消息也推进，避免重复处理）
+  local last_uid
+  last_uid="$(echo "$updates" | python3 -c \
+    'import json,sys; r=json.load(sys.stdin).get("result",[]); print(r[-1]["update_id"]) if r else None' \
+    2>/dev/null || true)"
   if [[ -n "$max_update_id" ]]; then
     echo $(( max_update_id + 1 )) > "$offset_file"
+  elif [[ -n "$last_uid" && "$last_uid" != "None" ]]; then
+    echo $(( last_uid + 1 )) > "$offset_file"
   fi
 }
 
@@ -150,29 +162,45 @@ tg_decision() {
   msg_id="$(echo "$result" | grep -o '"message_id":[0-9]*' | head -1 | cut -d: -f2)"
 
   # 轮询 getUpdates 等待 callback_query，默认最多 86400 秒（24h）
+  # 用 python3 遍历批次中所有 callback_query，避免第一条不匹配时漏掉后续正确回调
   echo "[telegram] waiting for decision (timeout ${timeout}s, poll every ${poll_interval}s)..." >&2
   local offset=0 elapsed=0 chosen=""
   while [[ $elapsed -lt $timeout ]]; do
     local updates
     updates="$(curl -s "${TG_API}/getUpdates?offset=${offset}&timeout=0&allowed_updates=%5B%22callback_query%22%5D" 2>/dev/null || echo '{}')"
-    local callback_msg_id
-    callback_msg_id="$(echo "$updates" | grep -o '"message_id":[0-9]*' | head -1 | cut -d: -f2 || true)"
 
-    if [[ "$callback_msg_id" == "$msg_id" ]]; then
-      chosen="$(echo "$updates" | grep -o '"data":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+    # 在批次中查找与 msg_id 匹配的 callback_query；输出 update_id<TAB>cb_id<TAB>data
+    local matched
+    matched="$(echo "$updates" | python3 - "$msg_id" <<'PYEOF'
+import json, sys
+data = json.load(sys.stdin)
+target = sys.argv[1]
+for u in data.get("result", []):
+    cq = u.get("callback_query", {})
+    if str(cq.get("message", {}).get("message_id", "")) == target:
+        print("\t".join([str(u["update_id"]), str(cq["id"]), cq.get("data", "")]))
+        break
+PYEOF
+2>/dev/null || true)"
+
+    if [[ -n "$matched" ]]; then
+      local match_uid cb_id chosen_val
+      IFS=$'\t' read -r match_uid cb_id chosen_val <<< "$matched"
+      chosen="$chosen_val"
       # ack callback
-      local cb_id
-      cb_id="$(echo "$updates" | grep -o '"id":"[0-9]*"' | head -1 | cut -d'"' -f4 || true)"
       curl -s -X POST "${TG_API}/answerCallbackQuery" \
         -H "Content-Type: application/json" \
         -d "{\"callback_query_id\":\"${cb_id}\"}" >/dev/null 2>&1 || true
+      offset=$(( match_uid + 1 ))
       break
     fi
 
-    # 更新 offset
-    local update_id
-    update_id="$(echo "$updates" | grep -o '"update_id":[0-9]*' | tail -1 | cut -d: -f2 || true)"
-    [[ -n "$update_id" ]] && offset=$(( update_id + 1 ))
+    # 推进 offset 跳过已处理的 updates
+    local last_uid
+    last_uid="$(echo "$updates" | python3 -c \
+      'import json,sys; r=json.load(sys.stdin).get("result",[]); print(r[-1]["update_id"]) if r else None' \
+      2>/dev/null || true)"
+    [[ -n "$last_uid" && "$last_uid" != "None" ]] && offset=$(( last_uid + 1 ))
 
     sleep "$poll_interval"
     elapsed=$(( elapsed + poll_interval ))

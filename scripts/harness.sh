@@ -375,10 +375,22 @@ cmd_tc_review() {
   fi
   inline_comments="$(gh api "repos/${GH_REPO}/pulls/${pr_num}/comments" --jq '.[] | "File: \(.path) line \(.line // .original_line)\nComment: \(.body)\nID: \(.id)"' 2>/dev/null || echo "(无法获取 inline comments)")"
 
-  # 从 PR 标题中提取 REQ id（格式如 "feat: REQ-021 ..."）
-  local pr_title req_hint
-  pr_title="$(gh pr view "$pr_num" --json title --jq '.title' 2>/dev/null || echo "")"
-  req_hint="$(echo "$pr_title" | grep -oE 'REQ-[0-9]+' | head -1 || true)"
+  # 从三个来源依次提取 REQ id，优先级：branch name > PR title > changed files
+  local pr_info req_hint=""
+  pr_info="$(gh pr view "$pr_num" --json title,headRefName 2>/dev/null || echo '{}')"
+  # 1. branch name（如 tc/REQ-021-slug 或 feat/REQ-021-...）
+  req_hint="$(echo "$pr_info" | grep -o '"headRefName":"[^"]*"' | cut -d'"' -f4 \
+              | grep -oE 'REQ-[0-9]+' | head -1 || true)"
+  # 2. PR title
+  if [[ -z "$req_hint" ]]; then
+    req_hint="$(echo "$pr_info" | grep -o '"title":"[^"]*"' | cut -d'"' -f4 \
+                | grep -oE 'REQ-[0-9]+' | head -1 || true)"
+  fi
+  # 3. changed files（tasks/features/REQ-*.md が含まれていれば）
+  if [[ -z "$req_hint" ]]; then
+    req_hint="$(gh pr view "$pr_num" --json files --jq '.[].path' 2>/dev/null \
+                | grep -oE 'REQ-[0-9]+' | head -1 || true)"
+  fi
 
   # 加载 REQ 文件内容（acceptance criteria + test case design notes）供 prompt 引用
   local req_contract=""
