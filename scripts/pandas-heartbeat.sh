@@ -27,7 +27,7 @@ cd "$REPO_ROOT"
 if [[ -f "$REPO_ROOT/.env" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
-    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT|TELEGRAM_|DEV_WATCHDOG_) ]] || continue
+    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT|TELEGRAM_|DEV_WATCHDOG_|GITHUB_REPO) ]] || continue
     local_var="${line%%=*}"
     # Skip if already set in environment (env wins over .env file)
     [[ "${!local_var+X}" == "X" ]] && continue
@@ -79,7 +79,8 @@ inbox_write() {
   date_str="$(date +%Y-%m-%d)"
   local slug
   slug="$(echo "${type}-${req_id}" | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
-  local filename="${date_str}-pandas-${slug}.md"
+  # Append PID + RANDOM to prevent same-day same-type collision (silent overwrite bug)
+  local filename="${date_str}-pandas-${slug}-$$-${RANDOM}.md"
   local target_dir="${INBOX_ROOT}/for-${target}"
   mkdir -p "$target_dir"
 
@@ -158,7 +159,14 @@ _handle_dev_complete() {
   local req_id="$1" pr_number="$2" summary="$3" status="$4" blocking_reason="$5"
   if [[ "$status" == "success" ]]; then
     info "dev_complete(success): ${req_id} PR #${pr_number} — 发送 PR 合并通知"
-    local pr_url="https://github.com/pull/${pr_number:-unknown}"
+    local repo
+    repo="${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed 's|.*github\.com[:/]||; s|\.git$||' || true)}"
+    local pr_url
+    if [[ -n "$repo" && -n "$pr_number" ]]; then
+      pr_url="https://github.com/${repo}/pull/${pr_number}"
+    else
+      pr_url="${pr_number:-unknown}"
+    fi
     tg_pr_ready "${pr_url}" "${summary}" || \
       warn "tg_pr_ready 调用失败（Telegram 未配置？）"
   else
@@ -432,8 +440,14 @@ auto_claim() {
 
   ok "已认领 ${req_id}"
 
-  # 触发 TC 设计（写消息到 Huahua inbox）
-  inbox_write "huahua" "tc_design" "$req_id" "TC 设计请求：${title}"
+  # 路由：test_designed (tier=0) 或 ready+optional/exempt (tier=1) 均跳过 TC 设计，直接 implement
+  if [[ $best_status_tier -eq 0 ]]; then
+    # status=test_designed: TC 已完成，直接路由到 Menglan 实现
+    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（TC 已完成 / test_designed）"
+  else
+    # status=ready, tc_policy=optional/exempt: 跳过 TC，直接路由到 Menglan 实现
+    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（tc_policy=exempt/optional，跳过 TC 设计）"
+  fi
 }
 
 # auto_claim_specific <req_id> — 认领特定 REQ（Telegram start 指令）
@@ -459,9 +473,18 @@ auto_claim_specific() {
   rm -f "${req_file}.bak"
 
   ok "Telegram 触发认领: ${req_id}"
-  local title
+  local title tc_policy orig_status
   title="$(_get_fm_field "$req_file" "title")"
-  inbox_write "huahua" "tc_design" "$req_id" "TC 设计请求（Telegram 触发）：${title}"
+  tc_policy="$(_get_fm_field "$req_file" "tc_policy")"
+  orig_status="$(_get_fm_field "$req_file" "status")"
+
+  # TC 已完成或无需 TC → 直接路由到 Menglan；否则路由到 Huahua 做 TC 设计
+  if [[ "$orig_status" == "test_designed" || \
+        "$tc_policy" == "exempt" || "$tc_policy" == "optional" ]]; then
+    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（Telegram 触发）：${title}"
+  else
+    inbox_write "huahua" "tc_design" "$req_id" "TC 设计请求（Telegram 触发）：${title}"
+  fi
 }
 
 # ── REQ-022: 停滞检测 ─────────────────────────────────────────────────────────
