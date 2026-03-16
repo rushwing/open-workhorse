@@ -7,6 +7,7 @@ runtime/
 # Pandas orchestration runtime state (per-device, not for repo)
 .pandas_tg_offset
 .pandas_hold
+.harness_sessions
 
 # IDE / editor
 .idea/
