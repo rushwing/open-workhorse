@@ -4,19 +4,30 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Scan only git-tracked files to match the CI environment exactly.
+# This prevents local-only files (.env, .claude/, etc.) from causing false failures.
 FILES=()
-while IFS= read -r file; do
-  FILES+=("$file")
-done < <(
-  find . -type f \
-    -not -path './.git/*' \
-    -not -path './.pr-reviews/*' \
-    -not -path './node_modules/*' \
-    -not -path './dist/*' \
-    -not -path './runtime/*' \
-    -not -path './coverage/*' \
-    -not -path './scripts/release-audit.sh'
-)
+if [ -d ".git" ]; then
+  while IFS= read -r file; do
+    # Exclude this script itself from the scan
+    [[ "$file" == "scripts/release-audit.sh" ]] && continue
+    [[ -f "$file" ]] && FILES+=("./$file")
+  done < <(git ls-files)
+else
+  # Fallback when not in a git repo (e.g. extracted tarball)
+  while IFS= read -r file; do
+    FILES+=("$file")
+  done < <(
+    find . -type f \
+      -not -path './.git/*' \
+      -not -path './.pr-reviews/*' \
+      -not -path './node_modules/*' \
+      -not -path './dist/*' \
+      -not -path './runtime/*' \
+      -not -path './coverage/*' \
+      -not -path './scripts/release-audit.sh'
+  )
+fi
 
 if [ "${#FILES[@]}" -eq 0 ]; then
   echo "release-audit: no source files found" >&2
