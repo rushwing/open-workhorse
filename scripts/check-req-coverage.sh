@@ -10,6 +10,15 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# source .env（如存在），使 AGENT_* 变量可用
+# shellcheck source=/dev/null
+[[ -f ".env" ]] && source ".env"
+
+# Agent 名称（.env 未设置时使用默认值）
+AGENT_ORCHESTRATOR="${AGENT_ORCHESTRATOR:-pandas}"
+AGENT_CODER="${AGENT_CODER:-menglan}"
+AGENT_REVIEWER="${AGENT_REVIEWER:-huahua}"
+
 FAIL=0
 WARN_COUNT=0
 ERROR_COUNT=0
@@ -72,7 +81,8 @@ REQUIRED_FIELDS=("req_id" "title" "status" "priority" "phase" "owner" "depends_o
 STATUS_ENUM="draft req_review ready test_designed in_progress blocked review done"
 SCOPE_ENUM="runtime ui tests scripts docs"
 PRIORITY_ENUM="P0 P1 P2 P3"
-OWNER_ENUM="unassigned pandas huahua menglan claude_code human"
+# OWNER_ENUM 由 .env 中的 AGENT_* 变量动态组成；claude_code 保留作 legacy 兼容
+OWNER_ENUM="unassigned ${AGENT_ORCHESTRATOR} ${AGENT_CODER} ${AGENT_REVIEWER} claude_code human"
 
 # 收集所有 TC 文件（用于 orphan 检测）
 ALL_TC_REFS=()
