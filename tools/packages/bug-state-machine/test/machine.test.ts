@@ -377,6 +377,8 @@ describe('Group C — user_bug GitHub sync', () => {
     assert.ok(r1.bugContent?.includes('bug_type: user_bug'));
     assert.ok(r1.bugContent?.includes('github_issue: "99"'));
     assert.ok(r1.bugContent?.includes('status: open'));
+    assert.ok(r1.bugContent?.includes('severity:'), 'severity must be present (required by §3.2)');
+    assert.ok(r1.bugContent?.includes('priority:'), 'priority must be present (required by §3.2)');
     assert.ok(addedLabels.includes('bug-tracked'), 'bug-tracked label must be added');
 
     addedLabels.length = 0;

@@ -85,21 +85,26 @@ export class UserBugSync {
 
   // §8.1 — create local BUG work item from a new GitHub issue (TC-028-22)
   // Returns the YAML frontmatter string for the new BUG-xxx.md (caller handles FS write + commit).
+  // severity/priority default to triage-pending values; caller may override before writing.
   // Idempotent: if the issue already has bug-tracked label, returns { created: false }.
   async createBugFromIssue(
     issue: { number: number; title: string; labels: string[] },
     bugId: string,
+    opts: { severity?: string; priority?: string } = {},
   ): Promise<{ created: boolean; bugContent?: string }> {
     if (issue.labels.includes('bug-tracked')) {
       return { created: false };
     }
+    const severity = opts.severity ?? 'S3';  // triage-pending default
+    const priority = opts.priority ?? 'P2';  // triage-pending default
     const bugContent = [
       '---',
       `bug_id: ${bugId}`,
       `bug_type: user_bug`,
       `title: "${issue.title}"`,
       `status: open`,
-      `github_issue: "${issue.number}"`,
+      `severity: ${severity}`,
+      `priority: ${priority}`,
       `owner: unassigned`,
       `related_req: []`,
       `related_tc: []`,
@@ -108,6 +113,7 @@ export class UserBugSync {
       `reported_by: human`,
       `review_round: 0`,
       `depends_on: []`,
+      `github_issue: "${issue.number}"`,
       `regressing_notified: false`,
       `regressing_notified_at: ""`,
       '---',

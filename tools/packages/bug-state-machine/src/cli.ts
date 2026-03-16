@@ -40,13 +40,16 @@ async function main(): Promise<void> {
         process.exit(1);
       }
 
-      // Warn: REQ blocking/unblocking is silently skipped when related_req is non-empty
+      // Reject: related_req is non-empty — partial transition would advance bug state
+      // while skipping REQ blocking/unblocking, causing queue-state drift.
       if ((bug.related_req?.length ?? 0) > 0) {
         console.error(
-          'Warning: this bug has related_req entries, but the CLI cannot supply relatedReqs or\n' +
-          'allBugs context. REQ blocking/unblocking side effects will NOT be performed.\n' +
-          'Use the programmatic API (applyTransition with relatedReqs + allBugs) for full behavior.',
+          'Error: this bug has related_req entries. The CLI cannot supply relatedReqs or allBugs\n' +
+          'context, so REQ blocking/unblocking side effects cannot be performed.\n' +
+          'Proceeding would leave the bug state advanced while REQs remain in the wrong state.\n' +
+          'Use the programmatic API (applyTransition with relatedReqs + allBugs) instead.',
         );
+        process.exit(1);
       }
 
       const result = await applyTransition(bug, to);
