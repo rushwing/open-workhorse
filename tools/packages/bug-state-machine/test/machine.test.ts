@@ -13,6 +13,7 @@ import {
   unblock,
   validateBugFields,
   IllegalTransitionError,
+  UserBugSync,
 } from '../src/index.js';
 import type {
   BugFrontmatter,
@@ -92,8 +93,8 @@ describe('Group A — internal bug happy paths', () => {
     await applyTransition(bug, 'regressing', { relatedReqs: reqs });
     assert.equal(bug.status, 'regressing');
 
-    // Step 7: regressing → closed
-    await applyTransition(bug, 'closed', { relatedReqs: reqs });
+    // Step 7: regressing → closed (allBugs required for sibling check)
+    await applyTransition(bug, 'closed', { relatedReqs: reqs, allBugs: [bug] });
     assert.equal(bug.status, 'closed');
 
     // Steps 8–10: REQ unblocked
@@ -123,7 +124,7 @@ describe('Group A — internal bug happy paths', () => {
     // in_progress → fixed → regressing → closed
     await applyTransition(bug, 'fixed');
     await applyTransition(bug, 'regressing');
-    await applyTransition(bug, 'closed', { relatedReqs: reqs });
+    await applyTransition(bug, 'closed', { relatedReqs: reqs, allBugs: [bug] });
     assert.equal(bug.status, 'closed');
 
     // REQ restored to blocked_from_status=ready
@@ -145,7 +146,7 @@ describe('Group A — internal bug happy paths', () => {
 
     await applyTransition(bug, 'fixed');
     await applyTransition(bug, 'regressing');
-    await applyTransition(bug, 'closed', { relatedReqs: reqs });
+    await applyTransition(bug, 'closed', { relatedReqs: reqs, allBugs: [bug] });
     assert.equal(bug.status, 'closed');
 
     // REQ restored to in_progress (not req_review or any other state)
@@ -171,7 +172,7 @@ describe('Group A — internal bug happy paths', () => {
 
     await applyTransition(bug, 'fixed');
     await applyTransition(bug, 'regressing');
-    await applyTransition(bug, 'closed', { relatedReqs: reqs });
+    await applyTransition(bug, 'closed', { relatedReqs: reqs, allBugs: [bug] });
     assert.equal(bug.status, 'closed');
 
     // REQ restored to 'review', NOT 'req_review'
@@ -247,17 +248,144 @@ describe('Group B — shared branch paths', () => {
 });
 
 // ---------------------------------------------------------------------------
-// GROUP C — user_bug GitHub sync paths (TC-028-10~13, 21~22) — DEFERRED
-// These tests require a GhSyncService implementation in github-sync package.
+// GROUP C — user_bug GitHub sync paths (TC-028-10~13, 21~22)
+// All implemented using mocked GhClient via UserBugSync.
 // ---------------------------------------------------------------------------
 
-describe('Group C — user_bug GitHub sync (deferred)', () => {
-  test.todo('TC-028-10: user_bug regressing — GitHub issue closed → local status=closed');
-  test.todo('TC-028-11: regressing validation notification is idempotent (sent exactly once)');
-  test.todo('TC-028-12: regressing 14-day timeout → auto-close with comment');
-  test.todo('TC-028-13: regressing < 14 days → no close, remaining days correct');
-  test.todo('TC-028-21: user_bug local status change pushes status:* label to GitHub');
-  test.todo('TC-028-22: create local BUG from new GitHub issue (§8.1) — idempotent');
+describe('Group C — user_bug GitHub sync', () => {
+  const TODAY = '2026-03-16';
+  const makeDate = (isoDate: string) => new Date(isoDate + 'T12:00:00Z');
+
+  test('TC-028-10: user_bug regressing — GitHub issue CLOSED → local status=closed', async () => {
+    const bug = makeBug({
+      bug_type: 'user_bug', status: 'regressing', github_issue: '42',
+    });
+    const issueCloseCalled: number[] = [];
+    const gh = makeGhMock({
+      issueView: async () => ({ state: 'CLOSED' }),
+      issueClose: async (n) => { issueCloseCalled.push(Number(n)); },
+    });
+    const sync = new UserBugSync(gh);
+    await sync.syncClose(bug);
+
+    assert.equal(bug.status, 'closed');
+    assert.ok(bug.agent_notes?.includes('closed'), 'agent_notes should record close source');
+    assert.equal(issueCloseCalled.length, 0, 'gh.issueClose must NOT be called (user already closed it)');
+  });
+
+  test('TC-028-11: regressing notification is idempotent — sent exactly once', async () => {
+    const bug = makeBug({
+      bug_type: 'user_bug', status: 'regressing', github_issue: '42',
+      regressing_notified: false, regressing_notified_at: '',
+    });
+    let commentCallCount = 0;
+    const gh = makeGhMock({ issueComment: async () => { commentCallCount++; } });
+    const sync = new UserBugSync(gh, () => makeDate(TODAY));
+
+    // First run: sends notification
+    await sync.syncRegressingNotification(bug);
+    assert.equal(commentCallCount, 1);
+    assert.equal(bug.regressing_notified, true);
+    assert.equal(bug.regressing_notified_at, TODAY);
+
+    // Second run: state unchanged, must not send again
+    await sync.syncRegressingNotification(bug);
+    assert.equal(commentCallCount, 1, 'issueComment must not be called a second time');
+  });
+
+  test('TC-028-12: regressing 14-day timeout → auto-close with comment', async () => {
+    const notifiedAt = '2026-03-01'; // 15 days before TODAY
+    const bug = makeBug({
+      bug_type: 'user_bug', status: 'regressing', github_issue: '42',
+      regressing_notified: true, regressing_notified_at: notifiedAt,
+    });
+    const commentBodies: string[] = [];
+    const closedIssues: number[] = [];
+    const gh = makeGhMock({
+      issueView: async () => ({ state: 'OPEN' }),
+      issueComment: async (_, body) => { commentBodies.push(body as string); },
+      issueClose: async (n) => { closedIssues.push(Number(n)); },
+    });
+    const sync = new UserBugSync(gh, () => makeDate(TODAY));
+
+    await sync.syncRegressingNotification(bug);
+
+    assert.ok(commentBodies.length >= 1, 'timeout comment must be posted');
+    assert.ok(commentBodies[0].includes('14天'), 'comment should mention 14天');
+    assert.equal(closedIssues[0], 42, 'gh.issueClose must be called');
+    assert.equal(bug.status, 'closed');
+    assert.ok(bug.agent_notes?.includes('14天'), 'agent_notes should record auto-close reason');
+  });
+
+  test('TC-028-13: regressing 5 days in — no auto-close, daysRemaining=9', async () => {
+    const notifiedAt = '2026-03-11'; // 5 days before TODAY
+    const bug = makeBug({
+      bug_type: 'user_bug', status: 'regressing', github_issue: '42',
+      regressing_notified: true, regressing_notified_at: notifiedAt,
+    });
+    const closedIssues: number[] = [];
+    const gh = makeGhMock({
+      issueView: async () => ({ state: 'OPEN' }),
+      issueClose: async (n) => { closedIssues.push(Number(n)); },
+    });
+    const sync = new UserBugSync(gh, () => makeDate(TODAY));
+
+    const result = await sync.syncRegressingNotification(bug);
+
+    assert.equal(closedIssues.length, 0, 'gh.issueClose must NOT be called');
+    assert.equal(bug.status, 'regressing', 'status must remain regressing');
+    assert.equal(result.daysRemaining, 9, 'daysRemaining should be 9 (14 - 5)');
+  });
+
+  test('TC-028-21: status label push — sync mismatched label; skip when already in sync', async () => {
+    const bug = makeBug({ bug_type: 'user_bug', status: 'in_progress', github_issue: '42' });
+    const removed: string[] = [];
+    const added: string[] = [];
+    const gh = makeGhMock({
+      issueRemoveLabel: async (_, l) => { removed.push(l as string); },
+      issueAddLabel: async (_, l) => { added.push(l as string); },
+    });
+    const sync = new UserBugSync(gh);
+
+    // Labels include old status:confirmed — should be replaced
+    await sync.syncStatusLabel(bug, ['bug-tracked', 'status:confirmed']);
+    assert.ok(removed.includes('status:confirmed'), 'old status label must be removed');
+    assert.ok(added.includes('status:in_progress'), 'new status label must be added');
+    assert.ok(!removed.includes('bug-tracked'), 'bug-tracked must not be touched');
+
+    removed.length = 0;
+    added.length = 0;
+
+    // Second sync: labels already in sync — no calls expected
+    await sync.syncStatusLabel(bug, ['bug-tracked', 'status:in_progress']);
+    assert.equal(removed.length, 0, 'no remove call when already in sync');
+    assert.equal(added.length, 0, 'no add call when already in sync');
+  });
+
+  test('TC-028-22: create local BUG from GitHub issue — idempotent', async () => {
+    const newIssue = { number: 99, title: 'Button crash on submit', labels: [] };
+    const trackedIssue = { number: 99, title: 'Button crash on submit', labels: ['bug-tracked'] };
+    const addedLabels: string[] = [];
+    const gh = makeGhMock({
+      issueAddLabel: async (_, l) => { addedLabels.push(l as string); },
+    });
+    const sync = new UserBugSync(gh);
+
+    // First run: issue has no bug-tracked label → create BUG
+    const r1 = await sync.createBugFromIssue(newIssue, 'BUG-042');
+    assert.equal(r1.created, true);
+    assert.ok(r1.bugContent?.includes('bug_type: user_bug'));
+    assert.ok(r1.bugContent?.includes('github_issue: "99"'));
+    assert.ok(r1.bugContent?.includes('status: open'));
+    assert.ok(addedLabels.includes('bug-tracked'), 'bug-tracked label must be added');
+
+    addedLabels.length = 0;
+
+    // Second run: issue already has bug-tracked → skip, idempotent
+    const r2 = await sync.createBugFromIssue(trackedIssue, 'BUG-043');
+    assert.equal(r2.created, false);
+    assert.equal(addedLabels.length, 0, 'no label call when already tracked');
+  });
 });
 
 // ---------------------------------------------------------------------------

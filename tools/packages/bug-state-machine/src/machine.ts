@@ -165,14 +165,22 @@ export async function applyTransition(
   }
 
   // 8. REQ unblocking: regressing→closed unblocks related REQs (§2.3)
-  // A REQ is only unblocked when no other open bug references it (§2.3 sibling check).
+  // A REQ is only unblocked when no other open bug references it.
+  // allBugs MUST be supplied when relatedReqs contains a blocked REQ — omitting it
+  // would silently bypass the sibling check and allow premature unblocking.
   if (from === 'regressing' && to === 'closed' && options?.relatedReqs) {
     for (const reqId of bug.related_req ?? []) {
       const req = options.relatedReqs[reqId];
       if (!req || req.status !== 'blocked') continue;
 
-      // P1-1: check for other unresolved bugs linked to this REQ
-      const hasOpenSibling = (options.allBugs ?? []).some(
+      if (options.allBugs === undefined) {
+        throw new Error(
+          `applyTransition: allBugs is required when relatedReqs contains a blocked REQ ("${reqId}"). ` +
+          'Omitting it bypasses the sibling-open check and may unblock the REQ prematurely.',
+        );
+      }
+
+      const hasOpenSibling = options.allBugs.some(
         (b) =>
           b !== bug &&
           b.related_req?.includes(reqId) &&

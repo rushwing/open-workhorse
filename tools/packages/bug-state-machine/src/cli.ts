@@ -1,5 +1,13 @@
 #!/usr/bin/env node
 // CLI wrapper for bug-state-machine
+//
+// SCOPE: single-bug state transitions only.
+//
+// Unsupported via CLI (use programmatic API instead):
+//   - REQ blocking/unblocking: requires relatedReqs + allBugs context maps
+//   - user_bug regressing→closed: requires a live GhClient (gh CLI) to verify
+//     GitHub issue state before closing (bug-standard.md §8.4)
+//
 // Usage:
 //   node --import tsx src/cli.ts applyTransition '<bug-json>' <to-state>
 //   node --import tsx src/cli.ts validateTransition <from> <to>
@@ -21,6 +29,26 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       const bug = JSON.parse(bugJson) as BugFrontmatter;
+
+      // Guard: user_bug→closed requires GitHub issue state check — not available in CLI
+      if (bug.bug_type === 'user_bug' && to === 'closed') {
+        console.error(
+          'Error: user_bug regressing→closed cannot be executed via CLI.\n' +
+          'This transition requires a live GhClient to verify the GitHub issue is closed (§8.4).\n' +
+          'Use the programmatic API with a GhClient, or run the sync script directly.',
+        );
+        process.exit(1);
+      }
+
+      // Warn: REQ blocking/unblocking is silently skipped when related_req is non-empty
+      if ((bug.related_req?.length ?? 0) > 0) {
+        console.error(
+          'Warning: this bug has related_req entries, but the CLI cannot supply relatedReqs or\n' +
+          'allBugs context. REQ blocking/unblocking side effects will NOT be performed.\n' +
+          'Use the programmatic API (applyTransition with relatedReqs + allBugs) for full behavior.',
+        );
+      }
+
       const result = await applyTransition(bug, to);
       console.log(JSON.stringify(result, null, 2));
       break;

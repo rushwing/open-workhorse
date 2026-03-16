@@ -21,3 +21,5 @@ export {
 
 export { validateBugFields } from './validator.js';
 export { resolveOwner } from './owner-router.js';
+export { UserBugSync } from './sync.js';
+export type { SyncRegressingResult } from './sync.js';
