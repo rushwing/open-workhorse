@@ -97,13 +97,15 @@ tc_policy: required
 
 ### 2.4 Bug 类型与 REQ 状态联动速查
 
-| bug_type | 触发者 | 触发时机 | REQ 状态（触发时）| fix 责任人 | reviewer | 修完后 REQ 状态 |
-|----------|--------|---------|-----------------|-----------|---------|--------------|
-| `req_bug` | Huahua | REQ 在 `req_review` 阶段 | `req_review` → `blocked` | Menglan | Huahua | `ready` |
-| `tc_bug` | Menglan | TC 在 review 阶段 | `ready` → `blocked` | Huahua | Menglan | `test_designed` |
-| `impl_bug` | Huahua | PR code review 阶段 | `in_progress` → `blocked` | Menglan | Huahua | `review`（重新提 PR）|
-| `ci_bug` | Pandas | CI GitHub Actions 报红 | `review` → `blocked` | Menglan | Huahua | `done`（Daniel merge 后）|
-| `user_bug` | 用户/human | 生产使用（GitHub issue）| `done`（不 block REQ）| Menglan/Huahua | 视类型 | `done`（不变）|
+| bug_type | 触发者 | 触发时机 | REQ 状态（触发时）| fix 责任人 | reviewer | unblock 后 REQ 状态（= blocked_from_status）| 最终目标状态 |
+|----------|--------|---------|-----------------|-----------|---------|-------------------------------------------|------------|
+| `req_bug` | Huahua | REQ 在 `req_review` 阶段 | `req_review` → `blocked` | Menglan | Huahua | `req_review` | `ready` |
+| `tc_bug` | Menglan | TC 在 review 阶段 | `ready` → `blocked` | Huahua | Menglan | `ready` | `test_designed` |
+| `impl_bug` | Huahua | PR code review 阶段 | `in_progress` → `blocked` | Menglan | Huahua | `in_progress` | `review`（重新提 PR）|
+| `ci_bug` | Pandas | CI GitHub Actions 报红 | `review` → `blocked` | Menglan | Huahua | `review` | `done`（Daniel merge 后）|
+| `user_bug` | 用户/human | 生产使用（GitHub issue）| `done`（不 block REQ）| Menglan/Huahua | 视类型 | `done`（不 block，不变）| `done`（不变）|
+
+> "unblock 后 REQ 状态"由 §2.3 的 `blocked_from_status` 字段决定，不可跳步直接写最终目标状态。
 
 ---
 

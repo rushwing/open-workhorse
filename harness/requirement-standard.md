@@ -129,7 +129,7 @@ tasks/                  # 所有待执行工作项的根目录
 | `status` | 只能使用本规范状态机 |
 | `priority` | `P0` / `P1` / `P2` / `P3` |
 | `phase` | 所属 Phase，例如 `phase-1` |
-| `owner` | `unassigned` / `pandas` / `huahua` / `menglan` / `claude_code` / `human` |
+| `owner` | `unassigned` / `pandas` / `huahua` / `menglan` / `claude_code` / `human`（具名 agent 值由 .env `AGENT_*` 变量配置，此处为默认值）|
 | `blocked_reason` | 仅 `status=blocked` 时填写；枚举见 §6.5 |
 | `blocked_from_status` | 仅 `status=blocked` 时填写；记录进入 blocked 前的状态，供 unblock 时恢复用 |
 | `review_round` | （可选）当前打回轮次，整数；超过 2 轮时升级 Daniel |

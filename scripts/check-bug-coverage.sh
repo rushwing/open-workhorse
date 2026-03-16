@@ -11,6 +11,15 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# source .env（如存在），使 AGENT_* 变量可用
+# shellcheck source=/dev/null
+[[ -f ".env" ]] && source ".env"
+
+# Agent 名称（.env 未设置时使用默认值）
+AGENT_ORCHESTRATOR="${AGENT_ORCHESTRATOR:-pandas}"
+AGENT_CODER="${AGENT_CODER:-menglan}"
+AGENT_REVIEWER="${AGENT_REVIEWER:-huahua}"
+
 # ── 颜色 ──────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'; NC='\033[0m'
 err()  { echo -e "${RED}[bug:check ERROR]${NC} $*" >&2; }
@@ -20,7 +29,8 @@ ok()   { echo -e "${GREEN}[bug:check]${NC} $*"; }
 # ── 枚举常量 ──────────────────────────────────────────────────────────────────
 VALID_BUG_TYPES="req_bug tc_bug impl_bug ci_bug user_bug"
 VALID_STATUSES="open confirmed in_progress fixed regressing blocked closed wont_fix"
-VALID_OWNERS="unassigned pandas huahua menglan claude_code human"
+# VALID_OWNERS 由 .env 中的 AGENT_* 变量动态组成；claude_code 保留作 legacy 兼容
+VALID_OWNERS="unassigned ${AGENT_ORCHESTRATOR} ${AGENT_CODER} ${AGENT_REVIEWER} claude_code human"
 
 # ── 工具 ─────────────────────────────────────────────────────────────────────
 get_field() {
