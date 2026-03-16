@@ -32,7 +32,7 @@ fi
 if [[ -f "$REPO_ROOT/.env" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
-    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT) ]] || continue
+    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT|http_proxy|https_proxy|HTTP_PROXY|HTTPS_PROXY) ]] || continue
     local_var="${line%%=*}"
     [[ "${!local_var+X}" == "X" ]] && continue
     export "$line" 2>/dev/null || true
