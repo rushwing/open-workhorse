@@ -1,5 +1,9 @@
 export const GATEWAY_URL = readStringEnv(process.env.GATEWAY_URL, "ws://127.0.0.1:18789");
 
+// Optional URL to the native OpenClaw control UI (e.g. Tailscale address).
+// When set, a link is shown in the sidebar to switch to the OpenClaw settings panel.
+export const OPENCLAW_CONTROL_UI_URL = (process.env.OPENCLAW_CONTROL_UI_URL ?? "").trim();
+
 export const READONLY_MODE = process.env.READONLY_MODE !== "false";
 export const APPROVAL_ACTIONS_ENABLED = process.env.APPROVAL_ACTIONS_ENABLED === "true";
 export const APPROVAL_ACTIONS_DRY_RUN = process.env.APPROVAL_ACTIONS_DRY_RUN !== "false";

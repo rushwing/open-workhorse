@@ -11,6 +11,7 @@ import {
   LOCAL_API_TOKEN,
   LOCAL_TOKEN_AUTH_REQUIRED,
   LOCAL_TOKEN_HEADER,
+  OPENCLAW_CONTROL_UI_URL,
   POLLING_INTERVALS_MS,
   READONLY_MODE,
 } from "../config";
@@ -7943,6 +7944,7 @@ async function renderHtml(
         <h1>OpenClaw Control Center</h1>
         <div class="meta">${escapeHtml(t("Updated", "更新时间"))}${escapeHtml(options.language === "en" ? ": " : "：")}${escapeHtml(snapshot.generatedAt ?? t("Not available", "暂无"))}</div>
         ${languageToggle}
+        ${OPENCLAW_CONTROL_UI_URL ? `<div class="meta" style="margin-top:8px;"><a href="${escapeHtml(OPENCLAW_CONTROL_UI_URL)}" target="_blank" rel="noopener noreferrer" style="opacity:0.7;font-size:0.8em;">${escapeHtml(t("⚙ OpenClaw Settings", "⚙ OpenClaw 设置"))}</a></div>` : ""}
       </div>
       <nav class="nav-links">${sectionNav}</nav>
     </aside>
