@@ -219,3 +219,60 @@ bash scripts/check-req-coverage.sh  # REQ frontmatter 校验
 | 版本 | 日期 | 变更摘要 |
 |---|---|---|
 | 0.1 | 2026-03-15 | 初始版本；完整重写（从 hydro-om-copilot 改写）；删去 Playwright E2E、LLM Canary、Vitest、Python/FastAPI；改为 node:test + tsx；定义四层测试（L1–L4）；smoke:ui 不进 CI |
+| 0.2 | 2026-03-16 | 多 Agent 扩展（REQ-027）：新增 §10 TC 所有权流转（Pandas→Huahua→Menglan 路径、打回规程、2 轮上限）|
+
+---
+
+## 10. TC 所有权流转（多 Agent 协作路径）
+
+> 本节适用于 `tc_policy=required` 且走多 Agent 协作路径的需求项。
+
+### 10.1 标准流转路径
+
+```
+Pandas (orchestrate, status=ready)
+  → Huahua (tc_design, owner=huahua, status=test_designed 后)
+  → Menglan (tc_review, owner=menglan)
+  → 通过: Menglan 开始实现 (owner=menglan, status=in_progress)
+  → 打回: Huahua 重新设计 (owner=huahua, blocked_reason=review_rejected)
+```
+
+### 10.2 TC 设计阶段（Huahua 负责）
+
+| 步骤 | 操作 |
+|---|---|
+| 1 | Pandas 通过 IPC 消息（`tc_design` 类型）将子 REQ spec 发给 Huahua |
+| 2 | Huahua 在 `tasks/test-cases/` 创建 TC 文档，填入 REQ 的 `test_case_ref` |
+| 3 | Huahua 更新 REQ：`status → test_designed`，`owner → huahua` |
+| 4 | commit message：`tc-design: TC-xxx for REQ-xxx by huahua` |
+| 5 | Huahua 发 IPC 消息（`tc_review` 类型）给 Menglan |
+
+### 10.3 TC Review 阶段（Menglan 负责）
+
+| 情况 | 操作 |
+|---|---|
+| 通过 | Menglan 更新 REQ：`status → in_progress`，`owner → menglan`；开始实现 |
+| 打回 | Menglan 发 IPC 消息（`tc_blocked` 类型）给 Huahua，附打回原因及关联 Bug 链接（若有）；REQ：`status → blocked`，`blocked_reason: review_rejected`，`owner → menglan`（待 Huahua 认领修复），`review_round` 递增 |
+
+### 10.4 TC Review 循环上限
+
+- 最多 **2 轮** TC review 打回循环（`review_round <= 2`）
+- 当 `review_round >= 2` 时，Menglan 须通过 `tg_decision` 升级 Daniel，不得继续打回
+
+### 10.5 打回后修复流程（Huahua）
+
+| 步骤 | 操作 |
+|---|---|
+| 1 | Huahua 收到 `tc_blocked` 消息后，claim REQ（`owner → huahua`，`status → in_progress`）|
+| 2 | 修改 TC 文档，更新 `test_case_ref` |
+| 3 | 更新 REQ：`status → test_designed`，`owner → huahua` |
+| 4 | 重新发 `tc_review` 消息给 Menglan |
+
+### 10.6 commit message 约定
+
+| 场景 | commit message |
+|---|---|
+| TC 设计 | `tc-design: TC-xxx for REQ-xxx by huahua` |
+| TC review 通过 | `tc-approved: TC-xxx REQ-xxx by menglan` |
+| TC review 打回 | `tc-rejected: TC-xxx REQ-xxx by menglan (round N)` |
+| TC 修复后重提 | `tc-revised: TC-xxx for REQ-xxx by huahua (round N)` |

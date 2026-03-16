@@ -58,6 +58,40 @@ tc_policy: required
 
 **例外**：若该 REQ 的缺陷属于 `S4`（纯体验问题），且评估后 TC 投入不具性价比，可在 REQ 上写 `tc_policy: exempt` 并在 `tc_exempt_reason` 中注明理由。
 
+### 2.2 Bug → REQ Blocking 规范（多 Agent 路径）
+
+当 Bug 开立时，若 `related_req` 非空：
+
+| 步骤 | 操作 |
+|---|---|
+| 1 | 在每个关联 REQ 的 `Agent Notes` 末尾追加 Bug 外链，格式：`BUG-xxx: <一句话摘要>` |
+| 2 | 将关联 REQ 的 `status` 更新为 `blocked`，`blocked_reason: bug_linked` |
+| 3 | 将关联 REQ 的 `owner` 清空为 `unassigned`（等待 Bug 修复后重新认领）|
+| 4 | commit message：`bug-block: REQ-xxx blocked by BUG-xxx` |
+
+**Agent Notes 追加格式：**
+
+```
+## Bug 外链
+- BUG-xxx: <一句话摘要>（status: open / confirmed / ...）
+```
+
+**目的**：确保 REQ 负责 Agent 和 Pandas Orchestrator 均能感知阻塞来源，避免 review → done 时遗漏 Bug。
+
+### 2.3 Bug Clean → REQ Unblock 规范
+
+当 Bug 关闭（`status → closed`）时：
+
+| 步骤 | 操作 |
+|---|---|
+| 1 | 检查 `related_req` 中所有 REQ 的 `Agent Notes`，找到引用本 Bug 的外链 |
+| 2 | 更新该外链状态标注：`BUG-xxx: <摘要>（status: closed）` |
+| 3 | 若该 REQ 的 Agent Notes 中**无其他未关闭 Bug**（`status != done/closed`），则将 REQ `status` 从 `blocked` 改回上次状态（通常为 `in_progress` 或 `review`）|
+| 4 | 将 `blocked_reason` 清空或移除 |
+| 5 | commit message：`bug-unblock: REQ-xxx unblocked, BUG-xxx closed` |
+
+**判断条件**：REQ Agent Notes 中所有 `BUG-xxx` 外链的 status 均为 `closed` 或 `done` → REQ 可离开 `blocked`。
+
 ---
 
 ## 3. 目录与文档规范
@@ -81,7 +115,7 @@ tasks/archive/cancelled/    # 已标记 wont_fix 的 Bug
 | `status` | 只能使用本规范状态机 |
 | `severity` | `S1` / `S2` / `S3` / `S4`（见 §4） |
 | `priority` | `P0` / `P1` / `P2` / `P3` |
-| `owner` | `unassigned` / `claude_code` / `human` |
+| `owner` | `unassigned` / `pandas` / `huahua` / `menglan` / `claude_code` / `human` |
 | `related_req` | 关联需求编号列表，无则空数组 |
 | `related_tc` | 触发此 Bug 的测试用例，或回归时需新增的 TC |
 | `tc_policy` | `required` / `optional` / `exempt`；缺省视为 `optional` |
@@ -274,3 +308,4 @@ PR 必须同时包含：
 | 版本 | 日期 | 变更摘要 |
 |---|---|---|
 | 0.1 | 2026-03-15 | 初始版本（从 hydro-om-copilot BUG-STD-001 v0.8 改写）；删去 LLM Canary 触发条件；owner 枚举改为 unassigned/claude_code/human；认领改为单 commit（无 Claim PR 互斥锁）；回归测试改为 node:test |
+| 0.2 | 2026-03-16 | 多 Agent 扩展（REQ-027）：owner 扩展加入 pandas/huahua/menglan；新增 §2.2 Bug→REQ blocking 规范；新增 §2.3 Bug clean→REQ unblock 规范 |

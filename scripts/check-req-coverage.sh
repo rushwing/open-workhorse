@@ -72,7 +72,7 @@ REQUIRED_FIELDS=("req_id" "title" "status" "priority" "phase" "owner" "depends_o
 STATUS_ENUM="draft ready test_designed in_progress blocked review done"
 SCOPE_ENUM="runtime ui tests scripts docs"
 PRIORITY_ENUM="P0 P1 P2 P3"
-OWNER_ENUM="unassigned claude_code human"
+OWNER_ENUM="unassigned pandas huahua menglan claude_code human"
 
 # 收集所有 TC 文件（用于 orphan 检测）
 ALL_TC_REFS=()

@@ -129,7 +129,9 @@ tasks/                  # 所有待执行工作项的根目录
 | `status` | 只能使用本规范状态机 |
 | `priority` | `P0` / `P1` / `P2` / `P3` |
 | `phase` | 所属 Phase，例如 `phase-1` |
-| `owner` | `unassigned` / `claude_code` / `human` |
+| `owner` | `unassigned` / `pandas` / `huahua` / `menglan` / `claude_code` / `human` |
+| `blocked_reason` | 仅 `status=blocked` 时填写；枚举见 §6.5 |
+| `review_round` | （可选）当前打回轮次，整数；超过 2 轮时升级 Daniel |
 | `depends_on` | 顺序依赖项列表（所有项必须 `done` 才可认领），无则空数组 |
 | `test_case_ref` | 对应测试用例文档列表，例如 `[TC-001, TC-002]`；`test_designed` 状态必须非空 |
 | `tc_policy` | `required` / `optional` / `exempt`；缺省视为 `optional` |
@@ -190,7 +192,7 @@ acceptance: [一句话摘要]
 | `ready` | 已定义清楚，等待测试用例设计（`tc_policy=required`）或可直接认领（`tc_policy=optional/exempt`）|
 | `test_designed` | 对应 TC 文档已创建并填入 `test_case_ref`，可被 Claude Code 认领实现 |
 | `in_progress` | 已被 Claude Code 认领并执行中 |
-| `blocked` | 由于依赖未完成或外部决策缺失而暂停；原因写入 `Agent Notes` |
+| `blocked` | 由于依赖未完成、review 打回或关联 Bug 未关闭而暂停；原因写入 `blocked_reason` 字段及 `Agent Notes` |
 | `review` | 实现已完成，PR 已提，等待 review / 验收 |
 | `done` | 已合并或已确认完成 |
 
@@ -198,29 +200,35 @@ acceptance: [一句话摘要]
 
 ```
 draft → ready → test_designed → in_progress → review → done
-                     ↓                ↓
-                  blocked ←→ ready / test_designed
+                     ↓                ↓            ↓
+                  blocked ←→ ready / test_designed ←┘
+                  (blocked_reason 必须填写)
 ```
 
 当 `tc_policy=optional` 或 `tc_policy=exempt` 时：
 ```
 draft → ready → in_progress → review → done
+                                 ↓
+                              blocked
 ```
 
 - `draft → ready`：需求范围、验收标准已确认，且 `check-req-coverage.sh` frontmatter 检查通过
 - `ready → test_designed`：TC 文档已创建，`test_case_ref` 非空
-- `test_designed → in_progress`：Claude Code 认领（单 commit 改 owner + status）
+- `test_designed → in_progress`：Agent 认领（单 commit 改 owner + status）
 - `ready → in_progress`：仅当 `tc_policy=optional` 或 `tc_policy=exempt`
 - `in_progress → review`：实现完成，PR 已提
-- `review → done`：PR 合并
+- `review → blocked`：review 打回（`blocked_reason: review_rejected`）；需在 Agent Notes 追加打回原因及关联 Bug 外链（若有）
+- `blocked → in_progress`：打回修复后重新认领（`review_round` 递增）
+- `review → done`：PR 合并；若 Agent Notes 中有 Bug 外链，所有关联 Bug 必须 `status=done`（Bug clean 门控）
 
 ### 6.3 非法流转
 
 - 不允许 `draft → done`
-- 不允许 `blocked → done`
+- 不允许 `blocked → done`（必须先 unblock，经 `in_progress → review → done`）
 - 不允许 `tc_policy=required` 时 `ready → in_progress`（必须经过 `test_designed`）
 - 不允许 `test_case_ref` 为空时迁移到 `test_designed`
 - 不允许 frontmatter 检查未通过时迁移到 `ready`
+- 不允许 `review → done` 时 Agent Notes 中存在未关闭（`status != done`）的 Bug 外链
 
 ### 6.4 `draft → ready` 前置检查清单
 
@@ -237,6 +245,16 @@ bash scripts/check-req-coverage.sh
 - [ ] `scope` ∈ `{runtime, ui, tests, scripts, docs}`
 - [ ] `priority` ∈ `{P0, P1, P2, P3}`
 - [ ] `depends_on` 中的每个 REQ 编号在 `tasks/` 中存在
+- [ ] `status == blocked` 时 `blocked_reason` 字段存在且非空（人工检查）
+
+### 6.5 `blocked_reason` 枚举
+
+| 值 | 含义 |
+|---|---|
+| `dep_not_done` | `depends_on` 中的前置项尚未完成 |
+| `review_rejected` | review 打回，需修复后重新提 PR |
+| `bug_linked` | Agent Notes 中有未关闭 Bug 外链，阻止进入 `done` |
+| `external_decision` | 需等待外部决策（产品、法务等）|
 
 ---
 
@@ -269,21 +287,53 @@ bash scripts/check-req-coverage.sh
 
 ### 8.2 认领动作
 
-单 commit 直接认领（无需 Claim PR 互斥锁，单 Agent 无并发认领场景）：
+单 commit 直接认领：
 
 | 步骤 | 操作 |
 |---|---|
-| 1 | 在工作分支上修改 `tasks/features/REQ-xxx.md`：`owner → claude_code`，`status → in_progress` |
-| 2 | commit message：`claim: REQ-xxx` |
+| 1 | 在工作分支上修改 `tasks/features/REQ-xxx.md`：`owner → <agent>`，`status → in_progress` |
+| 2 | commit message：`claim: REQ-xxx by <agent>`（`<agent>` = `pandas` / `huahua` / `menglan` / `claude_code` / `human`）|
 | 3 | 继续在同一分支上实现需求 |
 
 ### 8.3 放弃与释放
 
-若 Claude Code 无法继续，必须：
+若 Agent 无法继续，必须：
 
-- 把 `status` 改回 `test_designed`（TC 已有），或改为 `blocked`
+- 把 `status` 改回 `test_designed`（TC 已有），或改为 `blocked`（填写 `blocked_reason`）
 - 清空 `owner` 回到 `unassigned`
 - 在 `Agent Notes` 中简述原因
+
+### 8.4 多 Agent Handoff 协议
+
+当某 Agent 完成阶段工作、需移交给另一 Agent 时：
+
+| 步骤 | 操作 |
+|---|---|
+| 1 | 修改 `tasks/features/REQ-xxx.md`：`owner → <next-agent>`，根据阶段更新 `status` |
+| 2 | commit message：`handoff: REQ-xxx → <next-agent>` |
+| 3 | 在 `Agent Notes` 中写明移交内容和下一步期望 |
+
+**标准 Handoff 流程（多 Agent 协作路径）：**
+
+```
+Pandas (claim/orchestrate)
+  → Huahua (tc_design → in_progress → review)
+  → Menglan (review → done / review → blocked)
+  → Pandas (umbrella done)
+```
+
+TC 设计路径：
+```
+Pandas (ready) → Huahua (tc_design, owner=huahua)
+  → Menglan (tc_review, owner=menglan)
+  → Huahua (tc_blocked 打回, owner=huahua) 或 Menglan (in_progress 实现)
+```
+
+### 8.5 review_round 管理
+
+- `review_round` 初始值为 `0`（不填写或省略）；首次打回时写入 `1`
+- 每次 `review → blocked → in_progress` 循环后，`review_round` 递增
+- 当 `review_round >= 2` 时，负责 review 的 Agent 须通过 `tg_decision` 升级 Daniel 决策，不得继续打回循环
 
 ---
 
@@ -319,7 +369,7 @@ bash scripts/check-req-coverage.sh
 - [ ] 所有需求项 frontmatter 字段完整（含 `test_case_ref`）
 - [ ] `status` 只使用允许枚举值
 - [ ] `priority` 只使用 `P0/P1/P2/P3`
-- [ ] `owner` 只使用 `unassigned/claude_code/human`
+- [ ] `owner` 只使用 `unassigned/pandas/huahua/menglan/claude_code/human`
 - [ ] `depends_on` 中的编号在 repo 中存在
 - [ ] `status == test_designed` 时 `test_case_ref` 非空
 - [ ] `test_case_ref` 中的 TC 文档在 `tasks/test-cases/` 中存在
@@ -342,3 +392,4 @@ bash scripts/check-req-coverage.sh
 | 版本 | 日期 | 变更摘要 |
 |---|---|---|
 | 0.1 | 2026-03-15 | 初始版本（从 hydro-om-copilot REQ-STD-001 v0.7 改写）；适配单 Agent 模式；删去 openai_codex；scope 枚举改为 open-workhorse 模块；删去 pytest_ref；简化认领为单 commit（无 Claim PR 互斥锁） |
+| 0.2 | 2026-03-16 | 多 Agent 扩展（REQ-027）：owner 扩展加入 pandas/huahua/menglan；新增 blocked_reason 字段（§5.1、§6.5）；review→blocked 合法转换（§6.2）；Bug clean → done 门控（§6.2、§6.3）；新增 §8.4 handoff 协议、§8.5 review_round 管理 |
