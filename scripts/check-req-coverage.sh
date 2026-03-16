@@ -69,7 +69,7 @@ echo "check-req-coverage: 检查 ${#REQ_FILES[@]} 个需求文件..."
 echo ""
 
 REQUIRED_FIELDS=("req_id" "title" "status" "priority" "phase" "owner" "depends_on" "test_case_ref" "scope" "acceptance")
-STATUS_ENUM="draft ready test_designed in_progress blocked review done"
+STATUS_ENUM="draft req_review ready test_designed in_progress blocked review done"
 SCOPE_ENUM="runtime ui tests scripts docs"
 PRIORITY_ENUM="P0 P1 P2 P3"
 OWNER_ENUM="unassigned pandas huahua menglan claude_code human"

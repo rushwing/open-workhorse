@@ -2,7 +2,7 @@
 harness_id: REQ-STD-001
 component: requirements / task routing
 owner: Engineering
-version: 0.1
+version: 0.3
 status: active
 last_reviewed: 2026-03-15
 ---
@@ -62,9 +62,9 @@ last_reviewed: 2026-03-15
 
 | 项目 | 内容 |
 |---|---|
-| 规则 | 只使用本规范定义的 7 个状态；禁止自行扩展近义状态 |
+| 规则 | 只使用本规范定义的 8 个状态；禁止自行扩展近义状态 |
 | 目的 | 避免状态语义漂移 |
-| 好示例 | `ready -> test_designed -> in_progress -> review -> done` |
+| 好示例 | `draft -> req_review -> ready -> test_designed -> in_progress -> review -> done` |
 | 坏示例 | `doing`、`wip`、`almost_done`、`ready-for-next-pass` 混用 |
 
 ---
@@ -192,7 +192,8 @@ acceptance: [一句话摘要]
 | 状态 | 含义 |
 |---|---|
 | `draft` | 需求还在整理，不能认领 |
-| `ready` | 已定义清楚，等待测试用例设计（`tc_policy=required`）或可直接认领（`tc_policy=optional/exempt`）|
+| `req_review` | 需求已起草，等待 Huahua 做需求评审（验收标准、范围确认）；评审通过后进入 `ready` |
+| `ready` | 需求评审已通过，等待测试用例设计（`tc_policy=required`）或可直接认领（`tc_policy=optional/exempt`）|
 | `test_designed` | 对应 TC 文档已创建并填入 `test_case_ref`，可被 Claude Code 认领实现 |
 | `in_progress` | 已被 Claude Code 认领并执行中 |
 | `blocked` | 由于依赖未完成、review 打回或关联 Bug 未关闭而暂停；原因写入 `blocked_reason` 字段及 `Agent Notes` |
@@ -202,20 +203,22 @@ acceptance: [一句话摘要]
 ### 6.2 合法流转
 
 ```
-draft → ready → test_designed → in_progress → review → done
-                     ↓                ↓            ↓
-                  blocked ←→ ready / test_designed ←┘
-                  (blocked_reason 必须填写)
+draft → req_review → ready → test_designed → in_progress → review → done
+                        ↓           ↓               ↓            ↓
+                     blocked ←→ ready / test_designed ←──────────┘
+                     (blocked_reason 必须填写)
 ```
 
 当 `tc_policy=optional` 或 `tc_policy=exempt` 时：
 ```
-draft → ready → in_progress → review → done
-                                 ↓
-                              blocked
+draft → req_review → ready → in_progress → review → done
+                                               ↓
+                                            blocked
 ```
 
-- `draft → ready`：需求范围、验收标准已确认，且 `check-req-coverage.sh` frontmatter 检查通过
+- `draft → req_review`：需求起草完成，范围和验收标准已有初稿，发送给 Huahua 评审
+- `req_review → ready`：Huahua 评审通过，需求范围、验收标准已确认，且 `check-req-coverage.sh` frontmatter 检查通过
+- `req_review → blocked`：Huahua 在评审中发现需求缺陷，开 `req_bug` 并 block REQ
 - `ready → test_designed`：TC 文档已创建，`test_case_ref` 非空
 - `test_designed → in_progress`：Agent 认领（单 commit 改 owner + status）
 - `ready → in_progress`：仅当 `tc_policy=optional` 或 `tc_policy=exempt`
@@ -226,6 +229,7 @@ draft → ready → in_progress → review → done
 
 ### 6.3 非法流转
 
+- 不允许 `draft → ready`（必须先经过 `req_review`）
 - 不允许 `draft → done`
 - 不允许 `blocked → done`（必须先 unblock，经 `in_progress → review → done`）
 - 不允许 `tc_policy=required` 时 `ready → in_progress`（必须经过 `test_designed`）
@@ -233,9 +237,9 @@ draft → ready → in_progress → review → done
 - 不允许 frontmatter 检查未通过时迁移到 `ready`
 - 不允许 `review → done` 时 Agent Notes 中存在未关闭（`status != done`）的 Bug 外链
 
-### 6.4 `draft → ready` 前置检查清单
+### 6.4 `req_review → ready` 前置检查清单
 
-Claude Code 或人工将需求从 `draft` 改为 `ready` 前，必须确认：
+Claude Code 或人工将需求从 `req_review` 改为 `ready` 前，必须确认：
 
 ```bash
 bash scripts/check-req-coverage.sh
@@ -259,6 +263,7 @@ bash scripts/check-req-coverage.sh
 | `review_rejected` | review 打回，需修复后重新提 PR |
 | `bug_linked` | Agent Notes 中有未关闭 Bug 外链，阻止进入 `done` |
 | `external_decision` | 需等待外部决策（产品、法务等）|
+| `req_review_feedback` | req_review 阶段 Huahua 发现需求缺陷，开 req_bug 待修复 |
 
 ---
 
@@ -399,3 +404,4 @@ Pandas (ready) → Huahua (tc_design, owner=huahua)
 |---|---|---|
 | 0.1 | 2026-03-15 | 初始版本（从 hydro-om-copilot REQ-STD-001 v0.7 改写）；适配单 Agent 模式；删去 openai_codex；scope 枚举改为 open-workhorse 模块；删去 pytest_ref；简化认领为单 commit（无 Claim PR 互斥锁） |
 | 0.2 | 2026-03-16 | 多 Agent 扩展（REQ-027）：owner 扩展加入 pandas/huahua/menglan；新增 blocked_reason 字段（§5.1、§6.5）；review→blocked 合法转换（§6.2）；Bug clean → done 门控（§6.2、§6.3）；新增 §8.4 handoff 协议、§8.5 review_round 管理 |
+| 0.3 | 2026-03-16 | Bug 类型重设计对齐（REQ-028 计划）：新增 `req_review` 状态（§6.1）；`draft → req_review → ready` 流转（§6.2）；`draft → ready` 列为非法流转（§6.3）；§6.4 标题更新；`blocked_reason` 新增 `req_review_feedback`（§6.5）；状态总数从 7 更新为 8（§2.4）|
