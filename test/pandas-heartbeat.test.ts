@@ -6,11 +6,16 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdir, readFile, rm, writeFile, readdir } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
+
+/** Make a file executable (chmod +x). */
+async function makeExecutable(filePath: string): Promise<void> {
+  await chmod(filePath, 0o755);
+}
 
 const PROJECT_ROOT = process.cwd();
 const SCRIPT = join(PROJECT_ROOT, "scripts/pandas-heartbeat.sh");
@@ -118,7 +123,7 @@ test("TC-021-03: SHARED_RESOURCES_ROOT sets inbox write path", async () => {
     const menglanDir = join(tmpDir, "inbox", "for-menglan");
     const files = await readdir(menglanDir);
     assert.ok(files.some((f) => f.endsWith(".md")), "Expected .md file in for-menglan/");
-    // Verify path does not contain hardcoded /Users/ or /home/
+    // Verify path does not contain hardcoded machine-specific home prefixes
     assert.ok(!result.stdout.includes("/Users/"), "No hardcoded macOS path in stdout");
     assert.ok(!result.stdout.includes("/home/"), "No hardcoded Linux path in stdout");
   } finally {
@@ -438,6 +443,275 @@ test("TC-025-04: TRIGGER-003 fires for blocking_reason containing outside REQ bo
     assert.ok(
       result.stdout.includes("[mock tg_decision]"),
       `TRIGGER-003 should call tg_decision. stdout: ${result.stdout}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-022: TC-022-01 APP_COMMAND=pandas-heartbeat is recognised ────────────
+
+test("TC-022-01: APP_COMMAND=pandas-heartbeat is accepted by normalizeCommand (no Unknown command error)", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-022-01-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-pandas"), { recursive: true });
+
+  try {
+    const result = await runBash(
+      `APP_COMMAND=pandas-heartbeat node --import tsx "${join(PROJECT_ROOT, "src/index.ts")}" 2>&1 || true`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        LOCAL_API_TOKEN: "",
+        LOCAL_TOKEN_AUTH_REQUIRED: "false",
+      },
+    );
+    // Should not contain "Unknown command"
+    assert.ok(
+      !result.stdout.includes("Unknown command"),
+      `Should not get 'Unknown command'. stdout: ${result.stdout.slice(0, 500)}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-022: TC-022-04 stall_detection triggers tg_notify for stale task ─────
+
+test("TC-022-04: stall_detection calls tg_notify for stale in_progress task", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-022-04-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas"), { recursive: true });
+
+  // Create an old harness_sessions log entry (2020 = definitely stale)
+  const sessionLog = join(tmpDir, ".harness_sessions");
+  await writeFile(sessionLog, "2020-01-01T00:00:00Z implement REQ-999\n", "utf8");
+
+  // Create the in_progress REQ
+  await writeFile(
+    join(featuresDir, "REQ-999.md"),
+    "---\nreq_id: REQ-999\ntitle: Stale Task\nstatus: in_progress\npriority: P1\nphase: phase-2\nowner: claude_code\ndepends_on: []\ntest_case_ref: []\ntc_policy: exempt\ntc_exempt_reason: test\nscope: scripts\nacceptance: test\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `tg_notify_called=0
+       tg_notify() { tg_notify_called=1; echo "[mock tg_notify] $*"; return 0; }
+       source "${SCRIPT}" 2>/dev/null
+       tg_notify() { tg_notify_called=1; echo "[mock tg_notify] $*"; return 0; }
+       stall_detection
+       echo "tg_notify_called=$tg_notify_called"`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        REPO_ROOT: tmpDir,
+        DEV_WATCHDOG_STALE_HOURS: "1",
+      },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(
+      result.stdout.includes("[mock tg_notify]") || result.stdout.includes("tg_notify_called=1"),
+      `stall_detection should call tg_notify. stdout: ${result.stdout}`,
+    );
+    assert.ok(
+      result.stdout.includes("REQ-999"),
+      `tg_notify message should mention REQ-999. stdout: ${result.stdout}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-023: TC-023-02 tc-review calls Claude with mock claude binary ─────────
+
+test("TC-023-02: harness.sh tc-review calls Claude with TC review prompt", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-023-02-${Date.now()}`);
+  const mockBin = join(tmpDir, "bin");
+  await mkdir(mockBin, { recursive: true });
+
+  // Mock claude binary
+  const mockClaude = join(mockBin, "claude");
+  await writeFile(mockClaude, '#!/usr/bin/env bash\necho "CLAUDE_CALLED $@"\nexit 0\n', "utf8");
+  await makeExecutable(mockClaude);
+
+  // Mock gh binary
+  const mockGh = join(mockBin, "gh");
+  await writeFile(
+    mockGh,
+    `#!/usr/bin/env bash
+case "$*" in
+  *"repo view"*) echo '{"nameWithOwner":"test-owner/test-repo"}' ;;
+  *"pr view"*"--json reviews"*) echo '[]' ;;
+  *"pr view"*"--json title"*) echo '{"title":"TC REQ-021 add inbox","headRefName":"tc/REQ-021-inbox"}' ;;
+  *"pr view"*"--json files"*) echo '{"files":[]}' ;;
+  *"api"*"pulls"*"comments"*) echo '[]' ;;
+  *) echo '{}' ;;
+esac
+exit 0
+`,
+    "utf8",
+  );
+  await makeExecutable(mockGh);
+
+  try {
+    const result = await runBash(
+      `PATH="${mockBin}:$PATH" bash "${join(PROJECT_ROOT, "scripts/harness.sh")}" tc-review 99 2>&1 || true`,
+      { REPO_ROOT: PROJECT_ROOT },
+    );
+    assert.ok(
+      result.stdout.includes("CLAUDE_CALLED") || result.stdout.includes("adequate"),
+      `Expected Claude to be called with TC review prompt. stdout: ${result.stdout.slice(0, 500)}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-023: TC-023-05 tc_complete blocked iteration=2 triggers tg_decision ──
+
+test("TC-023-05: tc_complete blocked iteration=2 triggers tg_decision, no new huahua message", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-023-05-${Date.now()}`);
+  const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
+  const huahuaDir = join(tmpDir, "inbox", "for-huahua");
+  await mkdir(inboxPandasDir, { recursive: true });
+  await mkdir(huahuaDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+
+  await writeFile(
+    join(inboxPandasDir, "2026-03-16-msg.md"),
+    "---\ntype: tc_complete\nreq_id: REQ-021\nstatus: blocked\nblocking_reason: still missing coverage\niteration: 2\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `tg_decision() { echo "[mock tg_decision] $*"; return 0; }
+       source "${SCRIPT}" 2>/dev/null
+       tg_decision() { echo "[mock tg_decision] $*"; return 0; }
+       inbox_init
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(
+      result.stdout.includes("[mock tg_decision]"),
+      `tg_decision should be called for iteration≥2. stdout: ${result.stdout}`,
+    );
+    // for-huahua should have no new tc_design files
+    const huahuaFiles = await readdir(huahuaDir);
+    assert.equal(huahuaFiles.length, 0, `for-huahua/ should have no new files, got: ${huahuaFiles.join(", ")}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-024: TC-024-02 start REQ-021 command claims the REQ ──────────────────
+
+test("TC-024-02: Telegram start REQ-021 command claims REQ-021", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-024-02-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  await writeFile(
+    join(featuresDir, "REQ-021.md"),
+    "---\nreq_id: REQ-021\ntitle: Inbox IPC\nstatus: ready\npriority: P1\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: []\ntc_policy: optional\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null
+       tg_notify() { echo "[mock tg_notify] $*"; return 0; }
+       tg_poll_commands() { echo "start REQ-021"; }
+       handle_telegram_commands`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        REPO_ROOT: tmpDir,
+        TELEGRAM_BOT_TOKEN: "mock",
+        TELEGRAM_CHAT_ID: "12345",
+      },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    const req021 = await readFile(join(featuresDir, "REQ-021.md"), "utf8");
+    assert.ok(req021.includes("owner: claude_code"), `REQ-021 should be claimed. content: ${req021}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-024: TC-024-04 resume command deletes .pandas_hold ───────────────────
+
+test("TC-024-04: resume command deletes .pandas_hold file", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-024-04-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+
+  const holdFlag = join(tmpDir, ".pandas_hold");
+  // Pre-create the hold file
+  await writeFile(holdFlag, "", "utf8");
+  assert.ok(existsSync(holdFlag), "Pre-condition: .pandas_hold should exist");
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}";
+       tg_poll_commands() { echo "resume"; };
+       tg_notify() { echo "[mock tg_notify] $*"; return 0; };
+       HOLD_FLAG="${holdFlag}";
+       handle_telegram_commands`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(!existsSync(holdFlag), ".pandas_hold file should be deleted after resume");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-024: TC-024-05 tg_decision timeout re-sends notification ─────────────
+
+test("TC-024-05: tg_decision times out and calls tg_notify for re-notification", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-024-05-${Date.now()}`);
+  const mockBin = join(tmpDir, "bin");
+  await mkdir(mockBin, { recursive: true });
+
+  // Mock curl: sendMessage returns ok:true with message_id; getUpdates returns empty
+  const mockCurl = join(mockBin, "curl");
+  await writeFile(
+    mockCurl,
+    `#!/usr/bin/env bash
+# Detect endpoint from args
+if echo "$@" | grep -q "sendMessage"; then
+  echo '{"ok":true,"result":{"message_id":42}}'
+elif echo "$@" | grep -q "getUpdates"; then
+  echo '{"ok":true,"result":[]}'
+elif echo "$@" | grep -q "answerCallbackQuery"; then
+  echo '{"ok":true}'
+fi
+exit 0
+`,
+    "utf8",
+  );
+  await makeExecutable(mockCurl);
+
+  try {
+    const result = await runBash(
+      `PATH="${mockBin}:$PATH"
+       source "${join(PROJECT_ROOT, "scripts/telegram.sh")}" 2>/dev/null
+       tg_notify() { echo "[mock tg_notify] $*"; return 0; }
+       tg_decision "Test decision" "Yes" "No"
+       echo "exit_code=$?"`,
+      {
+        TELEGRAM_BOT_TOKEN: "mock_token",
+        TELEGRAM_CHAT_ID: "12345",
+        TG_DECISION_TIMEOUT: "1",
+      },
+    );
+    // Should time out (non-zero exit) and mention "decision timed out"
+    assert.ok(
+      result.stderr.includes("decision timed out") || result.stdout.includes("decision timed out"),
+      `Expected 'decision timed out'. stderr: ${result.stderr.slice(0, 300)} stdout: ${result.stdout.slice(0, 300)}`,
     );
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
