@@ -37,6 +37,8 @@
     "dod:check": "node --import tsx scripts/dod-check.ts",
     "req:check": "bash scripts/check-req-coverage.sh",
     "bug:check": "bash scripts/check-bug-coverage.sh",
+    "bug:sync": "bash scripts/sync-user-bugs.sh",
+    "bug:sync:dry": "bash scripts/sync-user-bugs.sh --dry-run",
     "harness:status": "bash scripts/harness.sh status"
   },
   "devDependencies": {

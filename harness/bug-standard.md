@@ -2,7 +2,7 @@
 harness_id: BUG-STD-001
 component: bugs / defect tracking
 owner: Engineering
-version: 0.3
+version: 0.3.3
 status: active
 last_reviewed: 2026-03-16
 ---
@@ -11,7 +11,12 @@ last_reviewed: 2026-03-16
 
 > 本规范定义 open-workhorse 在 Harness Engineering 范式下的 Bug 记录方式、
 > 状态机、严重等级、多 Agent 认领与回归测试要求。
-> 默认 Bug 协作走 GitHub；仅当缺陷需要长期跟踪或进入 Claude Code 自动修复队列时，才提升为 repo 内 Bug 工作项。
+>
+> **两轨模型**：
+> - 内部 bug（req_bug / tc_bug / impl_bug / ci_bug）：全程在 `tasks/bugs/BUG-xxx.md` 跟踪，agents + Daniel 内部关闭。
+> - user_bug：用户通过 GitHub issue 报告，本地同样开立 `BUG-xxx.md` 作为 agent 工作轨道；
+>   Pandas 每日双向同步本地与 GitHub issue；本地到达 `regressing` 后通知用户验收；
+>   仅当 GitHub issue 被用户关闭（或 14 天无响应后自动关闭）时，本地才能推进到 `closed`。
 
 ---
 
@@ -28,11 +33,14 @@ last_reviewed: 2026-03-16
 
 ### 1.1 事实源边界
 
-| 场景 | 默认事实源 |
-|---|---|
-| PR review 中发现的问题 | GitHub PR comment / review |
-| CI 失败或临时缺陷协作 | GitHub issue / PR |
-| 需要长期跟踪、与 REQ/TC 建强关联、或进入 Claude Code 自动修复队列 | `tasks/bugs/BUG-xxx.md` |
+| Bug 类型 | 来源 | agent 工作轨道 | 用户入口 | 关闭方 |
+|---|---|---|---|---|
+| req_bug / tc_bug / impl_bug / ci_bug | 内部 agent 发现 | `tasks/bugs/BUG-xxx.md` | 无 | agents + Daniel |
+| user_bug | 用户 GitHub issue | `tasks/bugs/BUG-xxx.md` | GitHub issue | 用户关闭 issue（或 14 天超时）|
+
+> - `tasks/bugs/BUG-xxx.md` 是所有 bug 类型的 agent 工作轨道，状态机、认领、fix 流程均在此执行。
+> - user_bug 的 GitHub issue 是**用户侧唯一入口**；Pandas 每日同步双向状态，但不直接在 GitHub 上推进 fix 流程。
+> - GitHub PR comment / review 用于即时沟通，不作为 bug 跟踪事实源。
 
 ---
 
@@ -111,7 +119,7 @@ tc_policy: required
 
 ## 3. 目录与文档规范
 
-> 本节仅适用于 Bug 被提升为 repo 内工作项时。
+> 所有 bug 类型均须开立 `BUG-xxx.md`，含 user_bug。
 
 ### 3.1 目录位置
 
@@ -139,6 +147,9 @@ tasks/archive/cancelled/    # 已标记 wont_fix 的 Bug
 | `reported_by` | `human` / `ci` / `pandas` / `huahua` / `menglan` |
 | `review_round` | 当前 review 打回轮次，整数；初始值 0；上限 3 |
 | `depends_on` | （可选）必须先合并的 REQ/BUG 编号列表 |
+| `github_issue` | **user_bug 必填**；GitHub issue 编号，例如 `42`；其他类型留空 `""` |
+| `regressing_notified` | **user_bug 专用**；首次进入 `regressing` 后 Pandas 发送验收通知时写 `true`，防重复发送 |
+| `regressing_notified_at` | **user_bug 专用**；验收通知发送日期，格式 `YYYY-MM-DD`；14 天超时检测的基准日 |
 
 ### 3.3 Bug 文档推荐结构
 
@@ -158,6 +169,9 @@ tc_exempt_reason: ""
 reported_by: human
 review_round: 0
 depends_on: []
+github_issue: ""
+regressing_notified: false
+regressing_notified_at: ""
 ---
 
 # 现象描述
@@ -282,6 +296,32 @@ PR 必须同时包含：
 - 清空 `owner` 为 `unassigned`
 - 在 `Agent Notes` 中说明原因
 
+### 6.6 ReAct SOP 推理模板
+
+Agent 收到新 Bug 时按以下模板推理：
+
+```
+Thought: 读取 bug_type 字段
+Action: 查找 bug_type 对应路由规则（§2.4）
+Observation: 确认 fix 责任人和 reviewer
+
+Thought: 确认 REQ 联动（related_req 是否非空）
+Action: 若非空，按 §2.2 更新 REQ 状态为 blocked
+Observation: REQ blocked_reason 已写入
+
+Thought: 确认 Inbox 认领状态
+Action: 若 owner=unassigned，判断当前 Agent 是否为责任人
+Observation: 若是，执行 claim commit（§6.3）；若否，等待上游路由
+
+Thought: 检查 review_round
+Action: 若 review_round >= 3，触发 tg_notify + 进入 blocked
+Observation: Daniel 已告警，等待人工决策
+
+Thought: 修复完成后，检查 regressing 口径
+Action: 若 bug_type=user_bug，等待用户验收再关闭；否则 CI 通过后关闭
+Observation: closed 口径满足（§11）
+```
+
 ---
 
 ## 7. Review 轮次管理
@@ -310,36 +350,100 @@ PR 必须同时包含：
 
 ---
 
-## 8. User Bug 特殊关闭口径
+## 8. User Bug — GitHub 同步规程
 
-### 8.1 关闭前置条件（仅 user_bug）
+user_bug 以 GitHub issue 为用户入口，`BUG-xxx.md` 为 agent 工作轨道。
+Pandas 每日执行 `scripts/sync-user-bugs.sh` 完成双向同步。
 
-除回归测试 CI 通过外，user_bug 的 `closed` 还需满足：
+### 8.1 开立 user_bug 文档
 
-- [ ] 提出人（用户/human）已在 GitHub issue 上确认验收（关闭 issue 或写明"已验证"）
-- [ ] `Agent Notes` 记录用户验收时间和 issue 链接
+用户在 GitHub 提 issue 后，Pandas 在每日同步或即时触发时：
 
-### 8.2 关闭流程
+| 步骤 | 操作 |
+|---|---|
+| 1 | 分配下一个 BUG-xxx 编号，创建 `tasks/bugs/BUG-xxx.md` |
+| 2 | 填写 `github_issue: <issue_number>`，`bug_type: user_bug`，`status: open` |
+| 3 | 在 GitHub issue 上打 label `bug-tracked`，表示已建立本地工作项 |
+| 4 | commit message：`bug: create BUG-xxx from GitHub issue #<n>` |
+
+### 8.2 每日双向同步（Pandas）
+
+`scripts/sync-user-bugs.sh` 按以下顺序执行：
+
+**① GitHub → 本地（关闭检测）**
 
 ```
-regressing（CI 通过）
-    │
-    │  通知提出人（GitHub issue 评论：修复已上线，请验收）
-    ▼
-[等待提出人验收]
-    │
-    │  提出人确认或 72h 未回复（Pandas 判断）
-    ▼
-closed（pandas commit: close: BUG-xxx — user verified）
+for each BUG-xxx.md where bug_type=user_bug and status=regressing:
+  gh issue view <github_issue> --json state
+  if state == "closed":
+    本地 status → closed
+    Agent Notes 追加：GitHub issue #<n> 已由用户关闭，本地同步 closed
+    commit: "sync: close BUG-xxx — GitHub issue #<n> closed by user"
 ```
 
-### 8.3 72h 未回复处理
+**② 本地 → GitHub（状态推送）**
 
-若提出人 72 小时内无响应：
+```
+for each BUG-xxx.md where bug_type=user_bug:
+  gh issue edit <github_issue> --add-label "status:<local_status>"
+  （移除旧 status:* label，添加新 label）
+```
 
-- Pandas 在 Agent Notes 记录："提出人 72h 未响应，Pandas 代为关闭"
-- Daniel 在 GitHub issue 上留言说明
-- Bug `status → closed`
+**③ regressing 验收通知（一次性）**
+
+```
+for each BUG-xxx.md where bug_type=user_bug
+                       and status=regressing
+                       and regressing_notified != true:
+  gh issue comment <github_issue> --body <验收通知模板（见 §8.3）>
+  本地写入 regressing_notified: true
+  commit: "sync: notify user for BUG-xxx regression — issue #<n>"
+```
+
+**④ 14 天超时检测**
+
+```
+for each BUG-xxx.md where bug_type=user_bug
+                       and status=regressing
+                       and regressing_notified=true
+                       and days_since_notified >= 14:
+  gh issue comment <github_issue> --body "14 天内未收到验收反馈，自动关闭。如有问题请重新提 issue。"
+  gh issue close <github_issue>
+  本地 status → closed
+  Agent Notes 追加："14 天无响应，Pandas 代关（issue #<n>）"
+  commit: "sync: auto-close BUG-xxx — 14d no response"
+```
+
+### 8.3 regressing 验收通知模板
+
+```
+Hi @<reporter>，
+
+该 bug 的修复已通过内部回归测试，现请您在生产环境验收。
+
+**修复摘要**：<一句话描述>
+**相关 PR**：<pr_url>
+
+如确认修复，请直接**关闭本 issue**；如仍有问题，请在此评论描述复现步骤。
+若 14 天内未收到回复，本 issue 将自动关闭。
+
+感谢您的反馈！
+```
+
+### 8.4 Pandas 关闭限制
+
+Pandas **不得**将 user_bug 本地 `status` 从 `regressing` 直接推进到 `closed`，除非：
+
+- GitHub issue `state == closed`（用户已关闭），**或**
+- `regressing_notified=true` 且满 14 天无响应（Pandas 执行超时自动关闭流程后）
+
+### 8.5 关闭前置条件（仅 user_bug）
+
+| 条件 | 说明 |
+|---|---|
+| CI 回归通过 | `related_tc` 非空，PR CI 全绿 |
+| GitHub issue 已关闭 | 用户主动关闭，或 14 天超时自动关闭 |
+| `Agent Notes` 记录关闭来源 | 注明"用户验收"或"14 天超时自动关闭" |
 
 ---
 
@@ -420,6 +524,7 @@ Bug 关闭时在 `Agent Notes` 末尾追加：
 - [ ] `tc_policy` ∈ `{required, optional, exempt}`（字段存在时）
 - [ ] `tc_policy=exempt` 时 `tc_exempt_reason` 非空
 - [ ] `review_round` 为非负整数
+- [ ] `bug_type=user_bug` 时 `github_issue` 字段非空
 
 ### 人工检查
 
@@ -440,3 +545,5 @@ Bug 关闭时在 `Agent Notes` 末尾追加：
 | 0.2 | 2026-03-16 | 多 Agent 扩展（REQ-027）：owner 扩展加入 pandas/huahua/menglan；新增 §2.2 Bug→REQ blocking 规范；新增 §2.3 Bug clean→REQ unblock 规范 |
 | 0.3 | 2026-03-16 | 按类型重设计（REQ-028 计划）：新增 bug_type 字段（5 类）；新增 review_round 字段（上限 3）；新增 blocked 状态；新增 §2.4 per-type SOP 路由表；§6 改为多 Agent 认领规程；新增 §7 review 轮次管理；新增 §8 user_bug 特殊关闭口径；新增 §9 Lesson Learned 写入约定；删除旧 §6 单 Agent 认领 |
 | 0.3.1 | 2026-03-16 | 向后兼容修补（PR review P1/P2）：owner 枚举补回 claude_code（legacy）；harness.sh claimable 判断改用 $AGENT_ORCHESTRATOR 变量；新增 check-bug-coverage.sh 执行门禁（npm run bug:check + release:audit 集成）；agent-cli-playbook 模板改用 $AGENT_CODER |
+| 0.3.2 | 2026-03-16 | 合并 docs/BUG-STATE-MACHINE.md：新增 §6.6 ReAct SOP 推理模板；删除已过时的派生文档，以本文件为单一事实源；修正 §1 跟踪模型描述（所有 Bug 统一走 BUG-xxx.md；non-user_bug 由 agents+Daniel 内部关闭，user_bug 需提出用户验收） |
+| 0.3.3 | 2026-03-16 | user_bug 同步架构重设计：引入两轨模型（GitHub issue 为用户入口，BUG-xxx.md 为 agent 工作轨道）；新增 §8 Pandas 每日双向同步规程（GitHub→本地关闭检测、本地→GitHub 状态推送、regressing 验收通知、14 天超时自动关闭）；新增 `github_issue` 和 `regressing_notified` 字段；更新 §1.1 事实源边界表；§12 新增 user_bug github_issue 字段校验 |
