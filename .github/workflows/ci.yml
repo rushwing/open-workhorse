@@ -40,6 +40,21 @@ jobs:
       - name: Run tests
         run: npm test
 
+  tools-test:
+    name: Tools Package Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install tools workspace
+        run: cd tools && npm install
+      - name: Typecheck bug-state-machine
+        run: cd tools/packages/bug-state-machine && npx tsc --noEmit
+      - name: Run bug-state-machine tests
+        run: cd tools/packages/bug-state-machine && node --import tsx --test test/**/*.test.ts
+
   req-coverage:
     name: REQ Coverage Check
     runs-on: ubuntu-latest

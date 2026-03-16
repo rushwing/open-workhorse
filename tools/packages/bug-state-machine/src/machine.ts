@@ -69,14 +69,17 @@ export function unblock(bug: BugFrontmatter): BugFrontmatter {
   return bug;
 }
 
-// Unblock a REQ in-place (used internally and by github-sync)
+// Unblock a REQ in-place — restores prior status and owner, clears blocked fields
 function unblockReq(req: ReqFrontmatter): void {
-  const prevStatus = req.blocked_from_status;
-  if (prevStatus) {
-    req.status = prevStatus;
+  if (req.blocked_from_status) {
+    req.status = req.blocked_from_status;
+  }
+  if (req.blocked_owner_backup !== undefined) {
+    req.owner = req.blocked_owner_backup;
   }
   delete req.blocked_reason;
   delete req.blocked_from_status;
+  delete req.blocked_owner_backup;
 }
 
 export async function applyTransition(
@@ -143,11 +146,17 @@ export async function applyTransition(
   }
 
   // 7. REQ blocking: open→confirmed blocks related REQs (§2.2)
+  // Guard: if the REQ is already blocked (e.g. by a sibling bug), preserve the
+  // existing blocked_from_status and blocked_owner_backup so unblock restores
+  // the original pre-block state, not an intermediate 'blocked' snapshot.
   if (from === 'open' && to === 'confirmed' && options?.relatedReqs) {
     for (const reqId of bug.related_req ?? []) {
       const req = options.relatedReqs[reqId];
       if (req) {
-        req.blocked_from_status = req.status;
+        if (req.status !== 'blocked') {
+          req.blocked_from_status = req.status;
+          req.blocked_owner_backup = req.owner; // P1-2: preserve prior owner
+        }
         req.status = 'blocked';
         req.blocked_reason = 'bug_linked';
         req.owner = 'unassigned';
@@ -156,10 +165,21 @@ export async function applyTransition(
   }
 
   // 8. REQ unblocking: regressing→closed unblocks related REQs (§2.3)
+  // A REQ is only unblocked when no other open bug references it (§2.3 sibling check).
   if (from === 'regressing' && to === 'closed' && options?.relatedReqs) {
     for (const reqId of bug.related_req ?? []) {
       const req = options.relatedReqs[reqId];
-      if (req && req.status === 'blocked') {
+      if (!req || req.status !== 'blocked') continue;
+
+      // P1-1: check for other unresolved bugs linked to this REQ
+      const hasOpenSibling = (options.allBugs ?? []).some(
+        (b) =>
+          b !== bug &&
+          b.related_req?.includes(reqId) &&
+          b.status !== 'closed' &&
+          b.status !== 'wont_fix',
+      );
+      if (!hasOpenSibling) {
         unblockReq(req);
       }
     }

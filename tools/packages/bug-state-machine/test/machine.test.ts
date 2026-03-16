@@ -372,6 +372,88 @@ describe('Group E — field validator', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Regression: P1-1 — premature REQ unblock when sibling bug is still open
+// ---------------------------------------------------------------------------
+
+describe('REQ unblock — sibling bug guard (P1-1 regression)', () => {
+  test('REQ stays blocked when a second bug referencing it is still open', async () => {
+    const bug1 = makeBug({ bug_id: 'BUG-001', bug_type: 'impl_bug', status: 'open', related_req: ['REQ-001'] });
+    const bug2 = makeBug({ bug_id: 'BUG-002', bug_type: 'impl_bug', status: 'open', related_req: ['REQ-001'] });
+    const reqs: Record<string, ReqFrontmatter> = { 'REQ-001': { status: 'in_progress', owner: 'menglan' } };
+
+    // Both bugs confirm and block REQ-001
+    await applyTransition(bug1, 'confirmed', { relatedReqs: reqs });
+    await applyTransition(bug2, 'confirmed', { relatedReqs: reqs });
+    assert.equal(reqs['REQ-001'].status, 'blocked');
+
+    // bug1 reaches closed — but bug2 is still open, so REQ must stay blocked
+    await applyTransition(bug1, 'in_progress');
+    await applyTransition(bug1, 'fixed');
+    await applyTransition(bug1, 'regressing');
+    await applyTransition(bug1, 'closed', {
+      relatedReqs: reqs,
+      allBugs: [bug1, bug2],
+    });
+
+    assert.equal(reqs['REQ-001'].status, 'blocked', 'REQ must stay blocked while bug2 is open');
+    assert.equal(bug2.status, 'confirmed', 'bug2 is still open');
+  });
+
+  test('REQ is unblocked only after the last sibling bug closes', async () => {
+    const bug1 = makeBug({ bug_id: 'BUG-001', bug_type: 'impl_bug', status: 'open', related_req: ['REQ-001'] });
+    const bug2 = makeBug({ bug_id: 'BUG-002', bug_type: 'impl_bug', status: 'open', related_req: ['REQ-001'] });
+    const reqs: Record<string, ReqFrontmatter> = { 'REQ-001': { status: 'in_progress', owner: 'menglan' } };
+
+    await applyTransition(bug1, 'confirmed', { relatedReqs: reqs });
+    await applyTransition(bug2, 'confirmed', { relatedReqs: reqs });
+
+    // Close bug2 first — REQ still blocked because bug1 is still open
+    await applyTransition(bug2, 'in_progress');
+    await applyTransition(bug2, 'fixed');
+    await applyTransition(bug2, 'regressing');
+    await applyTransition(bug2, 'closed', { relatedReqs: reqs, allBugs: [bug1, bug2] });
+    assert.equal(reqs['REQ-001'].status, 'blocked', 'REQ still blocked after first closure');
+
+    // Close bug1 — now no open siblings, REQ should unblock
+    await applyTransition(bug1, 'in_progress');
+    await applyTransition(bug1, 'fixed');
+    await applyTransition(bug1, 'regressing');
+    await applyTransition(bug1, 'closed', { relatedReqs: reqs, allBugs: [bug1, bug2] });
+    assert.equal(reqs['REQ-001'].status, 'in_progress', 'REQ should be unblocked now');
+    assert.equal(reqs['REQ-001'].blocked_reason, undefined);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: P1-2 — REQ owner restored correctly after unblock
+// ---------------------------------------------------------------------------
+
+describe('REQ owner preservation on block/unblock (P1-2 regression)', () => {
+  test('REQ owner is saved on block and restored on unblock', async () => {
+    const bug = makeBug({ bug_type: 'impl_bug', status: 'open', related_req: ['REQ-001'] });
+    const reqs: Record<string, ReqFrontmatter> = {
+      'REQ-001': { status: 'in_progress', owner: 'menglan' },
+    };
+
+    // Block
+    await applyTransition(bug, 'confirmed', { relatedReqs: reqs });
+    assert.equal(reqs['REQ-001'].status, 'blocked');
+    assert.equal(reqs['REQ-001'].owner, 'unassigned');
+    assert.equal(reqs['REQ-001'].blocked_owner_backup, 'menglan');
+
+    // Close bug → unblock
+    await applyTransition(bug, 'in_progress');
+    await applyTransition(bug, 'fixed');
+    await applyTransition(bug, 'regressing');
+    await applyTransition(bug, 'closed', { relatedReqs: reqs, allBugs: [bug] });
+
+    assert.equal(reqs['REQ-001'].status, 'in_progress');
+    assert.equal(reqs['REQ-001'].owner, 'menglan', 'prior owner should be restored');
+    assert.equal(reqs['REQ-001'].blocked_owner_backup, undefined, 'backup field should be cleared');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Sanity: LEGAL_TRANSITIONS table integrity
 // ---------------------------------------------------------------------------
 

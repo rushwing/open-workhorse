@@ -24,6 +24,8 @@ export interface ReqFrontmatter {
   owner?: string;
   blocked_reason?: string;
   blocked_from_status?: string;
+  /** Saved prior owner — set on block, restored on unblock, then deleted */
+  blocked_owner_backup?: string;
 }
 
 // Full bug frontmatter (§3.2 of bug-standard.md)
@@ -82,6 +84,13 @@ export interface GhClient {
 export interface ApplyTransitionOptions {
   /** Mutable map of REQ fixtures — mutated in-place for blocking/unblocking */
   relatedReqs?: Record<string, ReqFrontmatter>;
+  /**
+   * All known bugs in the system — used when unblocking REQs to check whether
+   * sibling bugs (other bugs also linked to the same REQ) are still open.
+   * A REQ is only unblocked when NO other bug referencing it remains unresolved.
+   * (§2.3: "若该 REQ 的 Agent Notes 中无其他未关闭 Bug")
+   */
+  allBugs?: BugFrontmatter[];
   /** GitHub client — required for user_bug regressing→closed */
   gh?: GhClient;
   /** Notification callback — called when review_round_exceeded auto-blocks */
