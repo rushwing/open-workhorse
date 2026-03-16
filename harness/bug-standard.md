@@ -65,9 +65,10 @@ tc_policy: required
 | 步骤 | 操作 |
 |---|---|
 | 1 | 在每个关联 REQ 的 `Agent Notes` 末尾追加 Bug 外链，格式：`BUG-xxx: <一句话摘要>` |
-| 2 | 将关联 REQ 的 `status` 更新为 `blocked`，`blocked_reason: bug_linked` |
-| 3 | 将关联 REQ 的 `owner` 清空为 `unassigned`（等待 Bug 修复后重新认领）|
-| 4 | commit message：`bug-block: REQ-xxx blocked by BUG-xxx` |
+| 2 | 读取关联 REQ 的当前 `status`，写入 `blocked_from_status: <当前状态>`（unblock 时用于恢复）|
+| 3 | 将关联 REQ 的 `status` 更新为 `blocked`，`blocked_reason: bug_linked` |
+| 4 | 将关联 REQ 的 `owner` 清空为 `unassigned`（等待 Bug 修复后重新认领）|
+| 5 | commit message：`bug-block: REQ-xxx blocked by BUG-xxx` |
 
 **Agent Notes 追加格式：**
 
@@ -86,11 +87,11 @@ tc_policy: required
 |---|---|
 | 1 | 检查 `related_req` 中所有 REQ 的 `Agent Notes`，找到引用本 Bug 的外链 |
 | 2 | 更新该外链状态标注：`BUG-xxx: <摘要>（status: closed）` |
-| 3 | 若该 REQ 的 Agent Notes 中**无其他未关闭 Bug**（`status != done/closed`），则将 REQ `status` 从 `blocked` 改回上次状态（通常为 `in_progress` 或 `review`）|
-| 4 | 将 `blocked_reason` 清空或移除 |
+| 3 | 若该 REQ 的 Agent Notes 中**无其他未关闭 Bug**（`status != done/closed`），则将 REQ `status` 恢复为 `blocked_from_status` 字段的值 |
+| 4 | 清空 `blocked_reason` 和 `blocked_from_status`（写回空字符串或移除字段）|
 | 5 | commit message：`bug-unblock: REQ-xxx unblocked, BUG-xxx closed` |
 
-**判断条件**：REQ Agent Notes 中所有 `BUG-xxx` 外链的 status 均为 `closed` 或 `done` → REQ 可离开 `blocked`。
+**判断条件**：REQ Agent Notes 中所有 `BUG-xxx` 外链的 status 均为 `closed` 或 `done` → REQ 可离开 `blocked`，恢复状态读取 `blocked_from_status` 字段。
 
 ---
 

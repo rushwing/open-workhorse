@@ -131,6 +131,7 @@ tasks/                  # 所有待执行工作项的根目录
 | `phase` | 所属 Phase，例如 `phase-1` |
 | `owner` | `unassigned` / `pandas` / `huahua` / `menglan` / `claude_code` / `human` |
 | `blocked_reason` | 仅 `status=blocked` 时填写；枚举见 §6.5 |
+| `blocked_from_status` | 仅 `status=blocked` 时填写；记录进入 blocked 前的状态，供 unblock 时恢复用 |
 | `review_round` | （可选）当前打回轮次，整数；超过 2 轮时升级 Daniel |
 | `depends_on` | 顺序依赖项列表（所有项必须 `done` 才可认领），无则空数组 |
 | `test_case_ref` | 对应测试用例文档列表，例如 `[TC-001, TC-002]`；`test_designed` 状态必须非空 |
@@ -149,6 +150,8 @@ status: draft
 priority: P1
 phase: phase-1
 owner: unassigned
+blocked_reason: ""
+blocked_from_status: ""
 depends_on: []
 test_case_ref: []
 tc_policy: required
@@ -217,8 +220,8 @@ draft → ready → in_progress → review → done
 - `test_designed → in_progress`：Agent 认领（单 commit 改 owner + status）
 - `ready → in_progress`：仅当 `tc_policy=optional` 或 `tc_policy=exempt`
 - `in_progress → review`：实现完成，PR 已提
-- `review → blocked`：review 打回（`blocked_reason: review_rejected`）；需在 Agent Notes 追加打回原因及关联 Bug 外链（若有）
-- `blocked → in_progress`：打回修复后重新认领（`review_round` 递增）
+- `X → blocked`：任意状态进入 blocked 时，必须同时写入 `blocked_reason`（枚举见 §6.5）和 `blocked_from_status: X`（X 为当前状态，供 unblock 恢复用）；`review` 打回时额外在 Agent Notes 追加打回原因及关联 Bug 外链（若有）
+- `blocked → X`：unblock 时将 `status` 恢复为 `blocked_from_status` 的值，并清空 `blocked_reason` 和 `blocked_from_status`；`review_round` 递增（若因 review 打回导致的 block）
 - `review → done`：PR 合并；若 Agent Notes 中有 Bug 外链，所有关联 Bug 必须 `status=done`（Bug clean 门控）
 
 ### 6.3 非法流转
@@ -245,7 +248,8 @@ bash scripts/check-req-coverage.sh
 - [ ] `scope` ∈ `{runtime, ui, tests, scripts, docs}`
 - [ ] `priority` ∈ `{P0, P1, P2, P3}`
 - [ ] `depends_on` 中的每个 REQ 编号在 `tasks/` 中存在
-- [ ] `status == blocked` 时 `blocked_reason` 字段存在且非空（人工检查）
+- [ ] `status == blocked` 时 `blocked_reason` 字段存在且非空（脚本自动验证）
+- [ ] `status == blocked` 时 `blocked_from_status` 字段存在且非空（脚本自动验证）
 
 ### 6.5 `blocked_reason` 枚举
 
@@ -374,6 +378,8 @@ Pandas (ready) → Huahua (tc_design, owner=huahua)
 - [ ] `status == test_designed` 时 `test_case_ref` 非空
 - [ ] `test_case_ref` 中的 TC 文档在 `tasks/test-cases/` 中存在
 - [ ] `status == in_progress` 时 `owner != unassigned`
+- [ ] `status == blocked` 时 `blocked_reason` 字段存在且非空
+- [ ] `status == blocked` 时 `blocked_from_status` 字段存在且非空
 - [ ] `tc_policy` ∈ `{required, optional, exempt}`（字段存在时）
 - [ ] `tc_policy=exempt` 时 `tc_exempt_reason` 非空
 - [ ] `tc_policy=required` 且 `status ∈ {test_designed, in_progress, review, done}` 时 `test_case_ref` 非空

@@ -143,6 +143,22 @@ for req_file in "${REQ_FILES[@]}"; do
     fail "${req_id}: status=in_progress 但 owner=unassigned"
   fi
 
+  # 8. blocked 时 blocked_reason 非空
+  if [[ "$status" == "blocked" ]]; then
+    blocked_reason="$(get_field "$req_file" "blocked_reason")"
+    if [[ -z "$blocked_reason" || "$blocked_reason" == '""' ]]; then
+      fail "${req_id}: status=blocked 但 blocked_reason 为空或缺失"
+    fi
+  fi
+
+  # 9. blocked 时 blocked_from_status 非空
+  if [[ "$status" == "blocked" ]]; then
+    blocked_from_status="$(get_field "$req_file" "blocked_from_status")"
+    if [[ -z "$blocked_from_status" || "$blocked_from_status" == '""' ]]; then
+      fail "${req_id}: status=blocked 但 blocked_from_status 为空或缺失"
+    fi
+  fi
+
   # 7. tc_policy 检查
   tc_policy="$(get_field "$req_file" "tc_policy")"
   if [[ -n "$tc_policy" ]]; then
