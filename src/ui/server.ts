@@ -1645,6 +1645,26 @@ export function startUiServer(port: number, toolClient: ToolClient): Server {
         return writeApiError(res, 404, "NOT_FOUND", "API route not found.");
       }
 
+      // Static assets from public/
+      const staticAssets: Record<string, string> = {
+        "/favicon.ico": "favicon.png",
+        "/favicon.png": "favicon.png",
+        "/logo.png": "logo.png",
+      };
+      if (method === "GET" && staticAssets[path]) {
+        const assetPath = join(process.cwd(), "public", staticAssets[path]);
+        try {
+          const data = await readFile(assetPath);
+          res.setHeader("content-type", "image/png");
+          res.setHeader("cache-control", "public, max-age=86400");
+          res.writeHead(200);
+          res.end(data);
+          return;
+        } catch {
+          // fall through to 404
+        }
+      }
+
       return writeText(res, 404, "Not Found", "text/plain; charset=utf-8");
     } catch (error) {
       if (
@@ -5946,6 +5966,7 @@ async function renderHtml(
 <head>
   <meta charset="utf-8" />
   <title>Open Workhorse</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
   <style>
     :root {
       --bg: #eef2f6;
@@ -7940,6 +7961,7 @@ async function renderHtml(
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
+        <img src="/logo.png" alt="Open Workhorse" style="height:48px;width:auto;display:block;margin-bottom:6px;" />
         <div class="brand-kicker">OpenClaw</div>
         <h1>${escapeHtml(t("Open Workhorse", "开工吧"))}</h1>
         <div class="meta">${escapeHtml(t("Updated", "更新时间"))}${escapeHtml(options.language === "en" ? ": " : "：")}${escapeHtml(snapshot.generatedAt ?? t("Not available", "暂无"))}</div>
