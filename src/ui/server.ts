@@ -815,7 +815,7 @@ export function startUiServer(port: number, toolClient: ToolClient): Server {
         ).join("");
         const docsHref = buildHomeHref({ quick: "all" }, true, "docs", language);
         const homeHref = buildHomeHref({ quick: "all" }, true, "overview", language);
-        const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(t("OpenClaw Control Center Docs", "OpenClaw Control Center 文档"))}</title></head><body><h1>${escapeHtml(t("OpenClaw Control Center Docs", "OpenClaw Control Center 文档"))}</h1><ul>${links}</ul><p><a href="${escapeHtml(docsHref)}">${escapeHtml(t("Open document workbench", "打开文档工作台"))}</a> · <a href="${escapeHtml(homeHref)}">${escapeHtml(t("Back to control center", "返回控制中心"))}</a></p></body></html>`;
+        const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(t("Open Workhorse Docs", "开工吧 文档"))}</title></head><body><h1>${escapeHtml(t("Open Workhorse Docs", "开工吧 文档"))}</h1><ul>${links}</ul><p><a href="${escapeHtml(docsHref)}">${escapeHtml(t("Open document workbench", "打开文档工作台"))}</a> · <a href="${escapeHtml(homeHref)}">${escapeHtml(t("Back to control center", "返回控制中心"))}</a></p></body></html>`;
         return writeText(res, 200, html, "text/html; charset=utf-8");
       }
 
@@ -5945,7 +5945,7 @@ async function renderHtml(
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>OpenClaw Control Center</title>
+  <title>Open Workhorse</title>
   <style>
     :root {
       --bg: #eef2f6;
@@ -7941,7 +7941,7 @@ async function renderHtml(
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-kicker">OpenClaw</div>
-        <h1>OpenClaw Control Center</h1>
+        <h1>${escapeHtml(t("Open Workhorse", "开工吧"))}</h1>
         <div class="meta">${escapeHtml(t("Updated", "更新时间"))}${escapeHtml(options.language === "en" ? ": " : "：")}${escapeHtml(snapshot.generatedAt ?? t("Not available", "暂无"))}</div>
         ${languageToggle}
         ${OPENCLAW_CONTROL_UI_URL ? `<div class="meta" style="margin-top:8px;"><a href="${escapeHtml(OPENCLAW_CONTROL_UI_URL)}" target="_blank" rel="noopener noreferrer" style="opacity:0.7;font-size:0.8em;">${escapeHtml(t("⚙ OpenClaw Settings", "⚙ OpenClaw 设置"))}</a></div>` : ""}
@@ -13123,7 +13123,7 @@ function renderSessionDrilldownPage(
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtml(t("OpenClaw Control Center Session Drilldown", "OpenClaw 控制中心会话详情"))}</title>
+  <title>${escapeHtml(t("Open Workhorse Session Drilldown", "开工吧 会话详情"))}</title>
   <style>
     body { font-family: "SF Mono", Menlo, monospace; background: #0b1016; color: #d6e7f9; padding: 16px; margin: 0; }
     a { color: #7dd3fc; }
@@ -13214,7 +13214,7 @@ function renderAuditPage(timeline: AuditTimelineSnapshot, severity: AuditSeverit
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>OpenClaw Control Center Audit Timeline</title>
+  <title>Open Workhorse Audit Timeline</title>
   <style>
     body { font-family: "SF Mono", Menlo, monospace; background: #0b1016; color: #d6e7f9; padding: 16px; margin: 0; }
     a { color: #7dd3fc; }
