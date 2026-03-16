@@ -72,7 +72,7 @@ REQUIRED_FIELDS=("req_id" "title" "status" "priority" "phase" "owner" "depends_o
 STATUS_ENUM="draft ready test_designed in_progress blocked review done"
 SCOPE_ENUM="runtime ui tests scripts docs"
 PRIORITY_ENUM="P0 P1 P2 P3"
-OWNER_ENUM="unassigned claude_code human"
+OWNER_ENUM="unassigned pandas huahua menglan claude_code human"
 
 # 收集所有 TC 文件（用于 orphan 检测）
 ALL_TC_REFS=()
@@ -141,6 +141,22 @@ for req_file in "${REQ_FILES[@]}"; do
   # 6. in_progress 时 owner != unassigned
   if [[ "$status" == "in_progress" && "$owner" == "unassigned" ]]; then
     fail "${req_id}: status=in_progress 但 owner=unassigned"
+  fi
+
+  # 8. blocked 时 blocked_reason 非空
+  if [[ "$status" == "blocked" ]]; then
+    blocked_reason="$(get_field "$req_file" "blocked_reason")"
+    if [[ -z "$blocked_reason" || "$blocked_reason" == '""' ]]; then
+      fail "${req_id}: status=blocked 但 blocked_reason 为空或缺失"
+    fi
+  fi
+
+  # 9. blocked 时 blocked_from_status 非空
+  if [[ "$status" == "blocked" ]]; then
+    blocked_from_status="$(get_field "$req_file" "blocked_from_status")"
+    if [[ -z "$blocked_from_status" || "$blocked_from_status" == '""' ]]; then
+      fail "${req_id}: status=blocked 但 blocked_from_status 为空或缺失"
+    fi
   fi
 
   # 7. tc_policy 检查
