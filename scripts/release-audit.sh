@@ -90,4 +90,6 @@ if [ -d ".git" ]; then
   fi
 fi
 
+bash scripts/check-bug-coverage.sh
+
 echo "release-audit: passed"

@@ -129,7 +129,7 @@ tasks/archive/cancelled/    # 已标记 wont_fix 的 Bug
 | `status` | 只能使用本规范状态机 |
 | `severity` | `S1` / `S2` / `S3` / `S4`（见 §4） |
 | `priority` | `P0` / `P1` / `P2` / `P3` |
-| `owner` | `unassigned` / `pandas` / `huahua` / `menglan` / `human` |
+| `owner` | `unassigned` / `pandas` / `huahua` / `menglan` / `human` / `claude_code`（legacy — migration window 内有效，新开 Bug 请用具名 agent）|
 | `related_req` | 关联需求编号列表，无则空数组 |
 | `related_tc` | 触发此 Bug 的测试用例，或回归时需新增的 TC |
 | `tc_policy` | `required` / `optional` / `exempt`；缺省视为 `optional` |
@@ -437,3 +437,4 @@ Bug 关闭时在 `Agent Notes` 末尾追加：
 | 0.1 | 2026-03-15 | 初始版本（从 hydro-om-copilot BUG-STD-001 v0.8 改写）；删去 LLM Canary 触发条件；owner 枚举改为 unassigned/claude_code/human；认领改为单 commit（无 Claim PR 互斥锁）；回归测试改为 node:test |
 | 0.2 | 2026-03-16 | 多 Agent 扩展（REQ-027）：owner 扩展加入 pandas/huahua/menglan；新增 §2.2 Bug→REQ blocking 规范；新增 §2.3 Bug clean→REQ unblock 规范 |
 | 0.3 | 2026-03-16 | 按类型重设计（REQ-028 计划）：新增 bug_type 字段（5 类）；新增 review_round 字段（上限 3）；新增 blocked 状态；新增 §2.4 per-type SOP 路由表；§6 改为多 Agent 认领规程；新增 §7 review 轮次管理；新增 §8 user_bug 特殊关闭口径；新增 §9 Lesson Learned 写入约定；删除旧 §6 单 Agent 认领 |
+| 0.3.1 | 2026-03-16 | 向后兼容修补（PR review P1/P2）：owner 枚举补回 claude_code（legacy）；harness.sh claimable 判断改用 $AGENT_ORCHESTRATOR 变量；新增 check-bug-coverage.sh 执行门禁（npm run bug:check + release:audit 集成）；agent-cli-playbook 模板改用 $AGENT_CODER |

@@ -17,6 +17,15 @@ export GH_NO_UPDATE_NOTIFIER=1
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# source .env（如存在），使 AGENT_* 等变量可用
+# shellcheck source=/dev/null
+[[ -f ".env" ]] && source ".env"
+
+# Agent 名称回退默认值（.env 未设置时生效）
+AGENT_ORCHESTRATOR="${AGENT_ORCHESTRATOR:-pandas}"
+AGENT_CODER="${AGENT_CODER:-menglan}"
+AGENT_REVIEWER="${AGENT_REVIEWER:-huahua}"
+
 # 解析当前仓库的 owner/repo（供 gh api 调用使用）
 GH_REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
 
@@ -136,7 +145,7 @@ list_claimable_bugs() {
     status="$(get_field "$f" "status")"
     owner="$(get_field "$f" "owner")"
 
-    if [[ "$status" == "confirmed" && "$owner" == "unassigned" ]]; then
+    if [[ "$status" == "confirmed" && ( "$owner" == "unassigned" || "$owner" == "${AGENT_ORCHESTRATOR}" ) ]]; then
       # depends_on 全部 done 才真正可认领
       if check_depends_done "$f" 2>/dev/null; then
         local bug_id priority
@@ -243,7 +252,7 @@ Do not ask clarifying questions — proceed with your best judgment at every ste
 Steps:
 1. Read ${req_file} and all test_case_ref TC files before writing any code
 2. Read the current Phase doc in tasks/phases/ to confirm iteration boundary
-3. Claim: in your working branch, update ${req_file}: owner=claude_code, status=in_progress, commit 'claim: ${req_id}'
+3. Claim: in your working branch, update ${req_file}: owner=${AGENT_CODER}, status=in_progress, commit 'claim: ${req_id}'
 4. Write tests first (or confirm TC is runnable), then implement
 5. Before opening PR: npm run release:audit && npm run build && npm test
 6. Update ${req_file}: status=review, fill Agent Notes with implementation notes
@@ -277,8 +286,8 @@ cmd_bugfix() {
       warn "如需强制执行，设置 FORCE=true 或使用 --force 参数"
       exit 1
     fi
-    if [[ "$b_owner" != "unassigned" ]]; then
-      err "${bug_id} owner=${b_owner}，期望 owner=unassigned（已被认领）"
+    if [[ "$b_owner" != "unassigned" && "$b_owner" != "${AGENT_ORCHESTRATOR}" ]]; then
+      err "${bug_id} owner=${b_owner}，期望 owner=unassigned 或 owner=${AGENT_ORCHESTRATOR}（已被认领）"
       warn "如需强制执行，设置 FORCE=true 或使用 --force 参数"
       exit 1
     fi
@@ -299,7 +308,7 @@ Do not ask clarifying questions — proceed with your best judgment at every ste
 
 Steps:
 1. Create branch: fix/${bug_id}-<short-desc>
-2. First commit: update ${bug_file} only — owner=claude_code, status=in_progress, commit 'claim: ${bug_id}'
+2. First commit: update ${bug_file} only — owner=${AGENT_CODER}, status=in_progress, commit 'claim: ${bug_id}'
 3. Read ${bug_file} fully — reproduction steps, related_req, related_tc
 4. Fix the bug + add regression test (node:test)
 5. Final commit: set status=fixed, fill 根因分析 and 修复方案 in ${bug_file}

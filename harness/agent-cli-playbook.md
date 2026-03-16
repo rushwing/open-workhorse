@@ -56,7 +56,8 @@ Your task: implement REQ-<N>.
 Steps:
 1. Read tasks/features/REQ-<N>.md and all test_case_ref TC files before writing any code
 2. Read the current Phase doc in tasks/phases/ to confirm iteration boundary
-3. Claim: in your working branch, update REQ-<N>.md: owner=claude_code, status=in_progress, commit 'claim: REQ-<N>'
+3. Claim: in your working branch, update REQ-<N>.md: owner=${AGENT_CODER}, status=in_progress, commit 'claim: REQ-<N>'
+   (AGENT_CODER is read from .env, defaults to 'menglan'; see .env.example)
 4. Write tests first (or confirm TC is runnable), then implement
 5. Before opening PR: npm run release:audit && npm run build && npm test
 6. Update REQ-<N>.md: status=review, fill Agent Notes
@@ -75,7 +76,8 @@ Your task: fix BUG-<N>.
 
 Steps:
 1. Create branch: fix/BUG-<N>-<short-desc>
-2. First commit: update tasks/bugs/BUG-<N>.md only — owner=claude_code, status=in_progress, commit 'claim: BUG-<N>'
+2. First commit: update tasks/bugs/BUG-<N>.md only — owner=${AGENT_CODER}, status=in_progress, commit 'claim: BUG-<N>'
+   (AGENT_CODER is read from .env, defaults to 'menglan'; see .env.example)
 3. Read tasks/bugs/BUG-<N>.md fully — reproduction steps, related_req, related_tc
 4. Fix the bug + add regression test (node:test)
 5. Final commit: set status=fixed, fill 根因分析 and 修复方案 in BUG-<N>.md

@@ -36,6 +36,7 @@
     "supervisor:resident": "node --import tsx scripts/resident-supervisor.ts",
     "dod:check": "node --import tsx scripts/dod-check.ts",
     "req:check": "bash scripts/check-req-coverage.sh",
+    "bug:check": "bash scripts/check-bug-coverage.sh",
     "harness:status": "bash scripts/harness.sh status"
   },
   "devDependencies": {
