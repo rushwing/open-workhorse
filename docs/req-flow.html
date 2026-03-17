@@ -53,7 +53,7 @@
 <h2>泳道图 — 3 Agent 协作路径</h2>
 
 <div class="swimlane-wrap">
-<svg viewBox="0 0 760 860" xmlns="http://www.w3.org/2000/svg"
+<svg viewBox="0 0 760 1095" xmlns="http://www.w3.org/2000/svg"
      style="width:100%;max-width:760px;display:block;background:#0d1117;border:1px solid #21262d;border-radius:6px;">
   <defs>
     <marker id="ah-gray"   markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#8b949e"/></marker>
@@ -64,15 +64,15 @@
   </defs>
 
   <!-- Lane backgrounds: Pandas x=0-239, Huahua x=240-479, Menglan x=480-719, margin x=720-759 -->
-  <rect x="0"   y="0" width="240" height="860" fill="#091510"/>
-  <rect x="240" y="0" width="240" height="860" fill="#16140a"/>
-  <rect x="480" y="0" width="240" height="860" fill="#0e0a15"/>
-  <rect x="720" y="0" width="40"  height="860" fill="#0d1117"/>
+  <rect x="0"   y="0" width="240" height="1095" fill="#091510"/>
+  <rect x="240" y="0" width="240" height="1095" fill="#16140a"/>
+  <rect x="480" y="0" width="240" height="1095" fill="#0e0a15"/>
+  <rect x="720" y="0" width="40"  height="1095" fill="#0d1117"/>
 
   <!-- Lane dividers -->
-  <line x1="240" y1="42" x2="240" y2="860" stroke="#21262d" stroke-width="1"/>
-  <line x1="480" y1="42" x2="480" y2="860" stroke="#21262d" stroke-width="1"/>
-  <line x1="720" y1="42" x2="720" y2="860" stroke="#1e2430" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="240" y1="42" x2="240" y2="1095" stroke="#21262d" stroke-width="1"/>
+  <line x1="480" y1="42" x2="480" y2="1095" stroke="#21262d" stroke-width="1"/>
+  <line x1="720" y1="42" x2="720" y2="1095" stroke="#1e2430" stroke-width="1" stroke-dasharray="3,3"/>
 
   <!-- Lane headers -->
   <rect x="0"   y="0" width="240" height="42" fill="#0d2016" rx="0"/>
@@ -224,13 +224,79 @@
   <!-- review re-PR → code review (right-margin loopback) -->
   <path d="M690,818 L745,818 L745,520 L455,520" stroke="#8b949e" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#ah-gray)"/>
   <text x="749" y="678" fill="#6e7681" font-family="monospace" font-size="8" writing-mode="tb" glyph-orientation-vertical="0">再次 code review</text>
+
+  <!-- ── req_bug Path Label ── -->
+  <rect x="0" y="845" width="720" height="15" fill="#130c0a"/>
+  <text x="8" y="856" fill="#f85149" font-family="monospace" font-size="8.5" letter-spacing="0.8">✗  req_review 评审失败 — req_bug · Menglan 修复需求文档</text>
+
+  <!-- [Huahua cy=890] req_review FAIL -->
+  <rect x="265" y="873" width="190" height="34" rx="5" fill="#250e0a" stroke="#f85149"/>
+  <text x="360" y="890" text-anchor="middle" fill="#ff7b72" font-family="monospace" font-size="11" font-weight="bold">req_review ✗</text>
+  <text x="360" y="902" text-anchor="middle" fill="#f85149" font-family="monospace" font-size="8">Huahua 发现需求缺陷，开立 req_bug</text>
+
+  <!-- [Menglan cy=890] req_bug fix -->
+  <rect x="505" y="873" width="185" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
+  <text x="597" y="890" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="11" font-weight="bold">req_bug 修复</text>
+  <text x="597" y="902" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">Menglan 修改需求文档 → Bug closed</text>
+
+  <!-- Arrow: req_review✗ → req_bug fix -->
+  <path d="M455,890 L505,890" stroke="#f85149" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <text x="480" y="884" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="7.5">pending_bugs++</text>
+
+  <!-- Return annotation -->
+  <text x="597" y="920" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="8">↺ pending_bugs:[] → unblock → req_review</text>
+
+  <!-- ── tc_bug Path Label ── -->
+  <rect x="0" y="930" width="720" height="15" fill="#0c100a"/>
+  <text x="8" y="941" fill="#f85149" font-family="monospace" font-size="8.5" letter-spacing="0.8">✗  tc_review 评审失败 — tc_bug · Huahua 修复 TC 文件</text>
+
+  <!-- [Menglan cy=975] tc_review FAIL -->
+  <rect x="505" y="958" width="185" height="34" rx="5" fill="#200c18" stroke="#f85149"/>
+  <text x="597" y="975" text-anchor="middle" fill="#ff7b72" font-family="monospace" font-size="11" font-weight="bold">tc_review ✗</text>
+  <text x="597" y="987" text-anchor="middle" fill="#f85149" font-family="monospace" font-size="8">Menglan TC 评审失败，开立 tc_bug</text>
+
+  <!-- [Huahua cy=975] tc_bug fix -->
+  <rect x="265" y="958" width="190" height="34" rx="5" fill="#1f1a0d" stroke="#e3b341"/>
+  <text x="360" y="975" text-anchor="middle" fill="#f0c040" font-family="monospace" font-size="11" font-weight="bold">tc_bug 修复</text>
+  <text x="360" y="987" text-anchor="middle" fill="#e3b341" font-family="monospace" font-size="8">Huahua 修改 TC 文件 → Bug closed</text>
+
+  <!-- Arrow: tc_review✗ → tc_bug fix (right-to-left, Menglan→Huahua) -->
+  <path d="M505,975 L455,975" stroke="#f85149" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <text x="480" y="969" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="7.5">pending_bugs++</text>
+
+  <!-- Return annotation -->
+  <text x="360" y="1005" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="8">↺ pending_bugs:[] → unblock → test_designed</text>
+
+  <!-- ── ci_bug Path Label ── -->
+  <rect x="0" y="1015" width="720" height="15" fill="#0a0c14"/>
+  <text x="8" y="1026" fill="#f85149" font-family="monospace" font-size="8.5" letter-spacing="0.8">✗  done 后 CI 失败 — ci_bug · Menglan 修复</text>
+
+  <!-- [Pandas cy=1060] CI detect FAIL -->
+  <rect x="25" y="1043" width="190" height="34" rx="5" fill="#0a1520" stroke="#58a6ff"/>
+  <text x="120" y="1060" text-anchor="middle" fill="#79c0ff" font-family="monospace" font-size="11" font-weight="bold">CI 检测失败</text>
+  <text x="120" y="1072" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="8">Pandas 监测 done REQ 的 CI 状态</text>
+
+  <!-- [Menglan cy=1060] ci_bug fix -->
+  <rect x="505" y="1043" width="185" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
+  <text x="597" y="1060" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="11" font-weight="bold">ci_bug 修复</text>
+  <text x="597" y="1072" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">Menglan 修复 → CI green → Bug closed</text>
+
+  <!-- Arrow: CI FAIL → ci_bug (crosses Huahua lane) -->
+  <path d="M215,1060 L505,1060" stroke="#f85149" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <text x="360" y="1054" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="7.5">open ci_bug</text>
+
+  <!-- End annotation -->
+  <text x="597" y="1090" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="8">CI green → ci_bug closed（不影响 REQ done 状态）</text>
 </svg>
 </div>
 
 <p class="note-bar">
   ① Pandas 心跳只触发两次：<code>review_ready→req_review</code>（入口）和 <code>review→done</code>（出口）。中间所有 handoff 由 Huahua/Menglan 直写 inbox，无等待。<br>
   ② 折叠路径（虚线）：Huahua 在 req_review 阶段同步完成 TC 设计，直接跳到 test_designed，跳过 ready。<br>
-  ③ 打回路径（红色）：code review 失败 → impl_bug → REQ blocked → Menglan fix → re-PR → 右侧弧线回到 code review。
+  ③ impl_bug 打回（红色）：code review 失败 → impl_bug → REQ blocked → Menglan fix → re-PR → 右侧弧线回到 code review。<br>
+  ④ req_bug 打回：req_review 评审失败 → Huahua 开立 req_bug → Menglan 修复需求文档 → pending_bugs:[] → unblock → req_review。<br>
+  ⑤ tc_bug 打回：tc_review 评审失败 → Menglan 开立 tc_bug → Huahua 修复 TC 文件 → pending_bugs:[] → unblock → test_designed。<br>
+  ⑥ ci_bug：done 后 Pandas 监测 CI 失败 → Menglan 开立 ci_bug 修复 → CI green → Bug closed（REQ 保持 done）。
 </p>
 
 <!-- ═══════════════════════ STATE MACHINE DAG ═══════════════════════ -->
