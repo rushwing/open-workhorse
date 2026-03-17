@@ -500,8 +500,9 @@ describe('Group E — field validator', () => {
     assert.equal(e6.filter(e => e.field === 'review_round').length, 0, 'absent should pass');
   });
 
-  test('TC-028-25: bug_linked block saves blocked_owner_backup; unblock restores owner', async () => {
-    const bug = makeBug({ bug_type: 'impl_bug', status: 'open', related_req: ['REQ-001'] });
+  test('TC-028-25: bug_linked block saves blocked_from_owner; unblock restores owner', async () => {
+    // req_bug is the type tied to the req_review branch (§2.1)
+    const bug = makeBug({ bug_type: 'req_bug', status: 'open', related_req: ['REQ-001'] });
     const reqs: Record<string, ReqFrontmatter> = {
       'REQ-001': { status: 'req_review', owner: 'huahua' },
     };
@@ -509,27 +510,27 @@ describe('Group E — field validator', () => {
     // Trigger REQ blocking via bug confirmation (bug_linked reason, §2.2)
     await applyTransition(bug, 'confirmed', { relatedReqs: reqs });
 
-    // REQ is now blocked; owner backup saved, owner cleared to unassigned
+    // REQ is now blocked; blocked_from_owner saved, owner cleared to unassigned
     assert.equal(reqs['REQ-001'].status, 'blocked');
     assert.equal(reqs['REQ-001'].blocked_reason, 'bug_linked');
     assert.equal(reqs['REQ-001'].blocked_from_status, 'req_review');
-    assert.equal(reqs['REQ-001'].blocked_owner_backup, 'huahua', 'prior owner must be saved');
+    assert.equal(reqs['REQ-001'].blocked_from_owner, 'huahua', 'prior owner must be saved');
     assert.equal(reqs['REQ-001'].owner, 'unassigned', 'owner must be cleared on block');
 
-    // Negative branch: simulate REQ with bug_linked but no blocked_owner_backup
+    // Negative branch: simulate REQ with bug_linked but no blocked_from_owner
     // → unblock cannot restore owner (stays unassigned)
     const brokenReq: ReqFrontmatter = {
       status: 'blocked',
       owner: 'unassigned',
       blocked_reason: 'bug_linked',
       blocked_from_status: 'req_review',
-      // blocked_owner_backup intentionally absent
+      // blocked_from_owner intentionally absent
     };
-    const bugForBroken = makeBug({ bug_type: 'impl_bug', status: 'regressing', related_req: ['REQ-BROKEN'] });
+    const bugForBroken = makeBug({ bug_type: 'req_bug', status: 'regressing', related_req: ['REQ-BROKEN'] });
     const brokenReqs: Record<string, ReqFrontmatter> = { 'REQ-BROKEN': brokenReq };
     await applyTransition(bugForBroken, 'closed', { relatedReqs: brokenReqs, allBugs: [bugForBroken] });
     assert.equal(brokenReqs['REQ-BROKEN'].owner, 'unassigned',
-      'owner must stay unassigned when blocked_owner_backup was absent');
+      'owner must stay unassigned when blocked_from_owner was absent');
 
     // Happy path: close the original bug → REQ unblocked, owner restored
     await applyTransition(bug, 'in_progress');
@@ -538,8 +539,8 @@ describe('Group E — field validator', () => {
     await applyTransition(bug, 'closed', { relatedReqs: reqs, allBugs: [bug] });
 
     assert.equal(reqs['REQ-001'].status, 'req_review', 'REQ status must be restored');
-    assert.equal(reqs['REQ-001'].owner, 'huahua', 'owner must be restored from blocked_owner_backup');
-    assert.equal(reqs['REQ-001'].blocked_owner_backup, undefined, 'backup field must be cleared');
+    assert.equal(reqs['REQ-001'].owner, 'huahua', 'owner must be restored from blocked_from_owner');
+    assert.equal(reqs['REQ-001'].blocked_from_owner, undefined, 'blocked_from_owner must be cleared');
     assert.equal(reqs['REQ-001'].blocked_reason, undefined, 'blocked_reason must be cleared');
   });
 });
@@ -612,7 +613,7 @@ describe('REQ owner preservation on block/unblock (P1-2 regression)', () => {
     await applyTransition(bug, 'confirmed', { relatedReqs: reqs });
     assert.equal(reqs['REQ-001'].status, 'blocked');
     assert.equal(reqs['REQ-001'].owner, 'unassigned');
-    assert.equal(reqs['REQ-001'].blocked_owner_backup, 'menglan');
+    assert.equal(reqs['REQ-001'].blocked_from_owner, 'menglan');
 
     // Close bug → unblock
     await applyTransition(bug, 'in_progress');
@@ -622,7 +623,7 @@ describe('REQ owner preservation on block/unblock (P1-2 regression)', () => {
 
     assert.equal(reqs['REQ-001'].status, 'in_progress');
     assert.equal(reqs['REQ-001'].owner, 'menglan', 'prior owner should be restored');
-    assert.equal(reqs['REQ-001'].blocked_owner_backup, undefined, 'backup field should be cleared');
+    assert.equal(reqs['REQ-001'].blocked_from_owner, undefined, 'backup field should be cleared');
   });
 });
 

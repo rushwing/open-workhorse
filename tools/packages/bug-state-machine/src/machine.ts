@@ -74,12 +74,12 @@ function unblockReq(req: ReqFrontmatter): void {
   if (req.blocked_from_status) {
     req.status = req.blocked_from_status;
   }
-  if (req.blocked_owner_backup !== undefined) {
-    req.owner = req.blocked_owner_backup;
+  if (req.blocked_from_owner !== undefined) {
+    req.owner = req.blocked_from_owner;
   }
   delete req.blocked_reason;
   delete req.blocked_from_status;
-  delete req.blocked_owner_backup;
+  delete req.blocked_from_owner;
 }
 
 export async function applyTransition(
@@ -147,7 +147,7 @@ export async function applyTransition(
 
   // 7. REQ blocking: open→confirmed blocks related REQs (§2.2)
   // Guard: if the REQ is already blocked (e.g. by a sibling bug), preserve the
-  // existing blocked_from_status and blocked_owner_backup so unblock restores
+  // existing blocked_from_status and blocked_from_owner so unblock restores
   // the original pre-block state, not an intermediate 'blocked' snapshot.
   if (from === 'open' && to === 'confirmed' && options?.relatedReqs) {
     for (const reqId of bug.related_req ?? []) {
@@ -155,7 +155,7 @@ export async function applyTransition(
       if (req) {
         if (req.status !== 'blocked') {
           req.blocked_from_status = req.status;
-          req.blocked_owner_backup = req.owner; // P1-2: preserve prior owner
+          req.blocked_from_owner = req.owner; // P1-2: preserve prior owner
         }
         req.status = 'blocked';
         req.blocked_reason = 'bug_linked';

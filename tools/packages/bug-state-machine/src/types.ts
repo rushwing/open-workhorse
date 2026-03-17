@@ -24,8 +24,8 @@ export interface ReqFrontmatter {
   owner?: string;
   blocked_reason?: string;
   blocked_from_status?: string;
-  /** Saved prior owner — set on block, restored on unblock, then deleted */
-  blocked_owner_backup?: string;
+  /** Saved prior owner — set on block (bug_linked), restored on unblock, then deleted */
+  blocked_from_owner?: string;
 }
 
 // Full bug frontmatter (§3.2 of bug-standard.md)
