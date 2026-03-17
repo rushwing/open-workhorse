@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bug 状态机 v0.3.3 — Open Workhorse</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: monospace; background: #0d1117; color: #e6edf3; padding: 24px; }
+  h1 { font-size: 16px; color: #58a6ff; margin-bottom: 4px; }
+  .subtitle { font-size: 11px; color: #8b949e; margin-bottom: 28px; }
+
+  .section { margin-bottom: 36px; }
+  .section-title {
+    font-size: 11px; color: #6e7681; text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 12px; padding-bottom: 6px;
+    border-bottom: 1px solid #21262d;
+  }
+
+  /* node */
+  .node {
+    display: inline-flex; flex-direction: column; align-items: center;
+    padding: 8px 14px; border-radius: 6px; border: 1px solid;
+    min-width: 110px; text-align: center;
+  }
+  .node .state  { font-size: 13px; font-weight: bold; }
+  .node .agent  { font-size: 10px; margin-top: 3px; opacity: 0.75; }
+  .node .note   { font-size: 9px;  margin-top: 2px; opacity: 0.55; font-style: italic; }
+
+  /* color themes */
+  .pandas  { border-color: #3fb950; background: #0d2016; color: #56d364; }
+  .huahua  { border-color: #e3b341; background: #1f1a0d; color: #f0c040; }
+  .menglan { border-color: #bc8cff; background: #150d20; color: #d2a8ff; }
+  .human   { border-color: #58a6ff; background: #0d2137; color: #79c0ff; }
+  .closed  { border-color: #3fb950; background: #0d2016; color: #56d364; border-width: 2px; }
+  .wont    { border-color: #8b949e; background: #161b22; color: #6e7681; }
+  .blocked-n { border-color: #f85149; background: #200d0d; color: #ff7b72; border-style: dashed; }
+
+  /* layout */
+  .row { display: flex; align-items: center; gap: 0; flex-wrap: wrap; margin-bottom: 4px; }
+  .vgroup { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .arrow { display: flex; align-items: center; padding: 0 6px; font-size: 18px; color: #30363d; }
+  .arrow-label { font-size: 9px; color: #6e7681; text-align: center; max-width: 80px; }
+  .vert-arrow { font-size: 18px; color: #30363d; line-height: 1; text-align: center; }
+  .vert-label { font-size: 9px; color: #6e7681; text-align: center; max-width: 90px; }
+
+  /* type badge */
+  .type-badge {
+    display: inline-block; font-size: 10px; padding: 2px 8px;
+    border-radius: 10px; margin-bottom: 10px; font-weight: bold;
+  }
+  .req_bug   { background: #1f1a0d; color: #f0c040; border: 1px solid #e3b341; }
+  .tc_bug    { background: #150d20; color: #d2a8ff; border: 1px solid #bc8cff; }
+  .impl_bug  { background: #1a1520; color: #c9a0dc; border: 1px solid #9b59b6; }
+  .ci_bug    { background: #0d1624; color: #89b4fa; border: 1px solid #4d8fd1; }
+  .user_bug  { background: #0d2016; color: #56d364; border: 1px solid #3fb950; }
+
+  /* grid for type columns */
+  .type-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    margin-top: 8px;
+  }
+  .type-col { display: flex; flex-direction: column; align-items: center; gap: 0; }
+
+  /* tables */
+  .info-table { border-collapse: collapse; width: 100%; font-size: 11px; margin-top: 12px; }
+  .info-table th, .info-table td { border: 1px solid #30363d; padding: 5px 10px; text-align: left; }
+  .info-table th { color: #8b949e; background: #0d1117; font-weight: normal; }
+  .info-table code { background: #0d1117; padding: 1px 4px; border-radius: 3px; color: #79c0ff; }
+
+  /* legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; border: 1px solid; }
+  hr { border: none; border-top: 1px solid #21262d; margin: 20px 0; }
+
+  .infobox {
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    padding: 14px; font-size: 11px; margin-top: 16px;
+  }
+  .infobox h3 { font-size: 12px; color: #58a6ff; margin-bottom: 10px; }
+
+  .tag-req    { color: #f0c040; }
+  .tag-tc     { color: #d2a8ff; }
+  .tag-impl   { color: #c9a0dc; }
+  .tag-ci     { color: #89b4fa; }
+  .tag-user   { color: #56d364; }
+</style>
+</head>
+<body>
+
+<h1>Bug 状态机 v0.3.3</h1>
+<p class="subtitle">bug-standard.md v0.3.3 · Open Workhorse · 两轨模型（内部 bug + user_bug）</p>
+
+<!-- COMMON STATE MACHINE -->
+<div class="section">
+  <div class="section-title">通用状态机（所有 bug 类型共享）</div>
+
+  <div class="row">
+    <div class="vgroup">
+      <div class="node pandas">
+        <span class="state">open</span>
+        <span class="agent">Pandas 持有</span>
+        <span class="note">已记录，等待确认</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">Pandas 确认<br>第一跳永远是 Pandas</div>
+    </div>
+
+    <div class="vgroup">
+      <div class="node pandas">
+        <span class="state">confirmed</span>
+        <span class="agent">Pandas → fix 责任人</span>
+        <span class="note">可复现，等待认领</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">fix 责任人<br>claim（单 commit）</div>
+    </div>
+
+    <div class="vgroup">
+      <div class="node menglan">
+        <span class="state">in_progress</span>
+        <span class="agent">Menglan / Huahua</span>
+        <span class="note">修复中（按 bug_type）</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">PR 提交<br>related_tc 非空</div>
+    </div>
+
+    <div class="vgroup">
+      <div class="node menglan">
+        <span class="state">fixed</span>
+        <span class="agent">reviewer 验收</span>
+        <span class="note">修复代码已提 PR</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">PR 合并<br>回归测试运行中</div>
+    </div>
+
+    <div class="vgroup">
+      <div class="node pandas">
+        <span class="state">regressing</span>
+        <span class="agent">Pandas 监控</span>
+        <span class="note">回归测试执行中</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">回归通过<br>（user_bug 需用户验收）</div>
+    </div>
+
+    <div class="vgroup">
+      <div class="node closed">
+        <span class="state">closed</span>
+        <span class="agent">— 归档 —</span>
+        <span class="note">archive/done/</span>
+      </div>
+    </div>
+  </div><!-- row -->
+
+  <!-- branch: wont_fix -->
+  <div style="margin-top: 16px; display: flex; gap: 32px; flex-wrap: wrap;">
+
+    <div class="vgroup" style="align-items:center; gap:4px;">
+      <div style="font-size:10px; color:#6e7681; margin-bottom:4px;">wont_fix 分支</div>
+      <div class="row">
+        <div class="node pandas" style="min-width:90px; opacity:0.7;">
+          <span class="state">confirmed</span>
+        </div>
+        <div class="arrow" style="font-size:14px;">→</div>
+        <div class="node wont">
+          <span class="state">wont_fix</span>
+          <span class="note">决策不修复，注明原因</span>
+        </div>
+      </div>
+      <div class="row" style="margin-top: 4px;">
+        <div class="node menglan" style="min-width:90px; opacity:0.7;">
+          <span class="state">in_progress</span>
+        </div>
+        <div class="arrow" style="font-size:14px;">→</div>
+        <div class="node wont" style="opacity:0.7;">
+          <span class="state">wont_fix</span>
+          <span class="note">开发中发现不值得修</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="vgroup" style="align-items:center; gap:4px;">
+      <div style="font-size:10px; color:#6e7681; margin-bottom:4px;">reopen 分支（修复方案不可行）</div>
+      <div class="row">
+        <div class="node menglan" style="min-width:90px; opacity:0.7;">
+          <span class="state">in_progress</span>
+        </div>
+        <div class="arrow" style="font-size:14px;">→</div>
+        <div class="node pandas" style="min-width:90px; opacity:0.7;">
+          <span class="state">open</span>
+          <span class="note">重新评估</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="vgroup" style="align-items:center; gap:4px;">
+      <div style="font-size:10px; color:#6e7681; margin-bottom:4px;">blocked 分支（任意状态）</div>
+      <div class="row">
+        <div class="node menglan" style="min-width:90px; opacity:0.7;">
+          <span class="state">任意状态</span>
+        </div>
+        <div class="arrow" style="font-size:14px;">→</div>
+        <div class="node blocked-n">
+          <span class="state">blocked</span>
+          <span class="agent">blocked_reason 必填</span>
+          <span class="note">tg_notify Daniel</span>
+        </div>
+        <div class="arrow" style="font-size:14px;">→</div>
+        <div class="node human" style="min-width:90px; opacity:0.7;">
+          <span class="state">原状态</span>
+          <span class="note">Daniel 解除后恢复</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="vgroup" style="align-items:center; gap:4px;">
+      <div style="font-size:10px; color:#6e7681; margin-bottom:4px;">review_round 超限（≥3）</div>
+      <div class="row">
+        <div class="node menglan" style="min-width:90px; opacity:0.7;">
+          <span class="state">fixed</span>
+        </div>
+        <div class="arrow" style="font-size:14px;">→</div>
+        <div class="node blocked-n">
+          <span class="state">blocked</span>
+          <span class="agent">review_round_exceeded</span>
+          <span class="note">tg_notify，待 Daniel</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- section common -->
+
+<hr>
+
+<!-- PER-TYPE SOP -->
+<div class="section">
+  <div class="section-title">各 Bug 类型 SOP（§2.4 路由表）</div>
+
+  <div class="type-grid">
+
+    <!-- req_bug -->
+    <div class="type-col">
+      <span class="type-badge req_bug">req_bug</span>
+      <div class="node huahua" style="min-width:100px;">
+        <span class="state">req_review</span>
+        <span class="agent">Huahua 触发</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">REQ → blocked<br>blocked_reason:<br>bug_linked<br>pending_bugs 填入</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node menglan" style="min-width:100px;">
+        <span class="state">in_progress</span>
+        <span class="agent">Menglan fix</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Huahua review</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node closed" style="min-width:100px;">
+        <span class="state">closed</span>
+        <span class="note">REQ 恢复 req_review</span>
+      </div>
+    </div>
+
+    <!-- tc_bug -->
+    <div class="type-col">
+      <span class="type-badge tc_bug">tc_bug</span>
+      <div class="node menglan" style="min-width:100px;">
+        <span class="state">ready</span>
+        <span class="agent">Menglan 触发</span>
+        <span class="note">TC review 阶段</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">REQ → blocked<br>from: ready</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node huahua" style="min-width:100px;">
+        <span class="state">in_progress</span>
+        <span class="agent">Huahua fix TC</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Menglan 二次确认</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node closed" style="min-width:100px;">
+        <span class="state">closed</span>
+        <span class="note">REQ 恢复 ready<br>→ test_designed</span>
+      </div>
+    </div>
+
+    <!-- impl_bug -->
+    <div class="type-col">
+      <span class="type-badge impl_bug">impl_bug</span>
+      <div class="node huahua" style="min-width:100px;">
+        <span class="state">in_progress</span>
+        <span class="agent">Huahua 触发</span>
+        <span class="note">PR code review</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">REQ → blocked<br>from: in_progress</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node menglan" style="min-width:100px;">
+        <span class="state">in_progress</span>
+        <span class="agent">Menglan fix</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Huahua review</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node closed" style="min-width:100px;">
+        <span class="state">closed</span>
+        <span class="note">REQ 恢复 in_progress<br>重新提 PR</span>
+      </div>
+    </div>
+
+    <!-- ci_bug -->
+    <div class="type-col">
+      <span class="type-badge ci_bug">ci_bug</span>
+      <div class="node pandas" style="min-width:100px;">
+        <span class="state">review</span>
+        <span class="agent">Pandas 触发</span>
+        <span class="note">CI GitHub Actions 报红</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">REQ → blocked<br>from: review</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node menglan" style="min-width:100px;">
+        <span class="state">in_progress</span>
+        <span class="agent">Menglan fix</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Huahua review</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node closed" style="min-width:100px;">
+        <span class="state">closed</span>
+        <span class="note">REQ 恢复 review<br>Daniel merge → done</span>
+      </div>
+    </div>
+
+    <!-- user_bug -->
+    <div class="type-col">
+      <span class="type-badge user_bug">user_bug</span>
+      <div class="node human" style="min-width:100px;">
+        <span class="state">open</span>
+        <span class="agent">用户 GitHub issue</span>
+        <span class="note">Pandas 开立 BUG-xxx.md</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Pandas 每日同步<br>sync-user-bugs.sh</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node menglan" style="min-width:100px;">
+        <span class="state">in_progress</span>
+        <span class="agent">Menglan / Huahua</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">regressing_notified<br>→ 用户验收通知</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node pandas" style="min-width:100px;">
+        <span class="state">regressing</span>
+        <span class="note">等待用户关闭 issue<br>或 14 天超时</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="node closed" style="min-width:100px;">
+        <span class="state">closed</span>
+        <span class="note">不 block REQ（done 不变）</span>
+      </div>
+    </div>
+
+  </div><!-- type-grid -->
+</div><!-- section per-type -->
+
+<hr>
+
+<!-- REQ BLOCKING -->
+<div class="section">
+  <div class="section-title">Bug → REQ Blocking 联动（§2.2 / §2.3）</div>
+
+  <div class="infobox">
+    <h3>blocking 步骤（Bug 开立时）</h3>
+    <table class="info-table">
+      <tr><th>步骤</th><th>操作</th></tr>
+      <tr><td>1</td><td>在关联 REQ 的 <code>Agent Notes</code> 末尾追加 Bug 外链</td></tr>
+      <tr><td>2</td><td>读取 REQ 当前 status，写入 <code>blocked_from_status</code></td></tr>
+      <tr><td>3</td><td>REQ status → <code>blocked</code>，<code>blocked_reason: bug_linked</code></td></tr>
+      <tr><td>4</td><td>将 BUG-xxx 加入 REQ 的 <code>pending_bugs</code> 字段（v0.4 新增）</td></tr>
+      <tr><td>5</td><td>REQ owner → <code>unassigned</code></td></tr>
+    </table>
+
+    <h3 style="margin-top:14px;">unblocking 步骤（Bug 关闭时）</h3>
+    <table class="info-table">
+      <tr><th>步骤</th><th>操作</th></tr>
+      <tr><td>1</td><td>检查 Agent Notes 中所有 BUG 外链 status（均需 closed/done）</td></tr>
+      <tr><td>2</td><td>从 REQ <code>pending_bugs</code> 移除已关闭的 BUG-xxx（v0.4 新增）</td></tr>
+      <tr><td>3</td><td>REQ status 恢复为 <code>blocked_from_status</code> 的值</td></tr>
+      <tr><td>4</td><td>清空 <code>blocked_reason</code> 和 <code>blocked_from_status</code></td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="legend-item">
+    <div class="legend-dot" style="border-color:#3fb950; background:#0d2016;"></div>
+    <span>Pandas（编排 / 同步）</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="border-color:#e3b341; background:#1f1a0d;"></div>
+    <span>Huahua（TC 设计 / Code review / tc_bug fix）</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="border-color:#bc8cff; background:#150d20;"></div>
+    <span>Menglan（req_bug / impl_bug / ci_bug fix）</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="border-color:#58a6ff; background:#0d2137;"></div>
+    <span>Human / Daniel（用户 issue / unblock 决策）</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="border-color:#f85149; background:#200d0d; border-style:dashed;"></div>
+    <span>blocked（dashed）</span>
+  </div>
+</div>
+
+<p style="margin-top: 20px; font-size: 10px; color: #6e7681;">
+  规程文档：harness/bug-standard.md v0.3.3 · 可视化版本与 requirement-standard.md v0.4 对齐
+</p>
+
+</body>
+</html>

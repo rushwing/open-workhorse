@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>需求流转状态机 v0.4 — Open Workhorse</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: monospace; background: #0d1117; color: #e6edf3; padding: 24px; }
+  h1 { font-size: 16px; color: #58a6ff; margin-bottom: 4px; }
+  .subtitle { font-size: 11px; color: #8b949e; margin-bottom: 28px; }
+
+  .dag { display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
+
+  /* lanes */
+  .lane-label {
+    font-size: 10px; color: #6e7681; text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 6px; margin-top: 18px;
+  }
+  .row { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+
+  /* nodes */
+  .node {
+    display: inline-flex; flex-direction: column; align-items: center;
+    padding: 8px 14px; border-radius: 6px; border: 1px solid;
+    min-width: 120px; text-align: center; position: relative;
+  }
+  .node .state { font-size: 13px; font-weight: bold; }
+  .node .agent { font-size: 10px; margin-top: 3px; opacity: 0.75; }
+  .node .note  { font-size: 9px;  margin-top: 2px; opacity: 0.55; font-style: italic; }
+
+  /* color themes by owner */
+  .human   { border-color: #58a6ff; background: #0d2137; color: #79c0ff; }
+  .pandas  { border-color: #3fb950; background: #0d2016; color: #56d364; }
+  .huahua  { border-color: #e3b341; background: #1f1a0d; color: #f0c040; }
+  .menglan { border-color: #bc8cff; background: #150d20; color: #d2a8ff; }
+  .shared  { border-color: #8b949e; background: #161b22; color: #c9d1d9; }
+  .blocked-node { border-color: #f85149; background: #200d0d; color: #ff7b72; border-style: dashed; }
+  .done-node    { border-color: #3fb950; background: #0d2016; color: #56d364; border-width: 2px; }
+
+  /* arrows */
+  .arrow {
+    display: flex; align-items: center; padding: 0 6px;
+    font-size: 18px; color: #30363d;
+  }
+  .arrow.down {
+    flex-direction: column; padding: 2px 0; writing-mode: horizontal-tb;
+    align-self: center;
+  }
+  .arrow-label { font-size: 9px; color: #6e7681; max-width: 90px; text-align: center; margin-top: 2px; }
+
+  .vgroup { display: flex; flex-direction: column; align-items: center; }
+  .hgroup { display: flex; flex-direction: row; align-items: flex-start; gap: 0; }
+
+  /* branch lines */
+  .branch-row { display: flex; align-items: flex-start; gap: 0; margin-top: 0; }
+  .branch-col { display: flex; flex-direction: column; align-items: center; }
+
+  /* key / legend */
+  .legend { margin-top: 32px; display: flex; flex-wrap: wrap; gap: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; border: 1px solid; }
+
+  hr { border: none; border-top: 1px solid #21262d; margin: 20px 0; }
+
+  .key-field {
+    margin-top: 24px; background: #161b22; border: 1px solid #30363d;
+    border-radius: 6px; padding: 14px; font-size: 11px; max-width: 700px;
+  }
+  .key-field h3 { font-size: 12px; color: #58a6ff; margin-bottom: 10px; }
+  .key-field table { border-collapse: collapse; width: 100%; }
+  .key-field td, .key-field th {
+    border: 1px solid #30363d; padding: 5px 10px; text-align: left;
+  }
+  .key-field th { color: #8b949e; font-weight: normal; background: #0d1117; }
+  .key-field code { background: #0d1117; padding: 1px 5px; border-radius: 3px; color: #79c0ff; }
+
+  .vert-arrow { font-size: 18px; color: #30363d; line-height: 1; }
+  .vert-label { font-size: 9px; color: #6e7681; }
+</style>
+</head>
+<body>
+
+<h1>需求流转状态机 v0.4</h1>
+<p class="subtitle">requirement-standard.md v0.4 · Open Workhorse · 9 states</p>
+
+<div class="dag">
+
+  <!-- MAIN HAPPY PATH -->
+  <div class="lane-label">Happy Path</div>
+
+  <div class="row">
+
+    <!-- draft -->
+    <div class="vgroup">
+      <div class="node human">
+        <span class="state">draft</span>
+        <span class="agent">Daniel / Human</span>
+        <span class="note">需求草稿整理中</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">Daniel 设为<br>review_ready</div>
+    </div>
+
+    <!-- review_ready -->
+    <div class="vgroup">
+      <div class="node human">
+        <span class="state">review_ready</span>
+        <span class="agent">Daniel → Pandas</span>
+        <span class="note">Human-to-Pipeline 交接点</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">Pandas<br>state-as-lock<br>原子 commit</div>
+    </div>
+
+    <!-- req_review -->
+    <div class="vgroup">
+      <div class="node huahua">
+        <span class="state">req_review</span>
+        <span class="agent">Huahua</span>
+        <span class="note">需求评审（范围+验收标准）</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">Huahua 评审通过<br>check-req-coverage.sh ✓</div>
+    </div>
+
+    <!-- ready -->
+    <div class="vgroup">
+      <div class="node huahua">
+        <span class="state">ready</span>
+        <span class="agent">Huahua → Pandas</span>
+        <span class="note">等待 TC 设计</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">Huahua TC 设计<br>test_case_ref 非空</div>
+    </div>
+
+    <!-- test_designed -->
+    <div class="vgroup">
+      <div class="node huahua">
+        <span class="state">test_designed</span>
+        <span class="agent">Menglan 认领</span>
+        <span class="note">TC 文件已创建</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">Menglan claim<br>单 commit</div>
+    </div>
+
+    <!-- in_progress -->
+    <div class="vgroup">
+      <div class="node menglan">
+        <span class="state">in_progress</span>
+        <span class="agent">Menglan</span>
+        <span class="note">实现中</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">PR 已提</div>
+    </div>
+
+    <!-- review -->
+    <div class="vgroup">
+      <div class="node huahua">
+        <span class="state">review</span>
+        <span class="agent">Huahua review</span>
+        <span class="note">Bug clean 门控</span>
+      </div>
+    </div>
+
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">Daniel merge</div>
+    </div>
+
+    <!-- done -->
+    <div class="vgroup">
+      <div class="node done-node">
+        <span class="state">done</span>
+        <span class="agent">— 归档 —</span>
+        <span class="note">archive/done/</span>
+      </div>
+    </div>
+
+  </div><!-- .row happy path -->
+
+  <!-- FOLD: req_review → test_designed (Huahua 折叠路径) -->
+  <div class="lane-label">Huahua 折叠路径（req_review 阶段同步做 TC 设计）</div>
+  <div class="row">
+    <div class="node huahua" style="opacity:0.6">
+      <span class="state">req_review</span>
+    </div>
+    <div class="vgroup">
+      <div class="arrow">→→</div>
+      <div class="arrow-label">Huahua 同步完成<br>TC 设计，跳过 ready</div>
+    </div>
+    <div class="node huahua" style="opacity:0.6">
+      <span class="state">test_designed</span>
+    </div>
+    <div style="font-size:10px; color:#6e7681; margin-left:16px; align-self:center;">
+      ✓ 规程明确允许此折叠（v0.4 §6.2）
+    </div>
+  </div>
+
+  <!-- tc_policy=optional/exempt shortcut -->
+  <div class="lane-label">tc_policy=optional / exempt 快捷路径</div>
+  <div class="row">
+    <div class="node huahua" style="opacity:0.6">
+      <span class="state">ready</span>
+    </div>
+    <div class="vgroup">
+      <div class="arrow">→</div>
+      <div class="arrow-label">跳过 TC 设计</div>
+    </div>
+    <div class="node menglan" style="opacity:0.6">
+      <span class="state">in_progress</span>
+    </div>
+  </div>
+
+  <!-- BLOCKED -->
+  <hr>
+  <div class="lane-label">阻塞 / 异常路径</div>
+
+  <div class="row" style="gap: 24px; flex-wrap: wrap;">
+
+    <!-- req_bug -->
+    <div class="vgroup" style="align-items:center; gap:4px;">
+      <div class="node huahua" style="min-width:100px;">
+        <span class="state">req_review</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Huahua 发现 req_bug<br>pending_bugs 非空</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node blocked-node" style="min-width:100px;">
+        <span class="state">blocked</span>
+        <span class="agent">blocked_reason:<br>bug_linked</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Bug closed<br>pending_bugs 清空</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node huahua" style="min-width:100px; opacity:0.7;">
+        <span class="state">req_review</span>
+        <span class="note">恢复 blocked_from_status</span>
+      </div>
+    </div>
+
+    <!-- tc_bug -->
+    <div class="vgroup" style="align-items:center; gap:4px;">
+      <div class="node huahua" style="min-width:100px;">
+        <span class="state">ready</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Menglan 发现 tc_bug</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node blocked-node" style="min-width:100px;">
+        <span class="state">blocked</span>
+        <span class="agent">blocked_reason:<br>bug_linked</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Bug closed</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node huahua" style="min-width:100px; opacity:0.7;">
+        <span class="state">ready</span>
+      </div>
+    </div>
+
+    <!-- impl_bug -->
+    <div class="vgroup" style="align-items:center; gap:4px;">
+      <div class="node menglan" style="min-width:100px;">
+        <span class="state">in_progress</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Huahua PR review<br>发现 impl_bug</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node blocked-node" style="min-width:100px;">
+        <span class="state">blocked</span>
+        <span class="agent">blocked_reason:<br>bug_linked</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Bug fixed</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node menglan" style="min-width:100px; opacity:0.7;">
+        <span class="state">in_progress</span>
+      </div>
+    </div>
+
+    <!-- ci_bug -->
+    <div class="vgroup" style="align-items:center; gap:4px;">
+      <div class="node huahua" style="min-width:100px;">
+        <span class="state">review</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Pandas CI 报红<br>ci_bug</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node blocked-node" style="min-width:100px;">
+        <span class="state">blocked</span>
+        <span class="agent">blocked_reason:<br>bug_linked</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Bug fixed + CI 绿</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node huahua" style="min-width:100px; opacity:0.7;">
+        <span class="state">review</span>
+      </div>
+    </div>
+
+    <!-- review_round exceeded -->
+    <div class="vgroup" style="align-items:center; gap:4px;">
+      <div class="node shared" style="min-width:100px;">
+        <span class="state">review</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">review_round ≥ 2<br>tg_decision 升级 Daniel</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node blocked-node" style="min-width:100px;">
+        <span class="state">blocked</span>
+        <span class="agent">blocked_reason:<br>review_rejected</span>
+      </div>
+      <div class="vert-arrow">↓</div>
+      <div class="vert-label">Daniel 决策</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node human" style="min-width:100px; opacity:0.7;">
+        <span class="state">in_progress</span>
+        <span class="note">Pandas 解除 blocked</span>
+      </div>
+    </div>
+
+  </div><!-- blocked row -->
+
+</div><!-- .dag -->
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="legend-item">
+    <div class="legend-dot" style="border-color:#58a6ff; background:#0d2137;"></div>
+    <span>Daniel / Human</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="border-color:#3fb950; background:#0d2016;"></div>
+    <span>Pandas（编排 / state-as-lock）</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="border-color:#e3b341; background:#1f1a0d;"></div>
+    <span>Huahua（需求评审 / TC 设计 / Code review）</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="border-color:#bc8cff; background:#150d20;"></div>
+    <span>Menglan（TC review / 实现）</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="border-color:#f85149; background:#200d0d;"></div>
+    <span>blocked（dashed border）</span>
+  </div>
+</div>
+
+<!-- KEY FIELDS TABLE -->
+<div class="key-field">
+  <h3>v0.4 关键新增字段 / 状态</h3>
+  <table>
+    <tr>
+      <th>字段 / 状态</th><th>类型</th><th>说明</th>
+    </tr>
+    <tr>
+      <td><code>review_ready</code></td>
+      <td>新状态（第 9 个）</td>
+      <td>Human-to-Pipeline 交接点。Daniel 设置；Pandas 原子 commit 转为 req_review（state-as-lock 防重复认领）</td>
+    </tr>
+    <tr>
+      <td><code>pending_bugs</code></td>
+      <td>新 frontmatter 字段</td>
+      <td>BUG-xxx 数组，可选。非空时为 Menglan 路由信号：status=req_review + pending_bugs 非空 → fix req_bug；status=test_designed → tc_review</td>
+    </tr>
+    <tr>
+      <td><code>blocked_from_status</code></td>
+      <td>已有字段</td>
+      <td>进入 blocked 前的状态，unblock 时恢复用。blocked_reason=bug_linked 时由 Bug 关闭自动清空</td>
+    </tr>
+  </table>
+  <p style="margin-top:8px; font-size:10px; color:#6e7681;">
+    规程文档：harness/requirement-standard.md v0.4 · 状态机脚本校验：scripts/check-req-coverage.sh
+  </p>
+</div>
+
+</body>
+</html>
