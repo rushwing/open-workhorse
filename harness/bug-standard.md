@@ -2,7 +2,7 @@
 harness_id: BUG-STD-001
 component: bugs / defect tracking
 owner: Engineering
-version: 0.4.0
+version: 0.4.1
 status: active
 last_reviewed: 2026-03-16
 ---
@@ -96,13 +96,26 @@ tc_policy: required
 
 | 步骤 | 操作 |
 |---|---|
-| 1 | 从关联 REQ 的 `pending_bugs` 数组中移除本 BUG-xxx |
-| 2 | 在 REQ 的 `Agent Notes` 中更新外链状态标注：`BUG-xxx: <摘要>（status: closed）` |
-| 3 | 若 REQ 的 `pending_bugs` 数组**已为空**，则将 REQ `status` 恢复为 `blocked_from_status` 字段的值 |
-| 4 | 清空 `blocked_reason` 和 `blocked_from_status`（写回空字符串或移除字段）|
-| 5 | commit message：`bug-unblock: REQ-xxx unblocked, BUG-xxx closed` |
+| 1 | 将 BUG-xxx 追加到关联 REQ 的 `## 关联 Bug 历史` 对应 bug_type 分类（格式：`- [BUG-xxx](../bugs/BUG-xxx.md): <摘要>（closed: YYYY-MM-DD）`）|
+| 2 | 从关联 REQ 的 `pending_bugs` 数组中移除本 BUG-xxx |
+| 3 | 在 REQ 的 `Agent Notes` 中更新外链状态标注：`BUG-xxx: <摘要>（status: closed）` |
+| 4 | 若 REQ 的 `pending_bugs` 数组**已为空**，则将 REQ `status` 恢复为 `blocked_from_status` 字段的值 |
+| 5 | 清空 `blocked_reason` 和 `blocked_from_status`（写回空字符串或移除字段）|
+| 6 | commit message：`bug-unblock: REQ-xxx unblocked, BUG-xxx closed` |
 
-**判断条件**：`pending_bugs: []`（空数组）→ REQ 可离开 `blocked`，恢复状态读取 `blocked_from_status` 字段。Agent Notes 中的外链状态标注仅供人工审阅，不参与自动路由判断。
+**`## 关联 Bug 历史` 追加格式：**
+
+```
+# 关联 Bug 历史
+
+### req_bug
+- [BUG-003](../bugs/BUG-003.md): 验收标准描述不清晰（closed: 2026-03-17）
+
+### impl_bug
+- [BUG-007](../bugs/BUG-007.md): 健康检查字段缺失（closed: 2026-03-18）
+```
+
+**判断条件**：`pending_bugs: []`（空数组）→ REQ 可离开 `blocked`，恢复状态读取 `blocked_from_status` 字段。`## 关联 Bug 历史` 节历史永久保留，不随 `pending_bugs` 清空而删除；Agent Notes 外链标注仅供人工审阅，不参与自动路由。
 
 ### 2.4 Bug 类型与 REQ 状态联动速查
 
@@ -561,3 +574,4 @@ Bug 关闭时在 `Agent Notes` 末尾追加：
 | 0.3.2 | 2026-03-16 | 合并 docs/BUG-STATE-MACHINE.md：新增 §6.6 ReAct SOP 推理模板；删除已过时的派生文档，以本文件为单一事实源；修正 §1 跟踪模型描述（所有 Bug 统一走 BUG-xxx.md；non-user_bug 由 agents+Daniel 内部关闭，user_bug 需提出用户验收） |
 | 0.3.3 | 2026-03-16 | user_bug 同步架构重设计：引入两轨模型（GitHub issue 为用户入口，BUG-xxx.md 为 agent 工作轨道）；新增 §8 Pandas 每日双向同步规程（GitHub→本地关闭检测、本地→GitHub 状态推送、regressing 验收通知、14 天超时自动关闭）；新增 `github_issue` 和 `regressing_notified` 字段；更新 §1.1 事实源边界表；§12 新增 user_bug github_issue 字段校验 |
 | 0.4.0 | 2026-03-17 | pending_bugs 路由信号对齐（REQ-029）：§2.2 blocking 步骤新增"将 BUG-xxx 加入 REQ pending_bugs 数组"；§2.3 unblocking 改用 pending_bugs 空数组作为判断条件（替代解析 Agent Notes 自由文本）；新增 §2.5 Menglan 路由规则表（test_designed→tc_review；req_review+pending_bugs 非空→fix req_bug） |
+| 0.4.1 | 2026-03-17 | Bug 历史归档：§2.3 unblock 步骤 1 改为先将 BUG-xxx 追加到 REQ `## 关联 Bug 历史` 对应 bug_type 分类（永久归档），再从 pending_bugs 移除；补充追加格式示例 |

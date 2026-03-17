@@ -397,20 +397,21 @@
     <h3>blocking 步骤（Bug 开立时）</h3>
     <table class="info-table">
       <tr><th>步骤</th><th>操作</th></tr>
-      <tr><td>1</td><td>在关联 REQ 的 <code>Agent Notes</code> 末尾追加 Bug 外链</td></tr>
-      <tr><td>2</td><td>读取 REQ 当前 status，写入 <code>blocked_from_status</code></td></tr>
-      <tr><td>3</td><td>REQ status → <code>blocked</code>，<code>blocked_reason: bug_linked</code></td></tr>
-      <tr><td>4</td><td>将 BUG-xxx 加入 REQ 的 <code>pending_bugs</code> 字段（v0.4 新增）</td></tr>
+      <tr><td>1</td><td>在关联 REQ 的 <code>Agent Notes</code> 末尾追加 Bug 外链（人工可读）</td></tr>
+      <tr><td>2</td><td>将 BUG-xxx 加入 REQ 的 <code>pending_bugs</code> 数组（机器路由信号）</td></tr>
+      <tr><td>3</td><td>读取 REQ 当前 status，写入 <code>blocked_from_status</code></td></tr>
+      <tr><td>4</td><td>REQ status → <code>blocked</code>，<code>blocked_reason: bug_linked</code></td></tr>
       <tr><td>5</td><td>REQ owner → <code>unassigned</code></td></tr>
     </table>
 
     <h3 style="margin-top:14px;">unblocking 步骤（Bug 关闭时）</h3>
     <table class="info-table">
       <tr><th>步骤</th><th>操作</th></tr>
-      <tr><td>1</td><td>检查 Agent Notes 中所有 BUG 外链 status（均需 closed/done）</td></tr>
-      <tr><td>2</td><td>从 REQ <code>pending_bugs</code> 移除已关闭的 BUG-xxx（v0.4 新增）</td></tr>
-      <tr><td>3</td><td>REQ status 恢复为 <code>blocked_from_status</code> 的值</td></tr>
-      <tr><td>4</td><td>清空 <code>blocked_reason</code> 和 <code>blocked_from_status</code></td></tr>
+      <tr><td>1</td><td>将 BUG-xxx 追加到 REQ <code>## 关联 Bug 历史</code> 对应 bug_type 分类（永久归档）</td></tr>
+      <tr><td>2</td><td>从 REQ <code>pending_bugs</code> 数组移除本 BUG-xxx</td></tr>
+      <tr><td>3</td><td>在 REQ <code>Agent Notes</code> 中更新外链状态标注为 <code>status: closed</code></td></tr>
+      <tr><td>4</td><td>若 <code>pending_bugs == []</code>，REQ status 恢复为 <code>blocked_from_status</code></td></tr>
+      <tr><td>5</td><td>清空 <code>blocked_reason</code> 和 <code>blocked_from_status</code></td></tr>
     </table>
   </div>
 </div>
