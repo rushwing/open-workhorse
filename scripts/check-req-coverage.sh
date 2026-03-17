@@ -78,7 +78,7 @@ echo "check-req-coverage: 检查 ${#REQ_FILES[@]} 个需求文件..."
 echo ""
 
 REQUIRED_FIELDS=("req_id" "title" "status" "priority" "phase" "owner" "depends_on" "test_case_ref" "scope" "acceptance")
-STATUS_ENUM="draft req_review ready test_designed in_progress blocked review done"
+STATUS_ENUM="draft review_ready req_review ready test_designed in_progress blocked review done"
 SCOPE_ENUM="runtime ui tests scripts docs"
 PRIORITY_ENUM="P0 P1 P2 P3"
 # OWNER_ENUM 由 .env 中的 AGENT_* 变量动态组成；claude_code 保留作 legacy 兼容
@@ -144,6 +144,23 @@ for req_file in "${REQ_FILES[@]}"; do
       tc_file="tasks/test-cases/${tc}.md"
       if [[ ! -f "$tc_file" ]]; then
         fail "${req_id}: test_case_ref 中的 '${tc}' 不存在于 tasks/test-cases/"
+      fi
+    done
+  fi
+
+  # 5b. pending_bugs 引用存在性检查（BUG-xxx 须在 tasks/bugs/ 或 tasks/archive/done/ 中存在）
+  pending_bugs_raw="$(get_array_field "$req_file" "pending_bugs")"
+  if [[ -n "$(echo "$pending_bugs_raw" | tr -d ' ')" ]]; then
+    IFS=',' read -ra pbugs <<< "$pending_bugs_raw"
+    for pbug in "${pbugs[@]}"; do
+      pbug="$(echo "$pbug" | tr -d ' ')"
+      [[ -z "$pbug" ]] && continue
+      found_pbug=false
+      for d in tasks/bugs/"${pbug}".md tasks/archive/done/"${pbug}".md; do
+        [[ -f "$d" ]] && found_pbug=true && break
+      done
+      if ! $found_pbug; then
+        fail "${req_id}: pending_bugs 引用 '${pbug}' 不存在（tasks/bugs/ 或 archive/done/）"
       fi
     done
   fi
