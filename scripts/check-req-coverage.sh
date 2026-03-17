@@ -186,6 +186,15 @@ for req_file in "${REQ_FILES[@]}"; do
     fi
   fi
 
+  # 10. blocked_reason=bug_linked 时 blocked_from_owner 非空
+  blocked_reason_val="$(get_field "$req_file" "blocked_reason")"
+  if [[ "$status" == "blocked" && "$blocked_reason_val" == "bug_linked" ]]; then
+    blocked_from_owner="$(get_field "$req_file" "blocked_from_owner")"
+    if [[ -z "$blocked_from_owner" || "$blocked_from_owner" == '""' ]]; then
+      fail "${req_id}: blocked_reason=bug_linked 但 blocked_from_owner 为空或缺失"
+    fi
+  fi
+
   # 7. tc_policy 检查
   tc_policy="$(get_field "$req_file" "tc_policy")"
   if [[ -n "$tc_policy" ]]; then

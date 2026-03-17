@@ -132,6 +132,7 @@ tasks/                  # 所有待执行工作项的根目录
 | `owner` | `unassigned` / `pandas` / `huahua` / `menglan` / `claude_code` / `human`（具名 agent 值由 .env `AGENT_*` 变量配置，此处为默认值）|
 | `blocked_reason` | 仅 `status=blocked` 时填写；枚举见 §6.5 |
 | `blocked_from_status` | 仅 `status=blocked` 时填写；记录进入 blocked 前的状态，供 unblock 时恢复用 |
+| `blocked_from_owner` | 仅 `blocked_reason=bug_linked` 时填写；记录 block 前的 owner，供 unblock 时恢复用（见 bug-standard.md §2.2/§2.3）|
 | `review_round` | （可选）当前打回轮次，整数；超过 2 轮时升级 Daniel |
 | `depends_on` | 顺序依赖项列表（所有项必须 `done` 才可认领），无则空数组 |
 | `test_case_ref` | 对应测试用例文档列表，例如 `[TC-001, TC-002]`；`test_designed` 状态必须非空 |
@@ -153,6 +154,7 @@ phase: phase-1
 owner: unassigned
 blocked_reason: ""
 blocked_from_status: ""
+blocked_from_owner: ""
 depends_on: []
 test_case_ref: []
 tc_policy: required
@@ -233,8 +235,8 @@ draft → review_ready → req_review → ready → in_progress → review → d
 - `test_designed → in_progress`：Agent 认领（单 commit 改 owner + status）
 - `ready → in_progress`：仅当 `tc_policy=optional` 或 `tc_policy=exempt`
 - `in_progress → review`：实现完成，PR 已提
-- `X → blocked`：任意状态进入 blocked 时，必须同时写入 `blocked_reason`（枚举见 §6.5）和 `blocked_from_status: X`（X 为当前状态，供 unblock 恢复用）；`review` 打回时额外在 Agent Notes 追加打回原因及关联 Bug 外链（若有）
-- `blocked → X`：unblock 时将 `status` 恢复为 `blocked_from_status` 的值，并清空 `blocked_reason` 和 `blocked_from_status`；`review_round` 递增（若因 review 打回导致的 block）
+- `X → blocked`：任意状态进入 blocked 时，必须同时写入 `blocked_reason`（枚举见 §6.5）和 `blocked_from_status: X`；若 `blocked_reason=bug_linked`，还须写入 `blocked_from_owner: <当前 owner>` 并将 `owner` 清空为 `unassigned`（见 bug-standard.md §2.2）；`review` 打回时额外在 Agent Notes 追加打回原因及关联 Bug 外链（若有）
+- `blocked → X`：unblock 时将 `status` 恢复为 `blocked_from_status`；若 `blocked_from_owner` 非空，同时将 `owner` 恢复为 `blocked_from_owner`；清空 `blocked_reason`、`blocked_from_status`、`blocked_from_owner`；`review_round` 递增（若因 review 打回导致的 block）
 - `review → done`：PR 合并；`pending_bugs` 必须为空数组（即所有关联 Bug `status=closed`）——Bug clean 门控；`pending_bugs` 非空则不允许 merge
 
 ### 6.3 非法流转
@@ -265,6 +267,7 @@ bash scripts/check-req-coverage.sh
 - [ ] `depends_on` 中的每个 REQ 编号在 `tasks/` 中存在
 - [ ] `status == blocked` 时 `blocked_reason` 字段存在且非空（脚本自动验证）
 - [ ] `status == blocked` 时 `blocked_from_status` 字段存在且非空（脚本自动验证）
+- [ ] `status == blocked` かつ `blocked_reason == bug_linked` 时 `blocked_from_owner` 字段存在且非空（脚本自动验证）
 
 ### 6.5 `blocked_reason` 枚举
 
