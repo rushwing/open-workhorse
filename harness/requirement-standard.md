@@ -235,7 +235,7 @@ draft → review_ready → req_review → ready → in_progress → review → d
 - `in_progress → review`：实现完成，PR 已提
 - `X → blocked`：任意状态进入 blocked 时，必须同时写入 `blocked_reason`（枚举见 §6.5）和 `blocked_from_status: X`（X 为当前状态，供 unblock 恢复用）；`review` 打回时额外在 Agent Notes 追加打回原因及关联 Bug 外链（若有）
 - `blocked → X`：unblock 时将 `status` 恢复为 `blocked_from_status` 的值，并清空 `blocked_reason` 和 `blocked_from_status`；`review_round` 递增（若因 review 打回导致的 block）
-- `review → done`：PR 合并；若 Agent Notes 中有 Bug 外链，所有关联 Bug 必须 `status=done`（Bug clean 门控）
+- `review → done`：PR 合并；`pending_bugs` 必须为空数组（即所有关联 Bug `status=closed`）——Bug clean 门控；`pending_bugs` 非空则不允许 merge
 
 ### 6.3 非法流转
 

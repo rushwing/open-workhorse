@@ -76,9 +76,9 @@ tc_policy: required
 |---|---|
 | 1 | 在每个关联 REQ 的 `Agent Notes` 末尾追加 Bug 外链，格式：`BUG-xxx: <一句话摘要>`（供人工阅读）|
 | 2 | 将 BUG-xxx 加入关联 REQ 的 `pending_bugs` 数组（机器可读路由信号，供 Menglan/Pandas 自动决策）|
-| 3 | 读取关联 REQ 的当前 `status`，写入 `blocked_from_status: <当前状态>`（unblock 时用于恢复）|
+| 3 | 读取关联 REQ 的当前 `status` 和 `owner`，写入 `blocked_from_status: <当前状态>` 和 `blocked_from_owner: <当前 owner>`（unblock 时用于恢复）|
 | 4 | 将关联 REQ 的 `status` 更新为 `blocked`，`blocked_reason: bug_linked` |
-| 5 | 将关联 REQ 的 `owner` 清空为 `unassigned`（等待 Bug 修复后重新认领）|
+| 5 | 将关联 REQ 的 `owner` 清空为 `unassigned` |
 | 6 | commit message：`bug-block: REQ-xxx blocked by BUG-xxx` |
 
 **Agent Notes 追加格式（人工可读，不作为路由信号）：**
@@ -96,11 +96,11 @@ tc_policy: required
 
 | 步骤 | 操作 |
 |---|---|
-| 1 | 将 BUG-xxx 追加到关联 REQ 的 `## 关联 Bug 历史` 对应 bug_type 分类（格式：`- [BUG-xxx](../bugs/BUG-xxx.md): <摘要>（closed: YYYY-MM-DD）`）|
+| 1 | 将 BUG-xxx 追加到关联 REQ 的 `## 关联 Bug 历史` 对应 bug_type 分类（格式：`- [BUG-xxx](../archive/done/BUG-xxx.md): <摘要>（closed: YYYY-MM-DD）`；closed Bug 归档于 `tasks/archive/done/`）|
 | 2 | 从关联 REQ 的 `pending_bugs` 数组中移除本 BUG-xxx |
 | 3 | 在 REQ 的 `Agent Notes` 中更新外链状态标注：`BUG-xxx: <摘要>（status: closed）` |
-| 4 | 若 REQ 的 `pending_bugs` 数组**已为空**，则将 REQ `status` 恢复为 `blocked_from_status` 字段的值 |
-| 5 | 清空 `blocked_reason` 和 `blocked_from_status`（写回空字符串或移除字段）|
+| 4 | 若 REQ 的 `pending_bugs` 数组**已为空**，则将 REQ `status` 恢复为 `blocked_from_status`，将 REQ `owner` 恢复为 `blocked_from_owner` |
+| 5 | 清空 `blocked_reason`、`blocked_from_status`、`blocked_from_owner`（写回空字符串或移除字段）|
 | 6 | commit message：`bug-unblock: REQ-xxx unblocked, BUG-xxx closed` |
 
 **`## 关联 Bug 历史` 追加格式：**
@@ -109,10 +109,10 @@ tc_policy: required
 # 关联 Bug 历史
 
 ### req_bug
-- [BUG-003](../bugs/BUG-003.md): 验收标准描述不清晰（closed: 2026-03-17）
+- [BUG-003](../archive/done/BUG-003.md): 验收标准描述不清晰（closed: 2026-03-17）
 
 ### impl_bug
-- [BUG-007](../bugs/BUG-007.md): 健康检查字段缺失（closed: 2026-03-18）
+- [BUG-007](../archive/done/BUG-007.md): 健康检查字段缺失（closed: 2026-03-18）
 ```
 
 **判断条件**：`pending_bugs: []`（空数组）→ REQ 可离开 `blocked`，恢复状态读取 `blocked_from_status` 字段。`## 关联 Bug 历史` 节历史永久保留，不随 `pending_bugs` 清空而删除；Agent Notes 外链标注仅供人工审阅，不参与自动路由。
@@ -530,7 +530,7 @@ Bug 关闭时在 `Agent Notes` 末尾追加：
 | 状态 | 关闭条件 |
 |---|---|
 | `closed`（非 user_bug）| 回归测试在 CI 中全通过；`related_tc` 非空；`根因分析` 已填写 |
-| `closed`（user_bug）| 上述条件 + 提出人验收（或 72h 无响应后 Pandas 代关）|
+| `closed`（user_bug）| 上述条件 + 提出人验收（或 `regressing_notified=true` 满 14 天无响应后 Pandas 代关）|
 | `wont_fix` | 已写明不修复原因；若为设计如此，应更新 REQ 的 Acceptance Criteria |
 
 ---
