@@ -2,9 +2,9 @@
 harness_id: REQ-STD-001
 component: requirements / task routing
 owner: Engineering
-version: 0.3
+version: 0.4
 status: active
-last_reviewed: 2026-03-15
+last_reviewed: 2026-03-17
 ---
 
 # Harness Standard — 需求管理与任务认领规程
