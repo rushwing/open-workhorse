@@ -815,7 +815,7 @@ export function startUiServer(port: number, toolClient: ToolClient): Server {
         ).join("");
         const docsHref = buildHomeHref({ quick: "all" }, true, "docs", language);
         const homeHref = buildHomeHref({ quick: "all" }, true, "overview", language);
-        const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(t("Open Workhorse Docs", "开工吧 文档"))}</title></head><body><h1>${escapeHtml(t("Open Workhorse Docs", "开工吧 文档"))}</h1><ul>${links}</ul><p><a href="${escapeHtml(docsHref)}">${escapeHtml(t("Open document workbench", "打开文档工作台"))}</a> · <a href="${escapeHtml(homeHref)}">${escapeHtml(t("Back to control center", "返回控制中心"))}</a></p></body></html>`;
+        const html = `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(t("Open Workhorse Docs", "开工吧 文档"))}</title></head><body><h1>${escapeHtml(t("Open Workhorse Docs", "开工吧 文档"))}</h1><ul>${links}</ul><p><a href="${escapeHtml(docsHref)}">${escapeHtml(t("Open document workbench", "打开文档工作台"))}</a> · <a href="${escapeHtml(homeHref)}">${escapeHtml(t("Back to Open Workhorse", "返回开工吧"))}</a></p></body></html>`;
         return writeText(res, 200, html, "text/html; charset=utf-8");
       }
 
