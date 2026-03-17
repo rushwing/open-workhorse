@@ -78,7 +78,7 @@ echo "check-req-coverage: 检查 ${#REQ_FILES[@]} 个需求文件..."
 echo ""
 
 REQUIRED_FIELDS=("req_id" "title" "status" "priority" "phase" "owner" "depends_on" "test_case_ref" "scope" "acceptance")
-STATUS_ENUM="draft req_review ready test_designed in_progress blocked review done"
+STATUS_ENUM="draft review_ready req_review ready test_designed in_progress blocked review done"
 SCOPE_ENUM="runtime ui tests scripts docs"
 PRIORITY_ENUM="P0 P1 P2 P3"
 # OWNER_ENUM 由 .env 中的 AGENT_* 变量动态组成；claude_code 保留作 legacy 兼容
@@ -148,6 +148,23 @@ for req_file in "${REQ_FILES[@]}"; do
     done
   fi
 
+  # 5b. pending_bugs 引用存在性检查（BUG-xxx 须在 tasks/bugs/ 或 tasks/archive/done/ 中存在）
+  pending_bugs_raw="$(get_array_field "$req_file" "pending_bugs")"
+  if [[ -n "$(echo "$pending_bugs_raw" | tr -d ' ')" ]]; then
+    IFS=',' read -ra pbugs <<< "$pending_bugs_raw"
+    for pbug in "${pbugs[@]}"; do
+      pbug="$(echo "$pbug" | tr -d ' ')"
+      [[ -z "$pbug" ]] && continue
+      found_pbug=false
+      for d in tasks/bugs/"${pbug}".md tasks/archive/done/"${pbug}".md; do
+        [[ -f "$d" ]] && found_pbug=true && break
+      done
+      if ! $found_pbug; then
+        fail "${req_id}: pending_bugs 引用 '${pbug}' 不存在（tasks/bugs/ 或 archive/done/）"
+      fi
+    done
+  fi
+
   # 6. in_progress 时 owner != unassigned
   if [[ "$status" == "in_progress" && "$owner" == "unassigned" ]]; then
     fail "${req_id}: status=in_progress 但 owner=unassigned"
@@ -166,6 +183,15 @@ for req_file in "${REQ_FILES[@]}"; do
     blocked_from_status="$(get_field "$req_file" "blocked_from_status")"
     if [[ -z "$blocked_from_status" || "$blocked_from_status" == '""' ]]; then
       fail "${req_id}: status=blocked 但 blocked_from_status 为空或缺失"
+    fi
+  fi
+
+  # 10. blocked_reason=bug_linked 时 blocked_from_owner 非空
+  blocked_reason_val="$(get_field "$req_file" "blocked_reason")"
+  if [[ "$status" == "blocked" && "$blocked_reason_val" == "bug_linked" ]]; then
+    blocked_from_owner="$(get_field "$req_file" "blocked_from_owner")"
+    if [[ -z "$blocked_from_owner" || "$blocked_from_owner" == '""' ]]; then
+      fail "${req_id}: blocked_reason=bug_linked 但 blocked_from_owner 为空或缺失"
     fi
   fi
 

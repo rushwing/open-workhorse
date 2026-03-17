@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>需求流转规程 v0.4 — Open Workhorse</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: monospace; background: #0d1117; color: #e6edf3; padding: 24px; }
+  h1 { font-size: 16px; color: #58a6ff; margin-bottom: 4px; }
+  h2 { font-size: 12px; color: #8b949e; margin: 28px 0 12px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #21262d; padding-bottom: 6px; }
+  .subtitle { font-size: 11px; color: #8b949e; margin-bottom: 28px; }
+  .lane-label { font-size: 10px; color: #6e7681; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 18px; }
+  .row { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+  .node { display: inline-flex; flex-direction: column; align-items: center; padding: 8px 14px; border-radius: 6px; border: 1px solid; min-width: 120px; text-align: center; }
+  .node .state { font-size: 13px; font-weight: bold; }
+  .node .agent { font-size: 10px; margin-top: 3px; opacity: 0.75; }
+  .node .note  { font-size: 9px; margin-top: 2px; opacity: 0.55; font-style: italic; }
+  .human   { border-color: #58a6ff; background: #0d2137; color: #79c0ff; }
+  .pandas  { border-color: #3fb950; background: #0d2016; color: #56d364; }
+  .huahua  { border-color: #e3b341; background: #1f1a0d; color: #f0c040; }
+  .menglan { border-color: #bc8cff; background: #150d20; color: #d2a8ff; }
+  .shared  { border-color: #8b949e; background: #161b22; color: #c9d1d9; }
+  .blocked-node { border-color: #f85149; background: #200d0d; color: #ff7b72; border-style: dashed; }
+  .done-node    { border-color: #3fb950; background: #0d2016; color: #56d364; border-width: 2px; }
+  .arrow { display: flex; align-items: center; padding: 0 6px; font-size: 18px; color: #30363d; }
+  .arrow-label { font-size: 9px; color: #6e7681; max-width: 90px; text-align: center; margin-top: 2px; }
+  .vgroup { display: flex; flex-direction: column; align-items: center; }
+  .vert-arrow { font-size: 18px; color: #30363d; line-height: 1; }
+  .vert-label { font-size: 9px; color: #6e7681; }
+  .legend { margin-top: 32px; display: flex; flex-wrap: wrap; gap: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; border: 1px solid; }
+  hr { border: none; border-top: 1px solid #21262d; margin: 20px 0; }
+  .key-field { margin-top: 24px; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 14px; font-size: 11px; max-width: 700px; }
+  .key-field h3 { font-size: 12px; color: #58a6ff; margin-bottom: 10px; }
+  .key-field table { border-collapse: collapse; width: 100%; }
+  .key-field td, .key-field th { border: 1px solid #30363d; padding: 5px 10px; text-align: left; }
+  .key-field th { color: #8b949e; font-weight: normal; background: #0d1117; }
+  .key-field code { background: #0d1117; padding: 1px 5px; border-radius: 3px; color: #79c0ff; }
+  .swimlane-wrap { overflow-x: auto; margin-bottom: 8px; }
+  .dag { display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
+  .note-bar { font-size: 10px; color: #6e7681; margin-bottom: 8px; line-height: 1.6; }
+  .note-bar code { background: #161b22; padding: 1px 5px; border-radius: 3px; color: #79c0ff; font-size: 10px; }
+</style>
+</head>
+<body>
+
+<h1>需求流转规程 v0.4</h1>
+<p class="subtitle">requirement-standard.md v0.4 · Open Workhorse · 9 states · Pandas 只锚定入口/出口，中间路径 Huahua 自持</p>
+
+<!-- ═══════════════════════ SWIMLANE ═══════════════════════ -->
+<h2>泳道图 — 3 Agent 协作路径</h2>
+
+<div class="swimlane-wrap">
+<svg viewBox="0 0 760 1095" xmlns="http://www.w3.org/2000/svg"
+     style="width:100%;max-width:760px;display:block;background:#0d1117;border:1px solid #21262d;border-radius:6px;">
+  <defs>
+    <marker id="ah-gray"   markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#8b949e"/></marker>
+    <marker id="ah-green"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#3fb950"/></marker>
+    <marker id="ah-yellow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#e3b341"/></marker>
+    <marker id="ah-purple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#bc8cff"/></marker>
+    <marker id="ah-red"    markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#f85149"/></marker>
+  </defs>
+
+  <!-- Lane backgrounds: Pandas x=0-239, Huahua x=240-479, Menglan x=480-719, margin x=720-759 -->
+  <rect x="0"   y="0" width="240" height="1095" fill="#091510"/>
+  <rect x="240" y="0" width="240" height="1095" fill="#16140a"/>
+  <rect x="480" y="0" width="240" height="1095" fill="#0e0a15"/>
+  <rect x="720" y="0" width="40"  height="1095" fill="#0d1117"/>
+
+  <!-- Lane dividers -->
+  <line x1="240" y1="42" x2="240" y2="1095" stroke="#21262d" stroke-width="1"/>
+  <line x1="480" y1="42" x2="480" y2="1095" stroke="#21262d" stroke-width="1"/>
+  <line x1="720" y1="42" x2="720" y2="1095" stroke="#1e2430" stroke-width="1" stroke-dasharray="3,3"/>
+
+  <!-- Lane headers -->
+  <rect x="0"   y="0" width="240" height="42" fill="#0d2016" rx="0"/>
+  <text x="120" y="21" text-anchor="middle" fill="#56d364" font-family="monospace" font-size="13" font-weight="bold">Pandas</text>
+  <text x="120" y="36" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="8.5">入口(review_ready) · 出口(done)</text>
+
+  <rect x="240" y="0" width="240" height="42" fill="#1f1a0d"/>
+  <text x="360" y="21" text-anchor="middle" fill="#f0c040" font-family="monospace" font-size="13" font-weight="bold">Huahua</text>
+  <text x="360" y="36" text-anchor="middle" fill="#e3b341" font-family="monospace" font-size="8.5">需求评审 · TC 设计 · Code Review</text>
+
+  <rect x="480" y="0" width="240" height="42" fill="#150d20"/>
+  <text x="600" y="21" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="13" font-weight="bold">Menglan</text>
+  <text x="600" y="36" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8.5">TC Review · 需求实现</text>
+
+  <!-- ── Happy Path Label ── -->
+  <rect x="0" y="42" width="720" height="15" fill="#111b14"/>
+  <text x="8" y="53" fill="#3fb950" font-family="monospace" font-size="8.5" letter-spacing="0.8">▶  HAPPY PATH</text>
+
+  <!-- ══ NODES ══  cx: Pandas=120, Huahua=360, Menglan=600  node: x=cx-95 y=cy-17 w=190 h=34 -->
+
+  <!-- [Pandas cy=82] review_ready -->
+  <rect x="25"  y="65"  width="190" height="34" rx="5" fill="#0d2016" stroke="#3fb950"/>
+  <text x="120" y="82"  text-anchor="middle" fill="#56d364" font-family="monospace" font-size="11" font-weight="bold">review_ready</text>
+  <text x="120" y="94"  text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="8">Daniel 设置 → Pandas 原子 commit</text>
+
+  <!-- [Huahua cy=155] req_review -->
+  <rect x="265" y="138" width="190" height="34" rx="5" fill="#1f1a0d" stroke="#e3b341"/>
+  <text x="360" y="155" text-anchor="middle" fill="#f0c040" font-family="monospace" font-size="11" font-weight="bold">req_review</text>
+  <text x="360" y="167" text-anchor="middle" fill="#e3b341" font-family="monospace" font-size="8">Huahua 评审范围 + 验收标准</text>
+
+  <!-- [Huahua cy=228] ready -->
+  <rect x="265" y="211" width="190" height="34" rx="5" fill="#1f1a0d" stroke="#e3b341"/>
+  <text x="360" y="228" text-anchor="middle" fill="#f0c040" font-family="monospace" font-size="11" font-weight="bold">ready</text>
+  <text x="360" y="240" text-anchor="middle" fill="#e3b341" font-family="monospace" font-size="8">Huahua 自持，继续 TC 设计</text>
+
+  <!-- [Huahua cy=301] test_designed -->
+  <rect x="265" y="284" width="190" height="34" rx="5" fill="#1f1a0d" stroke="#e3b341"/>
+  <text x="360" y="301" text-anchor="middle" fill="#f0c040" font-family="monospace" font-size="11" font-weight="bold">test_designed</text>
+  <text x="360" y="313" text-anchor="middle" fill="#e3b341" font-family="monospace" font-size="8">TC 文件已创建，直写 Menglan inbox</text>
+
+  <!-- [Menglan cy=301] inbox (dashed) -->
+  <rect x="505" y="284" width="185" height="34" rx="5" fill="#150d20" stroke="#bc8cff" stroke-dasharray="4,2" opacity="0.75"/>
+  <text x="597" y="301" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="10">inbox 收到 tc_review</text>
+  <text x="597" y="313" text-anchor="middle" fill="#9b72e8" font-family="monospace" font-size="7.5">无 Pandas 心跳等待</text>
+
+  <!-- [Menglan cy=374] in_progress -->
+  <rect x="505" y="357" width="185" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
+  <text x="597" y="374" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="11" font-weight="bold">in_progress</text>
+  <text x="597" y="386" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">TC review 通过，claim 实现</text>
+
+  <!-- [Menglan cy=447] review (PR) -->
+  <rect x="505" y="430" width="185" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
+  <text x="597" y="447" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="11" font-weight="bold">review</text>
+  <text x="597" y="459" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">PR 已提，直写 Huahua inbox</text>
+
+  <!-- [Huahua cy=520] code review -->
+  <rect x="265" y="503" width="190" height="34" rx="5" fill="#1f1a0d" stroke="#e3b341"/>
+  <text x="360" y="520" text-anchor="middle" fill="#f0c040" font-family="monospace" font-size="11" font-weight="bold">code review</text>
+  <text x="360" y="532" text-anchor="middle" fill="#e3b341" font-family="monospace" font-size="8">Bug clean 门控 · 通过→approve</text>
+
+  <!-- [Pandas cy=593] done -->
+  <rect x="25"  y="576" width="190" height="34" rx="5" fill="#0d2016" stroke="#3fb950" stroke-width="2"/>
+  <text x="120" y="593" text-anchor="middle" fill="#56d364" font-family="monospace" font-size="11" font-weight="bold">done</text>
+  <text x="120" y="605" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="8">Daniel merge → Pandas 归档</text>
+
+  <!-- ══ HAPPY PATH ARROWS ══ -->
+
+  <!-- review_ready → req_review -->
+  <path d="M215,82 C240,82 240,155 265,155" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ah-gray)"/>
+  <text x="222" y="108" fill="#6e7681" font-family="monospace" font-size="7.5">state-as-lock</text>
+
+  <!-- req_review → ready -->
+  <path d="M360,172 L360,211" stroke="#e3b341" stroke-width="1.5" fill="none" marker-end="url(#ah-yellow)"/>
+  <text x="364" y="196" fill="#6e7681" font-family="monospace" font-size="8">评审通过</text>
+
+  <!-- ready → test_designed -->
+  <path d="M360,245 L360,284" stroke="#e3b341" stroke-width="1.5" fill="none" marker-end="url(#ah-yellow)"/>
+  <text x="364" y="269" fill="#6e7681" font-family="monospace" font-size="8">TC 设计完成</text>
+
+  <!-- fold path: req_review → test_designed (dashed, right side of Huahua) -->
+  <path d="M455,155 L492,155 L492,301 L455,301" stroke="#e3b341" stroke-width="1" fill="none" stroke-dasharray="4,3" marker-end="url(#ah-yellow)" opacity="0.55"/>
+  <text x="496" y="218" fill="#a07a20" font-family="monospace" font-size="7.5">折叠路径</text>
+  <text x="496" y="228" fill="#6e7681" font-family="monospace" font-size="7">(§6.2)</text>
+
+  <!-- test_designed → Menglan inbox -->
+  <path d="M455,301 L505,301" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ah-gray)"/>
+  <text x="480" y="295" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="7.5">直写 inbox</text>
+
+  <!-- inbox → in_progress -->
+  <path d="M597,318 L597,357" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#ah-purple)"/>
+  <text x="607" y="342" fill="#6e7681" font-family="monospace" font-size="7.5">TC review 通过</text>
+
+  <!-- in_progress → review -->
+  <path d="M597,391 L597,430" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#ah-purple)"/>
+  <text x="607" y="415" fill="#6e7681" font-family="monospace" font-size="8">PR 提交</text>
+
+  <!-- review → code review -->
+  <path d="M505,447 C480,447 455,487 455,520" stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#ah-gray)"/>
+  <text x="468" y="476" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="7.5">写 Huahua inbox</text>
+
+  <!-- code review → done (approve) -->
+  <path d="M265,520 C240,520 215,556 215,593" stroke="#3fb950" stroke-width="1.5" fill="none" marker-end="url(#ah-green)"/>
+  <text x="225" y="553" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="8">approve</text>
+
+  <!-- ── Rejection Path Label ── -->
+  <rect x="0" y="630" width="720" height="15" fill="#160c0d"/>
+  <text x="8" y="641" fill="#f85149" font-family="monospace" font-size="8.5" letter-spacing="0.8">✗  REVIEW REJECTION  —  impl_bug 打回路径</text>
+
+  <!-- ══ REJECTION NODES ══ -->
+
+  <!-- [Huahua cy=672] code review FAIL -->
+  <rect x="265" y="655" width="190" height="34" rx="5" fill="#250e0a" stroke="#f85149"/>
+  <text x="360" y="672" text-anchor="middle" fill="#ff7b72" font-family="monospace" font-size="11" font-weight="bold">code review ✗</text>
+  <text x="360" y="684" text-anchor="middle" fill="#f85149" font-family="monospace" font-size="8">打回，开立 impl_bug</text>
+
+  <!-- [Menglan cy=672] blocked -->
+  <rect x="505" y="655" width="185" height="34" rx="5" fill="#200d0d" stroke="#f85149" stroke-dasharray="4,2"/>
+  <text x="597" y="672" text-anchor="middle" fill="#ff7b72" font-family="monospace" font-size="11" font-weight="bold">blocked</text>
+  <text x="597" y="684" text-anchor="middle" fill="#f85149" font-family="monospace" font-size="8">pending_bugs 非空</text>
+
+  <!-- [Menglan cy=745] in_progress fix -->
+  <rect x="505" y="728" width="185" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
+  <text x="597" y="745" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="11" font-weight="bold">in_progress</text>
+  <text x="597" y="757" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">修复 impl_bug，Bug 关闭后 unblock</text>
+
+  <!-- [Menglan cy=818] review re-PR -->
+  <rect x="505" y="801" width="185" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
+  <text x="597" y="818" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="11" font-weight="bold">review</text>
+  <text x="597" y="830" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">重新提 PR (review_round++)</text>
+
+  <!-- ══ REJECTION ARROWS ══ -->
+
+  <!-- code review happy → FAIL (branch, dashed red) -->
+  <path d="M360,537 L360,655" stroke="#f85149" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#ah-red)"/>
+  <text x="367" y="599" fill="#f85149" font-family="monospace" font-size="8">PR 打回</text>
+
+  <!-- FAIL → blocked -->
+  <path d="M455,672 L505,672" stroke="#f85149" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#ah-red)"/>
+  <text x="480" y="666" text-anchor="middle" fill="#f85149" font-family="monospace" font-size="7.5">bug_linked</text>
+
+  <!-- blocked → in_progress fix -->
+  <path d="M597,689 L597,728" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#ah-purple)"/>
+  <text x="607" y="712" fill="#6e7681" font-family="monospace" font-size="8">Bug fix</text>
+
+  <!-- in_progress fix → review re-PR -->
+  <path d="M597,762 L597,801" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#ah-purple)"/>
+  <text x="607" y="786" fill="#6e7681" font-family="monospace" font-size="8">re-PR</text>
+
+  <!-- review re-PR → code review (right-margin loopback) -->
+  <path d="M690,818 L745,818 L745,520 L455,520" stroke="#8b949e" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#ah-gray)"/>
+  <text x="749" y="678" fill="#6e7681" font-family="monospace" font-size="8" writing-mode="tb" glyph-orientation-vertical="0">再次 code review</text>
+
+  <!-- ── req_bug Path Label ── -->
+  <rect x="0" y="845" width="720" height="15" fill="#130c0a"/>
+  <text x="8" y="856" fill="#f85149" font-family="monospace" font-size="8.5" letter-spacing="0.8">✗  req_review 评审失败 — req_bug · Menglan 修复需求文档</text>
+
+  <!-- [Huahua cy=890] req_review FAIL -->
+  <rect x="265" y="873" width="190" height="34" rx="5" fill="#250e0a" stroke="#f85149"/>
+  <text x="360" y="890" text-anchor="middle" fill="#ff7b72" font-family="monospace" font-size="11" font-weight="bold">req_review ✗</text>
+  <text x="360" y="902" text-anchor="middle" fill="#f85149" font-family="monospace" font-size="8">Huahua 发现需求缺陷，开立 req_bug</text>
+
+  <!-- [Menglan cy=890] req_bug fix -->
+  <rect x="505" y="873" width="185" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
+  <text x="597" y="890" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="11" font-weight="bold">req_bug 修复</text>
+  <text x="597" y="902" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">Menglan 修改需求文档 → Bug closed</text>
+
+  <!-- Arrow: req_review✗ → req_bug fix -->
+  <path d="M455,890 L505,890" stroke="#f85149" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <text x="480" y="884" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="7.5">pending_bugs++</text>
+
+  <!-- Return annotation -->
+  <text x="597" y="920" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="8">↺ pending_bugs:[] → unblock → req_review</text>
+
+  <!-- ── tc_bug Path Label ── -->
+  <rect x="0" y="930" width="720" height="15" fill="#0c100a"/>
+  <text x="8" y="941" fill="#f85149" font-family="monospace" font-size="8.5" letter-spacing="0.8">✗  tc_review 评审失败 — tc_bug · Huahua 修复 TC 文件</text>
+
+  <!-- [Menglan cy=975] tc_review FAIL -->
+  <rect x="505" y="958" width="185" height="34" rx="5" fill="#200c18" stroke="#f85149"/>
+  <text x="597" y="975" text-anchor="middle" fill="#ff7b72" font-family="monospace" font-size="11" font-weight="bold">tc_review ✗</text>
+  <text x="597" y="987" text-anchor="middle" fill="#f85149" font-family="monospace" font-size="8">Menglan TC 评审失败，开立 tc_bug</text>
+
+  <!-- [Huahua cy=975] tc_bug fix -->
+  <rect x="265" y="958" width="190" height="34" rx="5" fill="#1f1a0d" stroke="#e3b341"/>
+  <text x="360" y="975" text-anchor="middle" fill="#f0c040" font-family="monospace" font-size="11" font-weight="bold">tc_bug 修复</text>
+  <text x="360" y="987" text-anchor="middle" fill="#e3b341" font-family="monospace" font-size="8">Huahua 修改 TC 文件 → Bug closed</text>
+
+  <!-- Arrow: tc_review✗ → tc_bug fix (right-to-left, Menglan→Huahua) -->
+  <path d="M505,975 L455,975" stroke="#f85149" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <text x="480" y="969" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="7.5">pending_bugs++</text>
+
+  <!-- Return annotation -->
+  <text x="360" y="1005" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="8">↺ pending_bugs:[] → unblock → test_designed</text>
+
+  <!-- ── ci_bug Path Label ── -->
+  <rect x="0" y="1015" width="720" height="15" fill="#0a0c14"/>
+  <text x="8" y="1026" fill="#f85149" font-family="monospace" font-size="8.5" letter-spacing="0.8">✗  done 后 CI 失败 — ci_bug · Menglan 修复</text>
+
+  <!-- [Pandas cy=1060] CI detect FAIL -->
+  <rect x="25" y="1043" width="190" height="34" rx="5" fill="#0a1520" stroke="#58a6ff"/>
+  <text x="120" y="1060" text-anchor="middle" fill="#79c0ff" font-family="monospace" font-size="11" font-weight="bold">CI 检测失败</text>
+  <text x="120" y="1072" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="8">Pandas 监测 done REQ 的 CI 状态</text>
+
+  <!-- [Menglan cy=1060] ci_bug fix -->
+  <rect x="505" y="1043" width="185" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
+  <text x="597" y="1060" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="11" font-weight="bold">ci_bug 修复</text>
+  <text x="597" y="1072" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">Menglan 修复 → CI green → Bug closed</text>
+
+  <!-- Arrow: CI FAIL → ci_bug (crosses Huahua lane) -->
+  <path d="M215,1060 L505,1060" stroke="#f85149" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#ah-red)"/>
+  <text x="360" y="1054" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="7.5">open ci_bug</text>
+
+  <!-- End annotation -->
+  <text x="597" y="1090" text-anchor="middle" fill="#6e7681" font-family="monospace" font-size="8">CI green → ci_bug closed（不影响 REQ done 状态）</text>
+</svg>
+</div>
+
+<p class="note-bar">
+  ① Pandas 心跳只触发两次：<code>review_ready→req_review</code>（入口）和 <code>review→done</code>（出口）。中间所有 handoff 由 Huahua/Menglan 直写 inbox，无等待。<br>
+  ② 折叠路径（虚线）：Huahua 在 req_review 阶段同步完成 TC 设计，直接跳到 test_designed，跳过 ready。<br>
+  ③ impl_bug 打回（红色）：code review 失败 → impl_bug → REQ blocked → Menglan fix → re-PR → 右侧弧线回到 code review。<br>
+  ④ req_bug 打回：req_review 评审失败 → Huahua 开立 req_bug → Menglan 修复需求文档 → pending_bugs:[] → unblock → req_review。<br>
+  ⑤ tc_bug 打回：tc_review 评审失败 → Menglan 开立 tc_bug → Huahua 修复 TC 文件 → pending_bugs:[] → unblock → test_designed。<br>
+  ⑥ ci_bug：done 后 Pandas 监测 CI 失败 → Menglan 开立 ci_bug 修复 → CI green → Bug closed（REQ 保持 done）。
+</p>
+
+<!-- ═══════════════════════ STATE MACHINE DAG ═══════════════════════ -->
+<h2>状态机 DAG</h2>
+
+<div class="dag">
+
+  <div class="lane-label">Happy Path</div>
+  <div class="row">
+    <div class="vgroup"><div class="node human"><span class="state">draft</span><span class="agent">Daniel / Human</span><span class="note">需求草稿整理中</span></div></div>
+    <div class="vgroup"><div class="arrow">→</div><div class="arrow-label">Daniel 设为<br>review_ready</div></div>
+    <div class="vgroup"><div class="node human"><span class="state">review_ready</span><span class="agent">Daniel → Pandas</span><span class="note">Human-to-Pipeline 交接点</span></div></div>
+    <div class="vgroup"><div class="arrow">→</div><div class="arrow-label">Pandas<br>state-as-lock<br>原子 commit</div></div>
+    <div class="vgroup"><div class="node huahua"><span class="state">req_review</span><span class="agent">Huahua</span><span class="note">需求评审（范围+验收标准）</span></div></div>
+    <div class="vgroup"><div class="arrow">→</div><div class="arrow-label">Huahua 评审通过<br>check-req-coverage ✓</div></div>
+    <div class="vgroup"><div class="node huahua"><span class="state">ready</span><span class="agent">Huahua（自持）</span><span class="note">继续 TC 设计，无需回弹 Pandas</span></div></div>
+    <div class="vgroup"><div class="arrow">→</div><div class="arrow-label">Huahua TC 设计完成<br>直写 Menglan inbox</div></div>
+    <div class="vgroup"><div class="node huahua"><span class="state">test_designed</span><span class="agent">Menglan 认领</span><span class="note">TC 文件已创建</span></div></div>
+    <div class="vgroup"><div class="arrow">→</div><div class="arrow-label">Menglan claim<br>单 commit</div></div>
+    <div class="vgroup"><div class="node menglan"><span class="state">in_progress</span><span class="agent">Menglan</span><span class="note">实现中</span></div></div>
+    <div class="vgroup"><div class="arrow">→</div><div class="arrow-label">PR 已提</div></div>
+    <div class="vgroup"><div class="node huahua"><span class="state">review</span><span class="agent">Huahua review</span><span class="note">Bug clean 门控</span></div></div>
+    <div class="vgroup"><div class="arrow">→</div><div class="arrow-label">Daniel merge</div></div>
+    <div class="vgroup"><div class="node done-node"><span class="state">done</span><span class="agent">— 归档 —</span><span class="note">archive/done/</span></div></div>
+  </div>
+
+  <div class="lane-label">Huahua 折叠路径（req_review 阶段同步做 TC 设计，跳过 ready）</div>
+  <div class="row">
+    <div class="node huahua" style="opacity:0.6"><span class="state">req_review</span></div>
+    <div class="vgroup"><div class="arrow">→→</div><div class="arrow-label">同步完成 TC 设计</div></div>
+    <div class="node huahua" style="opacity:0.6"><span class="state">test_designed</span></div>
+    <div style="font-size:10px;color:#6e7681;margin-left:16px;align-self:center;">✓ 规程明确允许（v0.4 §6.2）</div>
+  </div>
+
+  <div class="lane-label">tc_policy=optional / exempt</div>
+  <div class="row">
+    <div class="node huahua" style="opacity:0.6"><span class="state">ready</span></div>
+    <div class="vgroup"><div class="arrow">→</div><div class="arrow-label">跳过 TC 设计<br>直写 Menglan inbox</div></div>
+    <div class="node menglan" style="opacity:0.6"><span class="state">in_progress</span></div>
+  </div>
+
+  <hr>
+  <div class="lane-label">阻塞 / 异常路径</div>
+
+  <div class="row" style="gap:24px;flex-wrap:wrap;">
+    <div class="vgroup" style="align-items:center;gap:4px;">
+      <div style="font-size:9px;color:#e3b341;margin-bottom:4px;">req_bug</div>
+      <div class="node huahua" style="min-width:100px;"><span class="state">req_review</span></div>
+      <div class="vert-arrow">↓</div><div class="vert-label">Huahua 发现 req_bug<br>pending_bugs 非空</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node blocked-node" style="min-width:100px;"><span class="state">blocked</span><span class="agent">bug_linked</span></div>
+      <div class="vert-arrow">↓</div><div class="vert-label">Bug closed, pending_bugs:[]</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node huahua" style="min-width:100px;opacity:0.7;"><span class="state">req_review</span><span class="note">恢复 blocked_from_status</span></div>
+    </div>
+    <div class="vgroup" style="align-items:center;gap:4px;">
+      <div style="font-size:9px;color:#bc8cff;margin-bottom:4px;">tc_bug</div>
+      <div class="node huahua" style="min-width:100px;"><span class="state">ready</span></div>
+      <div class="vert-arrow">↓</div><div class="vert-label">Menglan 发现 tc_bug</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node blocked-node" style="min-width:100px;"><span class="state">blocked</span><span class="agent">bug_linked</span></div>
+      <div class="vert-arrow">↓</div>
+      <div class="node huahua" style="min-width:100px;opacity:0.7;"><span class="state">ready</span></div>
+    </div>
+    <div class="vgroup" style="align-items:center;gap:4px;">
+      <div style="font-size:9px;color:#c9a0dc;margin-bottom:4px;">impl_bug</div>
+      <div class="node menglan" style="min-width:100px;"><span class="state">in_progress</span></div>
+      <div class="vert-arrow">↓</div><div class="vert-label">Huahua PR review 打回</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node blocked-node" style="min-width:100px;"><span class="state">blocked</span><span class="agent">bug_linked</span></div>
+      <div class="vert-arrow">↓</div>
+      <div class="node menglan" style="min-width:100px;opacity:0.7;"><span class="state">in_progress</span></div>
+    </div>
+    <div class="vgroup" style="align-items:center;gap:4px;">
+      <div style="font-size:9px;color:#89b4fa;margin-bottom:4px;">ci_bug</div>
+      <div class="node huahua" style="min-width:100px;"><span class="state">review</span></div>
+      <div class="vert-arrow">↓</div><div class="vert-label">Pandas CI 报红</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node blocked-node" style="min-width:100px;"><span class="state">blocked</span><span class="agent">bug_linked</span></div>
+      <div class="vert-arrow">↓</div>
+      <div class="node huahua" style="min-width:100px;opacity:0.7;"><span class="state">review</span></div>
+    </div>
+    <div class="vgroup" style="align-items:center;gap:4px;">
+      <div style="font-size:9px;color:#8b949e;margin-bottom:4px;">review_round ≥ 2</div>
+      <div class="node shared" style="min-width:100px;"><span class="state">review</span></div>
+      <div class="vert-arrow">↓</div><div class="vert-label">tg_decision 升级 Daniel</div>
+      <div class="vert-arrow">↓</div>
+      <div class="node blocked-node" style="min-width:100px;"><span class="state">blocked</span><span class="agent">review_rejected</span></div>
+      <div class="vert-arrow">↓</div>
+      <div class="node human" style="min-width:100px;opacity:0.7;"><span class="state">in_progress</span><span class="note">Pandas 解除</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="border-color:#58a6ff;background:#0d2137;"></div><span>Daniel / Human</span></div>
+  <div class="legend-item"><div class="legend-dot" style="border-color:#3fb950;background:#0d2016;"></div><span>Pandas（入口/出口锚点）</span></div>
+  <div class="legend-item"><div class="legend-dot" style="border-color:#e3b341;background:#1f1a0d;"></div><span>Huahua（自持中间路径）</span></div>
+  <div class="legend-item"><div class="legend-dot" style="border-color:#bc8cff;background:#150d20;"></div><span>Menglan（TC Review / 实现）</span></div>
+  <div class="legend-item"><div class="legend-dot" style="border-color:#f85149;background:#200d0d;border-style:dashed;"></div><span>blocked</span></div>
+</div>
+
+<div class="key-field">
+  <h3>v0.4 关键字段</h3>
+  <table>
+    <tr><th>字段 / 状态</th><th>类型</th><th>说明</th></tr>
+    <tr><td><code>review_ready</code></td><td>新状态（第 9 个）</td><td>Human-to-Pipeline 交接点。Daniel 设置；Pandas 原子 commit 转为 req_review（state-as-lock 防重复认领）</td></tr>
+    <tr><td><code>pending_bugs</code></td><td>新 frontmatter 字段</td><td>BUG-xxx 数组；非空时 REQ 进入 blocked；Bug 关闭后从此字段移除并追加到 REQ <code>## 关联 Bug 历史</code></td></tr>
+    <tr><td><code>blocked_from_status</code></td><td>已有字段</td><td>进入 blocked 前的状态，unblock 时恢复用</td></tr>
+  </table>
+  <p style="margin-top:8px;font-size:10px;color:#6e7681;">规程：harness/requirement-standard.md v0.4 · 校验：scripts/check-req-coverage.sh</p>
+</div>
+
+</body>
+</html>

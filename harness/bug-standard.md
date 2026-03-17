@@ -2,7 +2,7 @@
 harness_id: BUG-STD-001
 component: bugs / defect tracking
 owner: Engineering
-version: 0.3.3
+version: 0.4.1
 status: active
 last_reviewed: 2026-03-16
 ---
@@ -74,20 +74,21 @@ tc_policy: required
 
 | 步骤 | 操作 |
 |---|---|
-| 1 | 在每个关联 REQ 的 `Agent Notes` 末尾追加 Bug 外链，格式：`BUG-xxx: <一句话摘要>` |
-| 2 | 读取关联 REQ 的当前 `status`，写入 `blocked_from_status: <当前状态>`（unblock 时用于恢复）|
-| 3 | 将关联 REQ 的 `status` 更新为 `blocked`，`blocked_reason: bug_linked` |
-| 4 | 将关联 REQ 的 `owner` 清空为 `unassigned`（等待 Bug 修复后重新认领）|
-| 5 | commit message：`bug-block: REQ-xxx blocked by BUG-xxx` |
+| 1 | 在每个关联 REQ 的 `Agent Notes` 末尾追加 Bug 外链，格式：`BUG-xxx: <一句话摘要>`（供人工阅读）|
+| 2 | 将 BUG-xxx 加入关联 REQ 的 `pending_bugs` 数组（机器可读路由信号，供 Menglan/Pandas 自动决策）|
+| 3 | 读取关联 REQ 的当前 `status` 和 `owner`，写入 `blocked_from_status: <当前状态>` 和 `blocked_from_owner: <当前 owner>`（unblock 时用于恢复）|
+| 4 | 将关联 REQ 的 `status` 更新为 `blocked`，`blocked_reason: bug_linked` |
+| 5 | 将关联 REQ 的 `owner` 清空为 `unassigned` |
+| 6 | commit message：`bug-block: REQ-xxx blocked by BUG-xxx` |
 
-**Agent Notes 追加格式：**
+**Agent Notes 追加格式（人工可读，不作为路由信号）：**
 
 ```
 ## Bug 外链
 - BUG-xxx: <一句话摘要>（status: open / confirmed / ...）
 ```
 
-**目的**：确保 REQ 负责 Agent 和 Pandas Orchestrator 均能感知阻塞来源，避免 review → done 时遗漏 Bug。
+**目的**：`pending_bugs` 作为结构化路由信号，替代解析 Agent Notes 自由文本；Agent Notes 外链保留供人工审阅。
 
 ### 2.3 Bug Clean → REQ Unblock 规范
 
@@ -95,13 +96,26 @@ tc_policy: required
 
 | 步骤 | 操作 |
 |---|---|
-| 1 | 检查 `related_req` 中所有 REQ 的 `Agent Notes`，找到引用本 Bug 的外链 |
-| 2 | 更新该外链状态标注：`BUG-xxx: <摘要>（status: closed）` |
-| 3 | 若该 REQ 的 Agent Notes 中**无其他未关闭 Bug**（`status != done/closed`），则将 REQ `status` 恢复为 `blocked_from_status` 字段的值 |
-| 4 | 清空 `blocked_reason` 和 `blocked_from_status`（写回空字符串或移除字段）|
-| 5 | commit message：`bug-unblock: REQ-xxx unblocked, BUG-xxx closed` |
+| 1 | 将 BUG-xxx 追加到关联 REQ 的 `## 关联 Bug 历史` 对应 bug_type 分类（格式：`- [BUG-xxx](../archive/done/BUG-xxx.md): <摘要>（closed: YYYY-MM-DD）`；closed Bug 归档于 `tasks/archive/done/`）|
+| 2 | 从关联 REQ 的 `pending_bugs` 数组中移除本 BUG-xxx |
+| 3 | 在 REQ 的 `Agent Notes` 中更新外链状态标注：`BUG-xxx: <摘要>（status: closed）` |
+| 4 | 若 REQ 的 `pending_bugs` 数组**已为空**，则将 REQ `status` 恢复为 `blocked_from_status`，将 REQ `owner` 恢复为 `blocked_from_owner` |
+| 5 | 清空 `blocked_reason`、`blocked_from_status`、`blocked_from_owner`（写回空字符串或移除字段）|
+| 6 | commit message：`bug-unblock: REQ-xxx unblocked, BUG-xxx closed` |
 
-**判断条件**：REQ Agent Notes 中所有 `BUG-xxx` 外链的 status 均为 `closed` 或 `done` → REQ 可离开 `blocked`，恢复状态读取 `blocked_from_status` 字段。
+**`## 关联 Bug 历史` 追加格式：**
+
+```
+# 关联 Bug 历史
+
+### req_bug
+- [BUG-003](../archive/done/BUG-003.md): 验收标准描述不清晰（closed: 2026-03-17）
+
+### impl_bug
+- [BUG-007](../archive/done/BUG-007.md): 健康检查字段缺失（closed: 2026-03-18）
+```
+
+**判断条件**：`pending_bugs: []`（空数组）→ REQ 可离开 `blocked`，恢复状态读取 `blocked_from_status` 字段。`## 关联 Bug 历史` 节历史永久保留，不随 `pending_bugs` 清空而删除；Agent Notes 外链标注仅供人工审阅，不参与自动路由。
 
 ### 2.4 Bug 类型与 REQ 状态联动速查
 
@@ -114,6 +128,18 @@ tc_policy: required
 | `user_bug` | 用户/human | 生产使用（GitHub issue）| `done`（不 block REQ）| Menglan/Huahua | 视类型 | `done`（不 block，不变）| `done`（不变）|
 
 > "unblock 后 REQ 状态"由 §2.3 的 `blocked_from_status` 字段决定，不可跳步直接写最终目标状态。
+
+### 2.5 Menglan 路由规则（基于 pending_bugs）
+
+Menglan 收到 REQ inbox 消息时，按以下规则决定下一步行动：
+
+| REQ status | pending_bugs | Menglan 行动 |
+|---|---|---|
+| `test_designed` | 任意（通常为空）| → `tc_review`（正常 TC 评审流程）|
+| `req_review` | 非空（含 BUG-xxx）| → `fix req_bug`（针对 pending_bugs 中每个 Bug 执行修复）|
+| `blocked` | 非空 | 等待 Bug 关闭后 REQ 自动 unblock，再进入上述路由 |
+
+> **规则来源**：`pending_bugs` 是结构化路由信号（requirement-standard.md v0.4 §5.1）。Menglan 读取此字段即可决策，无需解析 Agent Notes 自由文本。
 
 ---
 
@@ -504,7 +530,7 @@ Bug 关闭时在 `Agent Notes` 末尾追加：
 | 状态 | 关闭条件 |
 |---|---|
 | `closed`（非 user_bug）| 回归测试在 CI 中全通过；`related_tc` 非空；`根因分析` 已填写 |
-| `closed`（user_bug）| 上述条件 + 提出人验收（或 72h 无响应后 Pandas 代关）|
+| `closed`（user_bug）| 上述条件 + 提出人验收（或 `regressing_notified=true` 满 14 天无响应后 Pandas 代关）|
 | `wont_fix` | 已写明不修复原因；若为设计如此，应更新 REQ 的 Acceptance Criteria |
 
 ---
@@ -547,3 +573,5 @@ Bug 关闭时在 `Agent Notes` 末尾追加：
 | 0.3.1 | 2026-03-16 | 向后兼容修补（PR review P1/P2）：owner 枚举补回 claude_code（legacy）；harness.sh claimable 判断改用 $AGENT_ORCHESTRATOR 变量；新增 check-bug-coverage.sh 执行门禁（npm run bug:check + release:audit 集成）；agent-cli-playbook 模板改用 $AGENT_CODER |
 | 0.3.2 | 2026-03-16 | 合并 docs/BUG-STATE-MACHINE.md：新增 §6.6 ReAct SOP 推理模板；删除已过时的派生文档，以本文件为单一事实源；修正 §1 跟踪模型描述（所有 Bug 统一走 BUG-xxx.md；non-user_bug 由 agents+Daniel 内部关闭，user_bug 需提出用户验收） |
 | 0.3.3 | 2026-03-16 | user_bug 同步架构重设计：引入两轨模型（GitHub issue 为用户入口，BUG-xxx.md 为 agent 工作轨道）；新增 §8 Pandas 每日双向同步规程（GitHub→本地关闭检测、本地→GitHub 状态推送、regressing 验收通知、14 天超时自动关闭）；新增 `github_issue` 和 `regressing_notified` 字段；更新 §1.1 事实源边界表；§12 新增 user_bug github_issue 字段校验 |
+| 0.4.0 | 2026-03-17 | pending_bugs 路由信号对齐（REQ-029）：§2.2 blocking 步骤新增"将 BUG-xxx 加入 REQ pending_bugs 数组"；§2.3 unblocking 改用 pending_bugs 空数组作为判断条件（替代解析 Agent Notes 自由文本）；新增 §2.5 Menglan 路由规则表（test_designed→tc_review；req_review+pending_bugs 非空→fix req_bug） |
+| 0.4.1 | 2026-03-17 | Bug 历史归档：§2.3 unblock 步骤 1 改为先将 BUG-xxx 追加到 REQ `## 关联 Bug 历史` 对应 bug_type 分类（永久归档），再从 pending_bugs 移除；补充追加格式示例 |

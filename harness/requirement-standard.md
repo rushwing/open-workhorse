@@ -2,9 +2,9 @@
 harness_id: REQ-STD-001
 component: requirements / task routing
 owner: Engineering
-version: 0.3
+version: 0.4
 status: active
-last_reviewed: 2026-03-15
+last_reviewed: 2026-03-17
 ---
 
 # Harness Standard — 需求管理与任务认领规程
@@ -62,9 +62,9 @@ last_reviewed: 2026-03-15
 
 | 项目 | 内容 |
 |---|---|
-| 规则 | 只使用本规范定义的 8 个状态；禁止自行扩展近义状态 |
+| 规则 | 只使用本规范定义的 9 个状态；禁止自行扩展近义状态 |
 | 目的 | 避免状态语义漂移 |
-| 好示例 | `draft -> req_review -> ready -> test_designed -> in_progress -> review -> done` |
+| 好示例 | `draft -> review_ready -> req_review -> ready -> test_designed -> in_progress -> review -> done` |
 | 坏示例 | `doing`、`wip`、`almost_done`、`ready-for-next-pass` 混用 |
 
 ---
@@ -132,6 +132,7 @@ tasks/                  # 所有待执行工作项的根目录
 | `owner` | `unassigned` / `pandas` / `huahua` / `menglan` / `claude_code` / `human`（具名 agent 值由 .env `AGENT_*` 变量配置，此处为默认值）|
 | `blocked_reason` | 仅 `status=blocked` 时填写；枚举见 §6.5 |
 | `blocked_from_status` | 仅 `status=blocked` 时填写；记录进入 blocked 前的状态，供 unblock 时恢复用 |
+| `blocked_from_owner` | 仅 `blocked_reason=bug_linked` 时填写；记录 block 前的 owner，供 unblock 时恢复用（见 bug-standard.md §2.2/§2.3）|
 | `review_round` | （可选）当前打回轮次，整数；超过 2 轮时升级 Daniel |
 | `depends_on` | 顺序依赖项列表（所有项必须 `done` 才可认领），无则空数组 |
 | `test_case_ref` | 对应测试用例文档列表，例如 `[TC-001, TC-002]`；`test_designed` 状态必须非空 |
@@ -139,6 +140,7 @@ tasks/                  # 所有待执行工作项的根目录
 | `tc_exempt_reason` | `tc_policy=exempt` 时必填；说明豁免理由 |
 | `scope` | `runtime` / `ui` / `tests` / `scripts` / `docs` |
 | `acceptance` | 验收标准摘要（一句话）|
+| `pending_bugs` | （可选）关联中的未关闭 Bug 编号列表，例如 `[BUG-003]`；空数组 `[]` 为正常态；非空时为 Menglan 路由信号（见 bug-standard.md §2.5）；由 bug-standard.md §2.2 blocking 步骤写入，§2.3 unblock 步骤清除 |
 
 ### 5.2 推荐文档结构
 
@@ -152,12 +154,14 @@ phase: phase-1
 owner: unassigned
 blocked_reason: ""
 blocked_from_status: ""
+blocked_from_owner: ""
 depends_on: []
 test_case_ref: []
 tc_policy: required
 tc_exempt_reason: ""
 scope: runtime
 acceptance: [一句话摘要]
+pending_bugs: []
 ---
 
 # Goal
@@ -172,6 +176,9 @@ acceptance: [一句话摘要]
 > 描述需要覆盖的场景，供测试用例设计参考。此节不是测试用例本身，测试用例独立存在于 test-cases/。
 
 # Agent Notes
+
+# 关联 Bug 历史
+> Bug 修复关闭后由 bug-standard.md §2.3 unblock 步骤自动追加，按 bug_type 分类；历史永久保留，不随 pending_bugs 清空而删除。
 ```
 
 ### 5.3 一项需求只定义一个完成口径
@@ -192,8 +199,9 @@ acceptance: [一句话摘要]
 | 状态 | 含义 |
 |---|---|
 | `draft` | 需求还在整理，不能认领 |
-| `req_review` | 需求已起草，等待 Huahua 做需求评审（验收标准、范围确认）；评审通过后进入 `ready` |
-| `ready` | 需求评审已通过，等待测试用例设计（`tc_policy=required`）或可直接认领（`tc_policy=optional/exempt`）|
+| `review_ready` | Human-to-Pipeline 交接点；Daniel 设置，Pandas 扫描并原子 commit 转为 `req_review`（state-as-lock，防重复认领） |
+| `req_review` | Pandas 已 claim，Huahua 做需求评审（验收标准、范围确认）；评审通过后进入 `ready` |
+| `ready` | 需求评审已通过；Huahua 自持 owner，继续 TC 设计（`tc_policy=required`）；TC 设计完成后直接写 Menglan inbox，不回弹 Pandas 心跳；`tc_policy=optional/exempt` 时同理直接写 Menglan inbox 实现认领 |
 | `test_designed` | 对应 TC 文档已创建并填入 `test_case_ref`，可被 Claude Code 认领实现 |
 | `in_progress` | 已被 Claude Code 认领并执行中 |
 | `blocked` | 由于依赖未完成、review 打回或关联 Bug 未关闭而暂停；原因写入 `blocked_reason` 字段及 `Agent Notes` |
@@ -203,33 +211,38 @@ acceptance: [一句话摘要]
 ### 6.2 合法流转
 
 ```
-draft → req_review → ready → test_designed → in_progress → review → done
-                        ↓           ↓               ↓            ↓
-                     blocked ←→ ready / test_designed ←──────────┘
-                     (blocked_reason 必须填写)
+draft → review_ready → req_review → ready → test_designed → in_progress → review → done
+         (Daniel)       (Pandas          ↓           ↓            ↓            ↓
+                        state-as-     blocked ←→ ready/test_designed ←──────────┘
+                        lock)         (blocked_reason 必须填写)
+```
+
+折叠路径（Huahua 同步完成 TC 设计，跳过 ready）：
+```
+req_review ──────────────────────────→ test_designed
 ```
 
 当 `tc_policy=optional` 或 `tc_policy=exempt` 时：
 ```
-draft → req_review → ready → in_progress → review → done
-                                               ↓
-                                            blocked
+draft → review_ready → req_review → ready → in_progress → review → done
 ```
 
-- `draft → req_review`：需求起草完成，范围和验收标准已有初稿，发送给 Huahua 评审
+- `draft → review_ready`：Daniel 确认需求初稿，手动设置此状态；Pandas 心跳扫描到后原子 commit 转为 `req_review` 并设 `owner=huahua`
+- `review_ready → req_review`：仅由 Pandas 单 commit 完成（state-as-lock），防止并发重复认领；不允许人工直接跳过
 - `req_review → ready`：Huahua 评审通过，需求范围、验收标准已确认，且 `check-req-coverage.sh` frontmatter 检查通过
 - `req_review → blocked`：Huahua 在评审中发现需求缺陷，开 `req_bug` 并 block REQ
 - `ready → test_designed`：TC 文档已创建，`test_case_ref` 非空
 - `test_designed → in_progress`：Agent 认领（单 commit 改 owner + status）
 - `ready → in_progress`：仅当 `tc_policy=optional` 或 `tc_policy=exempt`
 - `in_progress → review`：实现完成，PR 已提
-- `X → blocked`：任意状态进入 blocked 时，必须同时写入 `blocked_reason`（枚举见 §6.5）和 `blocked_from_status: X`（X 为当前状态，供 unblock 恢复用）；`review` 打回时额外在 Agent Notes 追加打回原因及关联 Bug 外链（若有）
-- `blocked → X`：unblock 时将 `status` 恢复为 `blocked_from_status` 的值，并清空 `blocked_reason` 和 `blocked_from_status`；`review_round` 递增（若因 review 打回导致的 block）
-- `review → done`：PR 合并；若 Agent Notes 中有 Bug 外链，所有关联 Bug 必须 `status=done`（Bug clean 门控）
+- `X → blocked`：任意状态进入 blocked 时，必须同时写入 `blocked_reason`（枚举见 §6.5）和 `blocked_from_status: X`；若 `blocked_reason=bug_linked`，还须写入 `blocked_from_owner: <当前 owner>` 并将 `owner` 清空为 `unassigned`（见 bug-standard.md §2.2）；`review` 打回时额外在 Agent Notes 追加打回原因及关联 Bug 外链（若有）
+- `blocked → X`：unblock 时将 `status` 恢复为 `blocked_from_status`；若 `blocked_from_owner` 非空，同时将 `owner` 恢复为 `blocked_from_owner`；清空 `blocked_reason`、`blocked_from_status`、`blocked_from_owner`；`review_round` 递增（若因 review 打回导致的 block）
+- `review → done`：PR 合并；`pending_bugs` 必须为空数组（即所有关联 Bug `status=closed`）——Bug clean 门控；`pending_bugs` 非空则不允许 merge
 
 ### 6.3 非法流转
 
-- 不允许 `draft → ready`（必须先经过 `req_review`）
+- 不允许 `draft → req_review`（必须先经过 `review_ready`；Pandas 不可直接 claim `draft` 状态的需求）
+- 不允许 `draft → ready`（必须先经过 `review_ready → req_review`）
 - 不允许 `draft → done`
 - 不允许 `blocked → done`（必须先 unblock，经 `in_progress → review → done`）
 - 不允许 `tc_policy=required` 时 `ready → in_progress`（必须经过 `test_designed`）
@@ -248,12 +261,13 @@ bash scripts/check-req-coverage.sh
 检查项（脚本自动验证）：
 
 - [ ] 10 个 frontmatter 字段全部存在（`req_id` / `title` / `status` / `priority` / `phase` / `owner` / `depends_on` / `test_case_ref` / `scope` / `acceptance`）
-- [ ] `status` ∈ `{draft, ready, test_designed, in_progress, blocked, review, done}`
+- [ ] `status` ∈ `{draft, review_ready, req_review, ready, test_designed, in_progress, blocked, review, done}`
 - [ ] `scope` ∈ `{runtime, ui, tests, scripts, docs}`
 - [ ] `priority` ∈ `{P0, P1, P2, P3}`
 - [ ] `depends_on` 中的每个 REQ 编号在 `tasks/` 中存在
 - [ ] `status == blocked` 时 `blocked_reason` 字段存在且非空（脚本自动验证）
 - [ ] `status == blocked` 时 `blocked_from_status` 字段存在且非空（脚本自动验证）
+- [ ] `status == blocked` かつ `blocked_reason == bug_linked` 时 `blocked_from_owner` 字段存在且非空（脚本自动验证）
 
 ### 6.5 `blocked_reason` 枚举
 
@@ -322,20 +336,32 @@ bash scripts/check-req-coverage.sh
 | 2 | commit message：`handoff: REQ-xxx → <next-agent>` |
 | 3 | 在 `Agent Notes` 中写明移交内容和下一步期望 |
 
-**标准 Handoff 流程（多 Agent 协作路径）：**
+**Pandas 只锚定两个端点，中间路径 Huahua 自持：**
 
 ```
-Pandas (claim/orchestrate)
-  → Huahua (tc_design → in_progress → review)
-  → Menglan (review → done / review → blocked)
-  → Pandas (umbrella done)
+① 入口：review_ready ─(Pandas state-as-lock)─► req_review (owner=huahua)
+② 出口：review ─(Daniel merge)─► done (Pandas 归档)
 ```
 
-TC 设计路径：
+**中间路径（无 Pandas 心跳等待）：**
+
 ```
-Pandas (ready) → Huahua (tc_design, owner=huahua)
-  → Menglan (tc_review, owner=menglan)
-  → Huahua (tc_blocked 打回, owner=huahua) 或 Menglan (in_progress 实现)
+req_review (owner=huahua)
+  → Huahua 评审通过：status=ready, owner=huahua（自持，不交还 Pandas）
+  → Huahua TC 设计完成：status=test_designed, 直接写 Menglan inbox
+  → Menglan TC review / claim：status=in_progress, owner=menglan
+  → Menglan 提 PR：status=review, 直接写 Huahua inbox for code review
+  → Huahua code review：通过 → Pandas 处理出口；打回 → blocked
+```
+
+折叠路径（Huahua 在 req_review 阶段同步完成 TC 设计，直接 → test_designed，跳过 ready）是中间路径的极简版。
+
+**TC review 子路径：**
+
+```
+test_designed (Huahua 写 Menglan inbox)
+  → Menglan tc_review 通过 → in_progress（Menglan 认领实现）
+  → Menglan 发现 tc_bug → Huahua 修 TC → Menglan 二次确认
 ```
 
 ### 8.5 review_round 管理
@@ -405,3 +431,4 @@ Pandas (ready) → Huahua (tc_design, owner=huahua)
 | 0.1 | 2026-03-15 | 初始版本（从 hydro-om-copilot REQ-STD-001 v0.7 改写）；适配单 Agent 模式；删去 openai_codex；scope 枚举改为 open-workhorse 模块；删去 pytest_ref；简化认领为单 commit（无 Claim PR 互斥锁） |
 | 0.2 | 2026-03-16 | 多 Agent 扩展（REQ-027）：owner 扩展加入 pandas/huahua/menglan；新增 blocked_reason 字段（§5.1、§6.5）；review→blocked 合法转换（§6.2）；Bug clean → done 门控（§6.2、§6.3）；新增 §8.4 handoff 协议、§8.5 review_round 管理 |
 | 0.3 | 2026-03-16 | Bug 类型重设计对齐（REQ-028 计划）：新增 `req_review` 状态（§6.1）；`draft → req_review → ready` 流转（§6.2）；`draft → ready` 列为非法流转（§6.3）；§6.4 标题更新；`blocked_reason` 新增 `req_review_feedback`（§6.5）；状态总数从 7 更新为 8（§2.4）|
+| 0.4 | 2026-03-17 | 流转效率 + Bug 历史归档（REQ-029）：新增 `review_ready` 状态，状态总数 8 → 9（§2.4、§6.1）；新增 `pending_bugs` 字段（§5.1、§5.2）；`ready` 语义更新为 Huahua 自持（§6.1）；§8.4 handoff 协议重写——Pandas 只锚定入口/出口两端，中间路径 Huahua 自持直写 Menglan inbox，消除 30 分钟心跳等待；REQ 模板新增 `## 关联 Bug 历史` 归档节（§5.2）|
