@@ -6,23 +6,24 @@ interface OwnerRoute {
   owner: string;
 }
 
-// Key format: "→to" (target state determines owner)
-// agentName is injected at call time for in_progress and review transitions.
-const STATIC_ROUTING: Partial<Record<string, OwnerRoute>> = {
-  '→req_review':    { owner: 'huahua' },
-  '→ready':         { owner: 'huahua' },
-  '→test_designed': { owner: 'huahua' },
-  '→done':          { owner: 'unassigned' },
-  '→blocked':       { owner: 'unassigned' },
-};
-
 export function resolveOwner(
   _from: ReqState,
   to: ReqState,
-  agentName?: string,
+  options?: { reviewerAgent?: string; implementerAgent?: string },
 ): OwnerRoute | undefined {
-  if (to === 'in_progress') {
-    return { owner: agentName ?? 'claude_code' };
+  const reviewer = options?.reviewerAgent ?? 'huahua';
+  const implementer = options?.implementerAgent ?? 'claude_code';
+
+  switch (to) {
+    case 'req_review':
+    case 'ready':
+    case 'test_designed':
+      return { owner: reviewer };
+    case 'in_progress':
+      return { owner: implementer };
+    case 'done':
+      return { owner: 'unassigned' };
+    default:
+      return undefined;
   }
-  return STATIC_ROUTING[`→${to}`];
 }

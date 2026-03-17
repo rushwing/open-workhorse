@@ -41,7 +41,9 @@ export function validateTransition(
   return { valid: true };
 }
 
-// Explicitly block a REQ (sets blocked state + records blocked_from_status/owner)
+// Explicitly block a REQ (sets blocked state + records blocked_from_status)
+// Owner clearing: only when reason='bug_linked' (§6.2 — "若 blocked_reason=bug_linked,
+// 还须写入 blocked_from_owner 并将 owner 清空为 unassigned")
 export function block(req: ReqFrontmatter, reason: string): ReqFrontmatter {
   // Any non-terminal, non-blocked state can be blocked
   const terminalOrBlocked: ReqState[] = ['blocked', 'done'];
@@ -50,13 +52,12 @@ export function block(req: ReqFrontmatter, reason: string): ReqFrontmatter {
       `cannot block a REQ with status '${req.status}'`);
   }
   const prevStatus = req.status;
-  const prevOwner = req.owner;
   req.status = 'blocked';
   req.blocked_reason = reason;
   req.blocked_from_status = prevStatus;
-  req.owner = 'unassigned';
   if (reason === 'bug_linked') {
-    req.blocked_from_owner = prevOwner;
+    req.blocked_from_owner = req.owner;
+    req.owner = 'unassigned';
   }
   return req;
 }
@@ -93,7 +94,16 @@ export function applyTransition(
     throw new IllegalTransitionError(from, to, error);
   }
 
-  // 2. Guard: ready → in_progress blocked when tc_policy='required' (§6.3)
+  // 2. Guard: to=blocked requires blockedReason (§6.2 — "必须同时写入 blocked_reason")
+  if (to === 'blocked') {
+    if (!options?.blockedReason) {
+      throw new Error(
+        `applyTransition: blockedReason is required when transitioning to 'blocked' (§6.2)`,
+      );
+    }
+  }
+
+  // 3. Guard: ready → in_progress blocked when tc_policy='required' (§6.3)
   if (from === 'ready' && to === 'in_progress') {
     if (req.tc_policy === 'required') {
       throw new IllegalTransitionError(
@@ -103,7 +113,7 @@ export function applyTransition(
     }
   }
 
-  // 3. Guard: review → done blocked when pending_bugs is non-empty (§6.2 Bug clean gate)
+  // 4. Guard: review → done blocked when pending_bugs is non-empty (§6.2 Bug clean gate)
   if (from === 'review' && to === 'done') {
     if (req.pending_bugs && req.pending_bugs.length > 0) {
       throw new IllegalTransitionError(
@@ -113,7 +123,7 @@ export function applyTransition(
     }
   }
 
-  // 4. review → blocked: increment review_round; if >= 2 call tgNotify
+  // 5. review → blocked: increment review_round; if >= 2 call tgNotify
   if (from === 'review' && to === 'blocked') {
     req.review_round = (req.review_round ?? 0) + 1;
     if (req.review_round >= 2) {
@@ -123,24 +133,25 @@ export function applyTransition(
     }
   }
 
-  // 5. Apply status
+  // 6. Apply status
   req.status = to;
 
-  // 6. Apply owner routing
-  const route = resolveOwner(from, to, options?.agentName);
-  if (route) {
-    if (to !== 'blocked') {
-      req.owner = route.owner;
-    } else {
-      // blocked: save blocked_from_owner only if reason=bug_linked — handled separately
-      // For applyTransition→blocked, just set owner=unassigned
-      req.owner = 'unassigned';
-    }
-  }
-
-  // 7. Auto-set blocked_from_status when transitioning to blocked
+  // 7. Apply owner routing (blocked path: only bug_linked clears owner per §6.2)
   if (to === 'blocked') {
     req.blocked_from_status = from;
+    req.blocked_reason = options!.blockedReason;
+    if (options!.blockedReason === 'bug_linked') {
+      req.blocked_from_owner = req.owner;
+      req.owner = 'unassigned';
+    }
+  } else {
+    const route = resolveOwner(from, to, {
+      reviewerAgent: options?.reviewerAgent,
+      implementerAgent: options?.implementerAgent,
+    });
+    if (route) {
+      req.owner = route.owner;
+    }
   }
 
   return req;

@@ -52,8 +52,22 @@ export class IllegalTransitionError extends Error {
 }
 
 export interface ApplyTransitionOptions {
-  /** Agent name used when routing owner to implementer (defaults to 'claude_code') */
-  agentName?: string;
+  /**
+   * Required when transitioning to 'blocked' — the standard mandates blocked_reason
+   * is written on every X→blocked transition (§6.2).
+   * applyTransition will throw if to='blocked' and this is absent.
+   */
+  blockedReason?: string;
+  /**
+   * Configurable reviewer agent name — defaults to 'huahua'.
+   * Set from AGENT_REVIEWER env when constructing options.
+   */
+  reviewerAgent?: string;
+  /**
+   * Configurable implementer agent name — defaults to 'claude_code'.
+   * Set from AGENT_CODER env when constructing options.
+   */
+  implementerAgent?: string;
   /** Notification callback — called when review_round >= 2 on review→blocked */
   tgNotify?: (message: string) => void;
 }

@@ -112,17 +112,22 @@ describe('Group B — state-as-lock', () => {
     const tgNotify = (msg: string) => notified.push(msg);
 
     // First review rejection (review_round becomes 1, no notify)
-    applyTransition(req, 'blocked', { tgNotify });
+    applyTransition(req, 'blocked', { blockedReason: 'review_rejected', tgNotify });
     assert.equal(req.status, 'blocked');
     assert.equal(req.review_round, 1);
+    assert.equal(req.blocked_reason, 'review_rejected', 'blocked_reason must be set');
+    assert.equal(req.blocked_from_status, 'review', 'blocked_from_status must be set');
+    // review_rejected is not bug_linked — owner must NOT be cleared
+    assert.equal(req.owner, 'claude_code', 'owner must not be cleared for non-bug_linked block');
     assert.equal(notified.length, 0, 'no notify at review_round=1');
 
-    // Restore to review
+    // Restore to review (clear blocked fields)
     req.status = 'review';
     delete req.blocked_from_status;
+    delete req.blocked_reason;
 
     // Second review rejection (review_round becomes 2, should notify)
-    applyTransition(req, 'blocked', { tgNotify });
+    applyTransition(req, 'blocked', { blockedReason: 'review_rejected', tgNotify });
     assert.equal(req.review_round, 2);
     assert.ok(notified.length >= 1, 'tgNotify must be called at review_round=2');
   });
@@ -151,7 +156,7 @@ describe('Group C — block/unblock', () => {
     assert.equal(req.blocked_from_owner, undefined, 'blocked_from_owner must be cleared');
   });
 
-  test('TC-030-07: block(req, dep_not_done) — no blocked_from_owner; unblock restores status, owner unchanged', () => {
+  test('TC-030-07: block(req, dep_not_done) — no blocked_from_owner; owner unchanged throughout', () => {
     const req = makeReq({ status: 'test_designed', owner: 'huahua' });
 
     block(req, 'dep_not_done');
@@ -159,11 +164,12 @@ describe('Group C — block/unblock', () => {
     assert.equal(req.blocked_reason, 'dep_not_done');
     assert.equal(req.blocked_from_status, 'test_designed');
     assert.equal(req.blocked_from_owner, undefined, 'no blocked_from_owner for non-bug_linked');
-    assert.equal(req.owner, 'unassigned');
+    // dep_not_done does NOT clear owner (only bug_linked does per §6.2)
+    assert.equal(req.owner, 'huahua', 'owner must not be cleared for non-bug_linked block');
 
     unblock(req);
     assert.equal(req.status, 'test_designed');
-    // owner was not set as blocked_from_owner, stays as set by block (unassigned)
+    assert.equal(req.owner, 'huahua', 'owner preserved throughout');
     assert.equal(req.blocked_reason, undefined);
     assert.equal(req.blocked_from_status, undefined);
   });
@@ -209,6 +215,20 @@ describe('Group D — illegal transitions', () => {
     );
     // Status unchanged
     assert.equal(req.status, 'ready');
+  });
+
+  test('applyTransition → blocked without blockedReason throws (P1 contract)', () => {
+    const req = makeReq({ status: 'in_progress', owner: 'claude_code' });
+
+    assert.throws(
+      () => applyTransition(req, 'blocked'),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.ok((err as Error).message.includes('blockedReason'));
+        return true;
+      },
+    );
+    assert.equal(req.status, 'in_progress', 'status must not change on throw');
   });
 
   test('TC-030-11: review → done rejected when pending_bugs is non-empty', () => {
@@ -271,6 +291,26 @@ describe('Group E — field validation', () => {
     // (e) valid in_progress with named owner — no errors
     const e5 = validateReqFields({ status: 'in_progress', owner: 'claude_code' });
     assert.equal(e5.length, 0, 'valid in_progress req should have no errors');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Configurable agent names (P2a coverage)
+// ---------------------------------------------------------------------------
+
+describe('Configurable agent names', () => {
+  test('reviewerAgent option overrides default huahua', () => {
+    const req = makeReq({ status: 'review_ready', owner: 'unassigned' });
+
+    applyTransition(req, 'req_review', { reviewerAgent: 'custom_reviewer' });
+    assert.equal(req.owner, 'custom_reviewer');
+  });
+
+  test('implementerAgent option overrides default claude_code', () => {
+    const req = makeReq({ status: 'test_designed', owner: 'huahua', tc_policy: 'required' });
+
+    applyTransition(req, 'in_progress', { implementerAgent: 'custom_coder' });
+    assert.equal(req.owner, 'custom_coder');
   });
 });
 
