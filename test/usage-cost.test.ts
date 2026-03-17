@@ -61,7 +61,9 @@ test("usage-cost snapshot uses runtime session events for real requests, trends,
     costLimit: 50,
   });
 
-  const now = Date.now();
+  const todayNoon = new Date();
+  todayNoon.setUTCHours(12, 0, 0, 0);
+  const now = todayNoon.getTime();
   const usage = computeUsageCostSnapshot(snapshot, [], [], {
     sourceStatus: "connected",
     sessionContexts: [

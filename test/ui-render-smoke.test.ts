@@ -108,7 +108,7 @@ test("audit timeline page renders without network and keeps severity selection",
   };
 
   const html = renderAuditPageForSmoke(timeline, "warn");
-  assert(html.includes("<title>OpenClaw Control Center Audit Timeline</title>"));
+  assert(html.includes("<title>Open Workhorse Audit Timeline</title>"));
   assert(html.includes("<h1>Audit Timeline</h1>"));
   assert(html.includes('value="warn" selected'));
   assert(html.includes("timeline &lt;unsafe&gt; marker"));
@@ -665,7 +665,7 @@ test("session links stay on the session detail UI and docs index accepts languag
   assert(source.includes('const html = renderSessionDrilldownPage(detail, language);'));
   assert(source.includes('assertAllowedQueryParams(url.searchParams, ["lang"], true);'));
   assert(source.includes('Open document workbench'));
-  assert(source.includes('Back to control center'));
+  assert(source.includes('Back to Open Workhorse'));
   assert(!source.includes('href="/sessions/${encodeURIComponent(item.sessionKey)}"'));
   assert(source.includes('Available views", "可切换查看"))}${escapeHtml(options.language === "en" ? ": " : "：")}'));
   assert(source.includes('function joinDisplayList(items: string[], language: UiLanguage): string {'));
