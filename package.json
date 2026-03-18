@@ -43,10 +43,6 @@
     "memory:init": "bash scripts/init-memory.sh",
     "runbook:render": "bash scripts/render-runbook.sh"
   },
-  "dependencies": {
-    "sqlite3": "^5.1.7",
-    "mysql2": "^3.11.5"
-  },
   "devDependencies": {
     "@types/node": "^22.13.10",
     "tsx": "^4.20.0",

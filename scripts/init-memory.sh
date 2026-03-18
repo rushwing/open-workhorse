@@ -96,24 +96,36 @@ fi
 
 ok "目录结构验证通过"
 
-# ── Step 2: 确认 schema.sql ───────────────────────────────────────────────────
-header "Step 2: 确认 schema.sql"
+# ── Step 2: 同步 schema.sql（始终以 repo 版本为准）────────────────────────────
+header "Step 2: 同步 schema.sql"
 
-if [[ ! -f "$SCHEMA_DEST" ]]; then
-  if [[ -f "$SCHEMA_SRC" ]]; then
-    if $DRY_RUN; then
-      info "[dry-run] cp $SCHEMA_SRC → $SCHEMA_DEST"
-    else
-      cp "$SCHEMA_SRC" "$SCHEMA_DEST"
-      ok "schema.sql 已复制 → $SCHEMA_DEST"
-    fi
+if [[ ! -f "$SCHEMA_SRC" ]]; then
+  err "schema.sql 不存在: $SCHEMA_SRC"
+  err "请确认 everything_openclaw 已克隆至 ~/workspace-pandas/everything_openclaw"
+  exit 1
+fi
+
+# Always sync from the version-controlled source to prevent stale deployed schema.
+# Use checksum comparison so we only write when content actually changed.
+SCHEMA_NEEDS_UPDATE=true
+if [[ -f "$SCHEMA_DEST" ]]; then
+  SRC_SUM=$(md5sum "$SCHEMA_SRC" | cut -d' ' -f1)
+  DEST_SUM=$(md5sum "$SCHEMA_DEST" | cut -d' ' -f1)
+  if [[ "$SRC_SUM" == "$DEST_SUM" ]]; then
+    SCHEMA_NEEDS_UPDATE=false
+    ok "schema.sql 已是最新（checksum 一致）: $SCHEMA_DEST"
   else
-    err "schema.sql 不存在: $SCHEMA_SRC"
-    err "请确认 everything_openclaw 已克隆至 ~/workspace-pandas/everything_openclaw"
-    exit 1
+    warn "schema.sql 已过期 — 将从 repo 版本覆盖"
   fi
-else
-  ok "schema.sql 已就绪: $SCHEMA_DEST"
+fi
+
+if $SCHEMA_NEEDS_UPDATE; then
+  if $DRY_RUN; then
+    info "[dry-run] cp $SCHEMA_SRC → $SCHEMA_DEST"
+  else
+    cp "$SCHEMA_SRC" "$SCHEMA_DEST"
+    ok "schema.sql 已同步 → $SCHEMA_DEST"
+  fi
 fi
 
 # ── Step 3: 初始化 project.db ─────────────────────────────────────────────────
@@ -124,27 +136,71 @@ if ! command -v sqlite3 &>/dev/null; then
   warn "请安装: apt install sqlite3"
   warn "安装后手动执行: sqlite3 ${DB_PATH} < ${SCHEMA_DEST}"
 else
-  if [[ -f "$DB_PATH" ]]; then
-    ok "project.db 已存在，跳过（幂等）: $DB_PATH"
-    info "验证表结构..."
-    TABLES=$(sqlite3 "$DB_PATH" ".tables" 2>/dev/null || true)
-    EXPECTED_TABLES="candidates decisions patterns project_facts"
-    ALL_TABLES_OK=true
-    for t in $EXPECTED_TABLES; do
-      if echo "$TABLES" | grep -qw "$t"; then
-        info "  ✓  table: $t"
+  # Validate schema shape: check required columns and the candidates.status CHECK constraint.
+  # Returns 0 (ok) or 1 (drift detected).
+  verify_schema_shape() {
+    local db="$1"
+    local ok_flag=true
+
+    # Required columns per table: "table:col1,col2,..."
+    local -a REQUIRED_COLS=(
+      "project_facts:id,topic,content,source_agent,created_at"
+      "decisions:id,title,decision,rationale,made_by,date"
+      "patterns:id,pattern_type,agent,description,example,created_at"
+      "candidates:id,source_agent,topic,content,status,proposed_at,reviewed_at"
+    )
+
+    for entry in "${REQUIRED_COLS[@]}"; do
+      local tbl="${entry%%:*}"
+      local cols="${entry##*:}"
+      local col_info
+      col_info=$(sqlite3 "$db" "PRAGMA table_info(${tbl});" 2>/dev/null || true)
+      if [[ -z "$col_info" ]]; then
+        warn "  ✗  table missing: $tbl"
+        ok_flag=false
+        continue
+      fi
+      IFS=',' read -ra COL_LIST <<< "$cols"
+      for col in "${COL_LIST[@]}"; do
+        if echo "$col_info" | grep -qw "$col"; then
+          info "  ✓  ${tbl}.${col}"
+        else
+          warn "  ✗  ${tbl}.${col} 缺失"
+          ok_flag=false
+        fi
+      done
+    done
+
+    # Verify candidates.status CHECK constraint includes pending/accepted/rejected
+    local check_sql
+    check_sql=$(sqlite3 "$db" \
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='candidates';" 2>/dev/null || true)
+    for val in pending accepted rejected; do
+      if echo "$check_sql" | grep -q "'${val}'"; then
+        info "  ✓  candidates.status CHECK includes '${val}'"
       else
-        warn "  ✗  table: $t 缺失 — 尝试重新应用 schema"
-        ALL_TABLES_OK=false
+        warn "  ✗  candidates.status CHECK missing '${val}'"
+        ok_flag=false
       fi
     done
-    if ! $ALL_TABLES_OK; then
+
+    $ok_flag
+  }
+
+  if [[ -f "$DB_PATH" ]]; then
+    ok "project.db 已存在: $DB_PATH"
+    info "验证 schema 结构..."
+    if ! verify_schema_shape "$DB_PATH"; then
+      warn "schema 结构不符 — 重新应用 schema"
       if $DRY_RUN; then
         info "[dry-run] sqlite3 $DB_PATH < $SCHEMA_DEST"
       else
         sqlite3 "$DB_PATH" < "$SCHEMA_DEST"
         ok "schema 已重新应用"
+        verify_schema_shape "$DB_PATH" || { err "schema 重新应用后验证仍失败"; exit 1; }
       fi
+    else
+      ok "schema 结构验证通过"
     fi
   else
     if $DRY_RUN; then
@@ -152,18 +208,9 @@ else
     else
       sqlite3 "$DB_PATH" < "$SCHEMA_DEST"
       ok "project.db 已创建: $DB_PATH"
-    fi
-
-    if ! $DRY_RUN; then
-      TABLES=$(sqlite3 "$DB_PATH" ".tables" 2>/dev/null || true)
-      for t in project_facts decisions patterns candidates; do
-        if echo "$TABLES" | grep -qw "$t"; then
-          info "  ✓  table: $t"
-        else
-          err "  ✗  table: $t 创建失败"
-          exit 1
-        fi
-      done
+      info "验证 schema 结构..."
+      verify_schema_shape "$DB_PATH" || { err "新建 DB schema 验证失败"; exit 1; }
+      ok "schema 结构验证通过"
     fi
   fi
 fi
