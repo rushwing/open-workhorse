@@ -8,6 +8,8 @@ Step-by-step instructions for deploying open-workhorse on a headless Raspberry P
 - Node.js 22+ with nvm: `source ~/.nvm/nvm.sh && node --version`
 - Tailscale connected to your tailnet
 - `gh` CLI installed (for github-kb skill)
+- `sqlite3` installed: `apt install sqlite3`
+- `everything_openclaw` cloned at `~/workspace-pandas/everything_openclaw` (see MEMORY.md rule — read-only source)
 
 ## 1. Clone and Build
 
@@ -105,7 +107,24 @@ curl -s http://localhost:4310/healthz \
 
 Expected: `"ok": true, "status": "ok"`
 
-## 5. Shared GitHub KB (optional)
+## 4. Initialize Pandas Memory
+
+```bash
+npm run memory:init
+# Validates workspace-pandas/memory/ structure and creates project.db
+# Requires: everything_openclaw present at ~/workspace-pandas/everything_openclaw
+# Requires: sqlite3 installed (apt install sqlite3)
+```
+
+## 5. Render Pandas RUNBOOK
+
+```bash
+npm run runbook:render
+# Requires: everything_openclaw present and RUNBOOK.md template authored
+# Output: ~/workspace-pandas/RUNBOOK.md
+```
+
+## 6. Shared GitHub KB (optional)
 
 Create a shared repository cache accessible by all agents:
 
@@ -129,7 +148,7 @@ gh repo clone <owner>/<repo> ~/github-kb/<repo> -- --depth 1
 git clone --depth 1 https://github.com/<owner>/<repo>.git ~/github-kb/<repo>
 ```
 
-## 6. Switch Default Workspace (optional)
+## 7. Switch Default Workspace (optional)
 
 To change the default agent workspace (e.g. to `workspace-lion`):
 

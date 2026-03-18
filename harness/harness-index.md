@@ -2,9 +2,9 @@
 harness_id: HARNESS-INDEX
 component: process / orchestration
 owner: Engineering
-version: 0.1
+version: 0.3
 status: active
-last_reviewed: 2026-03-15
+last_reviewed: 2026-03-18
 ---
 
 # Harness Engineering — 流程总索引
@@ -113,19 +113,56 @@ PR merged to main
             └─▶ 扫描 tasks/features/：frontmatter 校验 + orphan/ghost 检测
 
 Pandas orchestration loop（模板 K）：
-    └─▶ harness.sh status → 有可认领任务
-            └─▶ harness.sh implement <REQ-N>（触发 Menglan）
-                    └─▶ Menglan 开 PR
-                            └─▶ Pandas 通知 Huahua review（GH issue）
-                                    └─▶ Huahua（CodeX）输出 review comments
-                                            └─▶ Pandas 触发 fix-review（如有 blocking findings）
-                                                    └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
+    └─▶ 检查 for-pandas/ inbox 新结果包（agent-inbox-read_result_packet）
+            └─▶ harness.sh status → 有可认领任务
+                    └─▶ harness.sh implement <REQ-N>（触发 Menglan）
+                            └─▶ Menglan 开 PR
+                                    └─▶ Pandas 写 review packet → for-huahua/ inbox
+                                            └─▶ Huahua（CodeX）输出 review comments
+                                                    └─▶ Pandas 触发 fix-review（如有 blocking findings）
+                                                            └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
 
 dev-cycle-watchdog（每 5h cron）：
     └─▶ 检测 in_progress 任务停滞 / PR 无 review → Telegram 告警 Daniel
 ```
 
+> Agents 每 5 分钟轮询各自 inbox。Pandas 写任务包至 `$SHARED_RESOURCES_ROOT/inbox/for-{agent}/`，读结果包自 `inbox/for-pandas/`。
+
 > TC 设计（`tc_policy=required`）由 Menglan 在实现前完成，或在 ready 阶段由 Daniel 人工设计。
+
+---
+
+## Tool Registration
+
+所有工具调用必须在以下文件中注册后方可在 harness 脚本或 agent prompt 中使用：
+
+| 文件 | 内容 |
+|---|---|
+| `harness/CAPABILITIES.md` | 语义契约（Pandas 可做什么） |
+| `harness/CONNECTORS.md` | 运行时绑定（在 open-workhorse 中如何调用） |
+
+命名规范：`namespace-category-tool_name`（如 `notify-human-send_status_update`）
+
+新增工具前，必须先在两个文件中完成注册。
+
+---
+
+## Memory Integration
+
+任务完成后，specialist 将记忆候选写入：
+
+```
+~/workspace-pandas/memory/short-term/candidates/
+```
+
+Pandas 在 session 结束或批量任务完成后将候选提升至 `project.db`（SQLite）。
+
+| 文件 | 说明 |
+|---|---|
+| `harness/memory-architecture.md` | 完整架构、写权限表、schema |
+| `workspace-pandas/memory/long-term/schema.sql` | 表定义（来源：everything_openclaw） |
+
+初始化：`npm run memory:init`
 
 ---
 
@@ -135,3 +172,4 @@ dev-cycle-watchdog（每 5h cron）：
 |---|---|---|
 | 0.1 | 2026-03-15 | 初始版本（从 hydro-om-copilot 改写）；适配单 Agent 模式（删去 openai_codex）；TC 设计内嵌为实现前步骤；删去 kb-ingestion-standard |
 | 0.2 | 2026-03-15 | 引入 Pandas orchestrator 角色（不读 PR diff）；将 claude_code 明确为 Menglan；Huahua review 方式改为 CodeX + GH LLM Issue Orchestrator；自动化流程更新为 semi-autonomous loop（Telegram HITL + watchdog cron）；review-standard 更新为 active |
+| 0.3 | 2026-03-18 | 引入 Tool Registration（CAPABILITIES.md / CONNECTORS.md）+ Memory Integration 节；inbox-based dispatch 说明；对齐 everything_openclaw agent_persona_harness_v0 ground truth |
