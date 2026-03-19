@@ -1,0 +1,72 @@
+# load_when: persona migration, project adapter authoring
+# avoid_loading_when: active orchestration, routine task execution
+adapter_id: open_workhorse_pandas_v0
+adapter_version: 0.1.0
+project_id: open_workhorse
+agent_id: pandas
+team_role: engineering_orchestrator
+system_role: manager_agent
+specialization: workflow_orchestrator
+generated_output_path: ~/workspace-pandas/RUNBOOK.md
+
+render_policy:
+  source_of_truth:
+    template: personas/workspace-pandas/RUNBOOK.md
+    adapter: personas/workspace-pandas/RUNBOOK.adapter.yaml
+    schema: personas/workspace-pandas/RUNBOOK.adapter.schema.yaml
+  commit_rendered_output_to_project_repo: false
+  require_complete_placeholder_binding: true
+  fail_on_unknown_placeholder: true
+
+bindings:
+  PHASE_ROOT: tasks/phases
+  REQ_ROOT: tasks/features
+  BUG_ROOT: tasks/bugs
+  TC_ROOT: tasks/test-cases
+
+  WORKER_STATUS_SOURCE: runtime_health_worker_heartbeat
+  TASK_DEPENDENCY_SOURCE: req_bug_frontmatter_graph
+  PR_METADATA_SOURCE: github_pr_view_and_checks
+  NOTIFY_DECISION_COMMAND: tg_decision
+  NOTIFY_PR_READY_COMMAND: tg_pr_ready
+  TC_REVIEW_TRIGGER: tc_complete
+
+  REQ_ENTRY_HANDOFF_COMMIT: "handoff({REQ_ID}): pandas -> huahua req_review"
+  BUG_CONFIRM_COMMIT: "confirm({BUG_ID}): pandas"
+  BUG_ROUTE_COMMIT: "route({BUG_ID}): pandas -> specialist"
+  REVIEW_ROUTE_COMMIT: "route({REQ_ID}): pandas -> huahua review"
+
+binding_descriptions:
+  WORKER_STATUS_SOURCE:
+    kind: source_key
+    meaning: Observe worker idle or busy status from the canonical heartbeat or status surface.
+  TASK_DEPENDENCY_SOURCE:
+    kind: source_key
+    meaning: Read dependency closure from REQ and BUG frontmatter links.
+  PR_METADATA_SOURCE:
+    kind: source_key
+    meaning: Observe PR review and CI metadata without reading the implementation diff.
+  NOTIFY_DECISION_COMMAND:
+    kind: command_key
+    meaning: Send Daniel a decision-needed alert or escalation prompt.
+  NOTIFY_PR_READY_COMMAND:
+    kind: command_key
+    meaning: Send Daniel a merge-ready or status update notification.
+  REQ_ENTRY_HANDOFF_COMMIT:
+    kind: commit_pattern_key
+    meaning: Commit message template used when Pandas claims a review_ready REQ into req_review.
+  BUG_CONFIRM_COMMIT:
+    kind: commit_pattern_key
+    meaning: Commit message template used when Pandas confirms one open BUG into confirmed.
+  BUG_ROUTE_COMMIT:
+    kind: commit_pattern_key
+    meaning: Commit message template used when Pandas routes a confirmed BUG to the next specialist owner.
+  REVIEW_ROUTE_COMMIT:
+    kind: commit_pattern_key
+    meaning: Commit message template used when Pandas routes implementation output into review.
+
+rendered_frontmatter:
+  generated_from_template: personas/workspace-pandas/RUNBOOK.md
+  generated_from_adapter: personas/workspace-pandas/RUNBOOK.adapter.yaml
+  generated_for_project: open_workhorse
+  generated_for_agent: pandas

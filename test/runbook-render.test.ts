@@ -1,5 +1,12 @@
 // Contract tests for RUNBOOK rendering pipeline
 // TC-RNB-01 ~ TC-RNB-08
+//
+// External runtime requirement (not tested here):
+//   everything_openclaw must be cloned at ~/workspace-pandas/everything_openclaw
+//   before running `npm run runbook:render` in production.
+//
+// Adapter artifacts are validated against test/fixtures/runbook/,
+// which are vendored copies of the version-controlled source of truth.
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,11 +14,10 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const PROJECT_ROOT = process.cwd();
-const HOME = process.env.HOME ?? '';
-const EC_PANDAS = join(HOME, 'workspace-pandas', 'everything_openclaw', 'personas', 'workspace-pandas');
-const ADAPTER_FILE = join(EC_PANDAS, 'RUNBOOK.adapter.yaml');
-const ADAPTER_SCHEMA = join(EC_PANDAS, 'RUNBOOK.adapter.schema.yaml');
-const RUNBOOK_RENDERING = join(EC_PANDAS, 'RUNBOOK_RENDERING.md');
+const FIXTURE_DIR = join(PROJECT_ROOT, 'test', 'fixtures', 'runbook');
+const ADAPTER_FILE = join(FIXTURE_DIR, 'RUNBOOK.adapter.yaml');
+const ADAPTER_SCHEMA = join(FIXTURE_DIR, 'RUNBOOK.adapter.schema.yaml');
+const RUNBOOK_RENDERING = join(FIXTURE_DIR, 'RUNBOOK_RENDERING.md');
 const RENDER_SCRIPT = join(PROJECT_ROOT, 'scripts', 'render-runbook.sh');
 const PKG_JSON = join(PROJECT_ROOT, 'package.json');
 
@@ -32,14 +38,15 @@ describe('TC-RNB-01: scripts/render-runbook.sh exists and is executable', () => 
 });
 
 // ---------------------------------------------------------------------------
-// TC-RNB-02: everything_openclaw/personas/workspace-pandas/RUNBOOK.adapter.yaml exists
+// TC-RNB-02: fixture RUNBOOK.adapter.yaml exists (vendored contract copy)
 // ---------------------------------------------------------------------------
 
-describe('TC-RNB-02: RUNBOOK.adapter.yaml exists', () => {
-  test('RUNBOOK.adapter.yaml exists', () => {
+describe('TC-RNB-02: test/fixtures/runbook/RUNBOOK.adapter.yaml exists', () => {
+  test('fixture RUNBOOK.adapter.yaml exists', () => {
     assert.ok(
       existsSync(ADAPTER_FILE),
-      `RUNBOOK.adapter.yaml must exist at ${ADAPTER_FILE}\nEnsure everything_openclaw is cloned at ~/workspace-pandas/everything_openclaw`,
+      `Fixture must exist at ${ADAPTER_FILE}\n` +
+      `Update it from: everything_openclaw/personas/workspace-pandas/RUNBOOK.adapter.yaml`,
     );
   });
 });
@@ -88,27 +95,29 @@ describe('TC-RNB-05: adapter team_role is engineering_orchestrator', () => {
 });
 
 // ---------------------------------------------------------------------------
-// TC-RNB-06: RUNBOOK.adapter.schema.yaml exists
+// TC-RNB-06: fixture RUNBOOK.adapter.schema.yaml exists (vendored contract copy)
 // ---------------------------------------------------------------------------
 
-describe('TC-RNB-06: RUNBOOK.adapter.schema.yaml exists', () => {
-  test('RUNBOOK.adapter.schema.yaml exists', () => {
+describe('TC-RNB-06: test/fixtures/runbook/RUNBOOK.adapter.schema.yaml exists', () => {
+  test('fixture RUNBOOK.adapter.schema.yaml exists', () => {
     assert.ok(
       existsSync(ADAPTER_SCHEMA),
-      `RUNBOOK.adapter.schema.yaml must exist at ${ADAPTER_SCHEMA}`,
+      `Fixture must exist at ${ADAPTER_SCHEMA}\n` +
+      `Update it from: everything_openclaw/personas/workspace-pandas/RUNBOOK.adapter.schema.yaml`,
     );
   });
 });
 
 // ---------------------------------------------------------------------------
-// TC-RNB-07: RUNBOOK_RENDERING.md exists
+// TC-RNB-07: fixture RUNBOOK_RENDERING.md exists (vendored contract copy)
 // ---------------------------------------------------------------------------
 
-describe('TC-RNB-07: RUNBOOK_RENDERING.md exists', () => {
-  test('RUNBOOK_RENDERING.md exists', () => {
+describe('TC-RNB-07: test/fixtures/runbook/RUNBOOK_RENDERING.md exists', () => {
+  test('fixture RUNBOOK_RENDERING.md exists', () => {
     assert.ok(
       existsSync(RUNBOOK_RENDERING),
-      `RUNBOOK_RENDERING.md must exist at ${RUNBOOK_RENDERING}`,
+      `Fixture must exist at ${RUNBOOK_RENDERING}\n` +
+      `Update it from: everything_openclaw/personas/workspace-pandas/RUNBOOK_RENDERING.md`,
     );
   });
 });
