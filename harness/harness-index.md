@@ -121,6 +121,9 @@ Pandas orchestration loop（模板 K）：
                                             └─▶ Huahua（CodeX）输出 review comments
                                                     └─▶ Pandas 触发 fix-review（如有 blocking findings）
                                                             └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
+                                                                    └─▶ Daniel merge PR
+                                                                            └─▶ Pandas 心跳 S2：扫到 status:done → 发 Telegram 归档通知
+                                                                                    └─▶ Daniel 确认 → Pandas 执行归档（mv REQ + TC → tasks/archive/done/）
 
 dev-cycle-watchdog（每 5h cron）：
     └─▶ 检测 in_progress 任务停滞 / PR 无 review → Telegram 告警 Daniel

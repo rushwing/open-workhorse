@@ -390,10 +390,14 @@ test_designed (Huahua 写 Menglan inbox)
 
 ### 9.3 合并后
 
-- [ ] 把需求项改为 `done`
-- [ ] 将 `tasks/features/REQ-xxx.md` 移到 `tasks/archive/done/`
-- [ ] 将关联的 `tasks/test-cases/TC-xxx.md` 同步移到 `tasks/archive/done/`
-- [ ] 若影响阶段目标，更新对应 `phases/` 文档
+**责任方：Pandas**
+**触发机制：** Pandas 心跳 S2 扫描 `tasks/features/` 中 `status: done` 的文件，通知 Daniel 确认后执行归档。
+
+- [ ] （Menglan）PR 合并前在需求项写入 `status: done`，`pending_bugs` 必须为空
+- [ ] （Pandas）心跳 S2 检测到 `status: done` → 发 Telegram 归档通知 Daniel
+- [ ] （Pandas，Daniel 确认后）将 `tasks/features/REQ-xxx.md` 移到 `tasks/archive/done/`
+- [ ] （Pandas，Daniel 确认后）将关联的 `tasks/test-cases/TC-xxx.md` 同步移到 `tasks/archive/done/`
+- [ ] （Pandas）若影响阶段目标，更新对应 `phases/` 文档
 
 ---
 
