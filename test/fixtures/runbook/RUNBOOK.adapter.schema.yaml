@@ -1,0 +1,121 @@
+# load_when: persona migration, project adapter authoring
+# avoid_loading_when: active orchestration, routine task execution
+$schema: local://runbook-adapter-schema-v0
+schema_id: pandas-runbook-adapter-schema-v0
+purpose: Validation contract for project adapters that render Pandas' RUNBOOK.md
+version: 0.1.0
+
+required_top_level_fields:
+  - adapter_id
+  - adapter_version
+  - project_id
+  - agent_id
+  - team_role
+  - system_role
+  - specialization
+  - generated_output_path
+  - render_policy
+  - bindings
+
+fixed_identity:
+  agent_id: pandas
+  team_role: engineering_orchestrator
+  system_role: manager_agent
+  specialization: workflow_orchestrator
+
+render_policy_rules:
+  commit_rendered_output_to_project_repo:
+    type: boolean
+    recommended: false
+  require_complete_placeholder_binding:
+    type: boolean
+    required_value: true
+  fail_on_unknown_placeholder:
+    type: boolean
+    required_value: true
+
+required_bindings:
+  - PHASE_ROOT
+  - REQ_ROOT
+  - BUG_ROOT
+  - TC_ROOT
+  - WORKER_STATUS_SOURCE
+  - TASK_DEPENDENCY_SOURCE
+  - PR_METADATA_SOURCE
+  - NOTIFY_DECISION_COMMAND
+  - NOTIFY_PR_READY_COMMAND
+  - TC_REVIEW_TRIGGER
+  - REQ_ENTRY_HANDOFF_COMMIT
+  - BUG_CONFIRM_COMMIT
+  - BUG_ROUTE_COMMIT
+  - REVIEW_ROUTE_COMMIT
+
+binding_rules:
+  path_like_keys:
+    - PHASE_ROOT
+    - REQ_ROOT
+    - BUG_ROOT
+    - TC_ROOT
+  command_like_keys:
+    - NOTIFY_DECISION_COMMAND
+    - NOTIFY_PR_READY_COMMAND
+  commit_pattern_keys:
+    - REQ_ENTRY_HANDOFF_COMMIT
+    - BUG_CONFIRM_COMMIT
+    - BUG_ROUTE_COMMIT
+    - REVIEW_ROUTE_COMMIT
+  source_enum_keys:
+    WORKER_STATUS_SOURCE:
+      allowed_values:
+        - runtime_health_worker_heartbeat
+        - worker_status_file
+        - scheduler_registry
+    TASK_DEPENDENCY_SOURCE:
+      allowed_values:
+        - req_bug_frontmatter_graph
+        - task_store_index
+        - project_dependency_manifest
+    PR_METADATA_SOURCE:
+      allowed_values:
+        - github_pr_view_and_checks
+        - github_pr_surface_metadata
+        - project_pr_export
+    TC_REVIEW_TRIGGER:
+      allowed_values:
+        - tc_complete
+        - tc_review_complete
+        - tc_loop_result
+
+validation_rules:
+  - rule: Every placeholder used in RUNBOOK.md must exist under bindings.
+  - rule: Reserved runtime tokens such as REQ_ID, BUG_ID, PR_NUMBER, and RESULT_TYPE are excluded from adapter binding requirements.
+  - rule: No extra placeholder may be introduced without updating RUNBOOK.md or this schema.
+  - rule: Rendered output path should point to the deployed workspace, not the project repo.
+  - rule: Command-like bindings may contain project wrappers, but semantic tool choice still belongs to RUNBOOK.md.
+  - rule: Commit-pattern bindings may include reserved runtime tokens such as REQ_ID or BUG_ID, but must remain commit-message templates rather than executable commands.
+
+pattern_rules:
+  commit_pattern_keys:
+    REQ_ENTRY_HANDOFF_COMMIT:
+      should_contain_any:
+        - "{REQ_ID}"
+        - req_review
+    BUG_CONFIRM_COMMIT:
+      should_contain_any:
+        - "{BUG_ID}"
+        - confirm
+    BUG_ROUTE_COMMIT:
+      should_contain_any:
+        - "{BUG_ID}"
+        - route
+    REVIEW_ROUTE_COMMIT:
+      should_contain_any:
+        - "{REQ_ID}"
+        - review
+
+rendered_frontmatter_fields:
+  recommended:
+    - generated_from_template
+    - generated_from_adapter
+    - generated_for_project
+    - generated_for_agent

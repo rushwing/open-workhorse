@@ -39,7 +39,9 @@
     "bug:check": "bash scripts/check-bug-coverage.sh",
     "bug:sync": "bash scripts/sync-user-bugs.sh",
     "bug:sync:dry": "bash scripts/sync-user-bugs.sh --dry-run",
-    "harness:status": "bash scripts/harness.sh status"
+    "harness:status": "bash scripts/harness.sh status",
+    "memory:init": "bash scripts/init-memory.sh",
+    "runbook:render": "bash scripts/render-runbook.sh"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

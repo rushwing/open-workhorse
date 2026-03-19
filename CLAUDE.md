@@ -87,7 +87,17 @@ Harness standards live in `harness/`:
 - `testing-standard.md` — test layers L1–L4, mock strategy
 - `bug-standard.md` — bug lifecycle, regression requirements
 - `ci-standard.md` — CI jobs, PR gate
-- `agent-cli-playbook.md` — invocation templates A–J
+- `agent-cli-playbook.md` — invocation templates A–L
+- `CAPABILITIES.md` — semantic capability contracts (what Pandas may do)
+- `CONNECTORS.md` — runtime bindings (how tools are called in this project)
+- `memory-architecture.md` — two-layer memory system (short-term markdown + long-term SQLite)
+
+After reading harness-index.md, note:
+- **Tool registration**: all tool invocations must be declared in `harness/CAPABILITIES.md`
+  and bound in `harness/CONNECTORS.md` before use in agent prompts or harness scripts.
+  Naming: `namespace-category-tool_name`.
+- **Memory initialization**: `npm run memory:init` must be run before Pandas can curate
+  long-term knowledge. Requires sqlite3 and everything_openclaw at ~/workspace-pandas/everything_openclaw.
 
 ## Pi Deployment
 

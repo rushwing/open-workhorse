@@ -2,9 +2,9 @@
 harness_id: CLI-PB-001
 component: agent operations / CLI invocation
 owner: Engineering
-version: 0.1
+version: 0.3
 status: active
-last_reviewed: 2026-03-15
+last_reviewed: 2026-03-18
 ---
 
 # Harness Playbook — Agent CLI 调用模板
@@ -135,28 +135,34 @@ Do NOT merge the PR — HITL merge only.
 
 > Pandas 是 orchestrator/PM，负责轮询任务队列、协调 Menglan 实现与 Huahua review。
 > **Pandas 不读 PR diff，不发 review comments** — 避免上下文污染。
+> 允许的操作见 `harness/CAPABILITIES.md`；运行时绑定见 `harness/CONNECTORS.md`。
 
 ```bash
 claude -p "
-Read CLAUDE.md, harness/harness-index.md, and harness/review-standard.md.
+Read CLAUDE.md, harness/harness-index.md, harness/review-standard.md, and harness/CAPABILITIES.md.
 You are Pandas — the orchestrator. Do not ask clarifying questions.
 
 ## Orchestration Loop (one iteration)
+
+Step 0 — Check for-pandas/ inbox first:
+  Read new result packets: ls \$SHARED_RESOURCES_ROOT/inbox/for-pandas/
+  If result packets present → process them (route-result-decide_next_step) before scanning tasks.
 
 Step 1 — Scan for claimable tasks:
   Run: ./scripts/harness.sh status
   If tasks available → trigger Menglan: ./scripts/harness.sh implement <REQ-N>
   Wait for PR to be opened (poll: gh pr list --state open --json number,title --jq '.[] | .number')
 
-Step 2 — Notify Huahua to review:
-  Once a new PR is detected, create a GitHub issue or comment:
-  gh issue create --title 'Review PR #<N>' --body 'Huahua: please review PR #<N> using CodeX + GH LLM Issue Orchestrator skill'
-  OR if Huahua is triggered via task queue: update tasks/ accordingly.
+Step 2 — Notify Huahua to review (inbox-based):
+  Once a new PR is detected, write a review packet to Hua Hua's inbox:
+  Write file: \$SHARED_RESOURCES_ROOT/inbox/for-huahua/<timestamp>-review-PR-<N>.md
+  Content: review packet composed via handoff-packet-compose_review
   DO NOT read the PR diff yourself.
 
 Step 3 — Wait for review completion:
   Poll: gh pr view <N> --json reviewDecision --jq '.reviewDecision'
-  When reviewDecision != '' (or review comments appear) → review is complete.
+  Also check for-pandas/ inbox for Huahua result packets.
+  When reviewDecision != '' (or review result packet arrives) → review is complete.
 
 Step 4 — Trigger fix-review if needed:
   If blocking review findings: ./scripts/harness.sh fix-review <N>
@@ -166,7 +172,7 @@ Step 5 — Notify Daniel via Telegram:
   bash scripts/telegram.sh tg_pr_ready '<pr_url>' '<one-line summary>'
   Log result. Do NOT merge — HITL only.
 
-Loop back to Step 1.
+Loop back to Step 0.
 "
 ```
 
@@ -262,9 +268,31 @@ bash scripts/telegram.sh test
 
 ---
 
+### 模板 L · Memory Curation（Pandas 记忆整理）
+
+> Pandas 在 session 结束或批量任务完成后将候选提升至 project.db。
+> 完整架构见 `harness/memory-architecture.md`。
+
+```bash
+claude -p "
+Read harness/memory-architecture.md.
+Curate memory candidates from ~/workspace-pandas/memory/short-term/candidates/:
+1. Read each .md file — topic, content, source_agent
+2. Check for duplicates in project.db (mem-longterm-query_knowledge):
+   sqlite3 \$MEMORY_DB_PATH 'SELECT topic FROM project_facts WHERE topic LIKE \"%<topic>%\"'
+3. Accept: INSERT into project_facts or decisions or patterns table
+   sqlite3 \$MEMORY_DB_PATH 'INSERT INTO project_facts (topic, content, source_agent) VALUES (...)'
+4. Reject: note reason, update status field in the candidate file to 'rejected'
+5. Move processed candidates to short-term/sessions/ with curation result appended
+"
+```
+
+---
+
 ## 变更日志
 
 | 版本 | 日期 | 变更摘要 |
 |---|---|---|
 | 0.1 | 2026-03-15 | 初始版本（从 hydro-om-copilot CLI-PB-001 v0.4 改写）；删去模板 E（TC 设计，Codex）、F（PR Review，Codex）、G/G-Promote（Bug 上报，Codex）、H（一致性审查，Codex）；保留 A/B/C/D/I；新增模板 J（代码/文档一致性审查，Claude Code 版）；删去 Stacked PR / Bundle 自动化 |
 | 0.2 | 2026-03-15 | 新增模板 K（Pandas 编排流程）；新增 §Runbook 节（harness/runbook/ 查询与贡献）；人工触发部分补充 watchdog/telegram 命令；注意事项表新增 Pandas / 停滞检测 / HITL 通知行 |
+| 0.3 | 2026-03-18 | 模板 K：替换 gh issue create 为 inbox file write（agent-inbox-write_review_packet）；Step 0 新增"先检查 for-pandas/ inbox"；新增 CAPABILITIES.md 引用；新增模板 L（Memory Curation）|
