@@ -155,11 +155,14 @@ legacy_type: tc_complete   # 或 dev_complete, review_blocked
 
 `inbox_read_pandas()` 的 response 路由优先读取 `legacy_type` 进行分支：
 
-| legacy_type | 路由目标 |
-|-------------|---------|
-| `tc_complete` | `_handle_tc_complete()` |
-| `review_blocked` | warn only |
-| `dev_complete` 或空 | `_handle_dev_complete()` |
+| legacy_type | 路由目标 | 语义 |
+|-------------|---------|------|
+| `tc_complete` | `_handle_tc_complete()` | 阶段 3 TC 完成（TC 通过→触发实现） |
+| `review_complete` | `_handle_review_complete()` | 阶段 5 Code Review 通过（发送 merge-ready） |
+| `review_blocked` | warn only | 阶段 5 Code Review 拒绝/阻塞 |
+| `dev_complete` 或空 | `_handle_dev_complete()` | 旧式实现完成（向后兼容） |
+
+> **重要**：`legacy_type` 是 REQ-033 阶段的 response 路由主判据（子类型路由），`status` 字段仅用于同一子类型内的成功/失败分支判定。两者协同，缺一不可。这是过渡机制，将在 REQ-035（Thread/Correlation）中被正式的消息类型体系取代。
 
 ---
 
@@ -174,9 +177,10 @@ legacy_type: tc_complete   # 或 dev_complete, review_blocked
 | `fix_review` | `request` | `action: fix_review` |
 | `escalate` | `request` | `action: escalate` |
 | `clarify` | `request` | `action: clarify` |
-| `dev_complete` | `response` | _(status 从 payload 读取)_ |
-| `tc_complete` | `response` | _(status 从 payload 读取)_ |
-| `review_blocked` | `response` | _(status: blocked)_ |
+| `dev_complete` | `response` | _(legacy_type: dev_complete；status 从 payload 读取)_ |
+| `review_complete` | `response` | _(legacy_type: review_complete；阶段 5 Code Review 完成)_ |
+| `tc_complete` | `response` | _(legacy_type: tc_complete；status 从 payload 读取)_ |
+| `review_blocked` | `response` | _(legacy_type: review_blocked；status: blocked)_ |
 | `major_decision_needed` | `notification` | `event_type: decision_required` |
 
 ---
@@ -189,7 +193,8 @@ legacy_type: tc_complete   # 或 dev_complete, review_blocked
 读取消息 type 字段
 ├── type ∈ {request, response, notification}  → ATM 路由
 │   ├── request  → 按 action 路由到对应 handler
-│   ├── response → 按 status 路由（默认 → _handle_dev_complete）
+│   ├── response → 先按 legacy_type 路由子类型（tc_complete/review_complete/dev_complete），
+│   │              再按 status 判定成功/失败路径（completed/success → 成功，其余 → 阻塞告警）
 │   └── notification
 │       └── severity=action-required → tg_notify
 │       └── event_type=decision_required → _handle_major_decision

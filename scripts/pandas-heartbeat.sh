@@ -256,11 +256,15 @@ inbox_read_pandas() {
           tc_complete)
             _handle_tc_complete "$req_id" "$pr_number" "${status:-success}" "$blocking_reason" "$iteration"
             ;;
+          review_complete)
+            # 阶段 5（Code Review）完成信号 — 与 dev_complete（阶段 2）语义独立
+            _handle_review_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
+            ;;
           review_blocked)
             warn "ATM response review_blocked for ${req_id}: ${blocking_reason}"
             ;;
           dev_complete|"")
-            # dev_complete 或未知 legacy_type → 默认 dev_complete 路径
+            # dev_complete 或未知 legacy_type → 向后兼容路径
             _handle_dev_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
             ;;
           *)
@@ -283,7 +287,7 @@ inbox_read_pandas() {
         fi
         ;;
       # ── 旧格式路由（legacy）──────────────────────────────────────────────────
-      dev_complete|tc_complete|major_decision_needed|review_blocked|implement|tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
+      dev_complete|review_complete|tc_complete|major_decision_needed|review_blocked|implement|tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
         _inbox_read_legacy "$msg_file" "$msg_type"
         ;;
       *)
@@ -317,6 +321,9 @@ _inbox_read_legacy() {
   case "$type" in
     dev_complete)
       _handle_dev_complete "$req_id" "$pr_number" "$summary" "$status" "$blocking_reason"
+      ;;
+    review_complete)
+      _handle_review_complete "$req_id" "$pr_number" "$summary" "$status" "$blocking_reason"
       ;;
     tc_complete)
       _handle_tc_complete "$req_id" "$pr_number" "$status" "$blocking_reason" "$iteration"
@@ -353,6 +360,29 @@ _handle_dev_complete() {
   else
     warn "dev_complete(blocked): ${req_id}: ${blocking_reason}"
     tg_notify "⚠️ [${req_id}] dev blocked: ${blocking_reason}" || true
+  fi
+}
+
+# _handle_review_complete — 阶段 5（Code Review）完成信号
+# 语义独立于 dev_complete（阶段 2 实现完成），避免把"审核结果"误解为"开发结果"
+_handle_review_complete() {
+  local req_id="$1" pr_number="$2" summary="$3" status="$4" blocking_reason="$5"
+  # ATM protocol uses "completed"; legacy uses "success" — accept both
+  if [[ "$status" == "success" || "$status" == "completed" ]]; then
+    info "review_complete(approved): ${req_id} PR #${pr_number} — code review 通过，发送 PR merge-ready 通知"
+    local repo
+    repo="${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed 's|.*github\.com[:/]||; s|\.git$||' || true)}"
+    local pr_url
+    if [[ -n "$repo" && -n "$pr_number" ]]; then
+      pr_url="https://github.com/${repo}/pull/${pr_number}"
+    else
+      pr_url="${pr_number:-unknown}"
+    fi
+    tg_pr_ready "${pr_url}" "${summary}" || \
+      warn "tg_pr_ready 调用失败（Telegram 未配置？）"
+  else
+    warn "review_complete(rejected): ${req_id}: ${blocking_reason}"
+    tg_notify "⚠️ [${req_id}] review rejected/blocked: ${blocking_reason}" || true
   fi
 }
 
