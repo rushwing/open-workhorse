@@ -225,13 +225,50 @@ ${pr_diff}
 
 # ── 主逻辑 ────────────────────────────────────────────────────────────────────
 main() {
-  # 空则秒退（零 token）
+  # 空则秒退（零 token）— 检查 pending/ 和扁平目录
   local msg
-  msg=$(ls "${INBOX}"/*.md 2>/dev/null | head -1 || true)
+  msg=$(ls "${INBOX}/pending"/*.md "${INBOX}"/*.md 2>/dev/null | head -1 || true)
   [[ -z "$msg" ]] && exit 0
 
   info "huahua-heartbeat 开始（$(date -u +%Y-%m-%dT%H:%M:%SZ)）"
 
+  local pending_dir="${INBOX}/pending"
+  local claimed_dir="${INBOX}/claimed"
+  local done_dir="${INBOX}/done"
+  local failed_dir="${INBOX}/failed"
+  mkdir -p "$claimed_dir" "$done_dir" "$failed_dir"
+
+  # ── A. 处理 pending/（原子 claim）────────────────────────────────────────
+  if [[ -d "$pending_dir" ]]; then
+    for msg_file in "${pending_dir}"/*.md; do
+      [[ -f "$msg_file" ]] || continue
+      local base; base="$(basename "$msg_file")"
+      if ! mv "$msg_file" "${claimed_dir}/${base}" 2>/dev/null; then continue; fi
+      local req_id; req_id="$(_get_fm_field "${claimed_dir}/${base}" "req_id")"
+      local msg_type; msg_type="$(_get_fm_field "${claimed_dir}/${base}" "type")"
+
+      if _process_message "${claimed_dir}/${base}"; then
+        mv "${claimed_dir}/${base}" "${done_dir}/${base}"
+        ok "done: ${base}"
+      else
+        mv "${claimed_dir}/${base}" "${failed_dir}/${base}" 2>/dev/null || true
+        printf '\nERROR: handler failed — %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          >> "${failed_dir}/${base}"
+        # code_review 失败时 REQ 已在 review 状态，不回退
+        local skip_rollback=false
+        [[ "$msg_type" == "code_review" ]] && skip_rollback=true
+        if [[ "$msg_type" == "request" ]]; then
+          local _action_rb; _action_rb="$(_get_fm_field "${failed_dir}/${base}" "action")"
+          [[ "$_action_rb" == "review" || "$_action_rb" == "code_review" ]] && skip_rollback=true
+        fi
+        [[ "$skip_rollback" == "false" ]] && _rollback_task "$req_id"
+        _notify_pandas_failure "$base" \
+          "exit $? — see ${failed_dir}/${base}" "$req_id"
+      fi
+    done
+  fi
+
+  # ── B. 旧格式 flat（向后兼容）────────────────────────────────────────────
   for msg_file in "${INBOX}"/*.md; do
     [[ -f "$msg_file" ]] || continue
     local req_id msg_type

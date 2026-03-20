@@ -64,11 +64,11 @@ test("TC-021-01: inbox_write writes file with valid YAML frontmatter", async () 
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
     const huahuaDir = join(tmpDir, "inbox", "for-huahua");
-    const files = await readdir(huahuaDir);
+    const files = await readdir(join(huahuaDir, "pending"));
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    assert.ok(mdFiles.length > 0, "Expected at least one .md file in for-huahua/");
+    assert.ok(mdFiles.length > 0, "Expected at least one .md file in for-huahua/pending/");
 
-    const content = await readFile(join(huahuaDir, mdFiles[0]!), "utf8");
+    const content = await readFile(join(huahuaDir, "pending", mdFiles[0]!), "utf8");
     assert.ok(content.startsWith("---"), "File should start with YAML frontmatter");
     // inbox_write() is now a @deprecated wrapper that calls inbox_write_v2(),
     // so output uses ATM Envelope format: type: request + action: tc_design (REQ-033)
@@ -123,8 +123,8 @@ test("TC-021-03: SHARED_RESOURCES_ROOT sets inbox write path", async () => {
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
     const menglanDir = join(tmpDir, "inbox", "for-menglan");
-    const files = await readdir(menglanDir);
-    assert.ok(files.some((f) => f.endsWith(".md")), "Expected .md file in for-menglan/");
+    const files = await readdir(join(menglanDir, "pending"));
+    assert.ok(files.some((f) => f.endsWith(".md")), "Expected .md file in for-menglan/pending/");
     // Verify path does not contain hardcoded machine-specific home prefixes
     assert.ok(!result.stdout.includes("/Users/"), "No hardcoded macOS path in stdout");
     assert.ok(!result.stdout.includes("/home/"), "No hardcoded Linux path in stdout");
@@ -241,11 +241,11 @@ test("TC-023-03: tc_complete status=success writes implement message to for-meng
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
     const menglanDir = join(tmpDir, "inbox", "for-menglan");
-    const files = await readdir(menglanDir);
+    const files = await readdir(join(menglanDir, "pending"));
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    assert.ok(mdFiles.length > 0, "Expected implement message in for-menglan/");
+    assert.ok(mdFiles.length > 0, "Expected implement message in for-menglan/pending/");
 
-    const content = await readFile(join(menglanDir, mdFiles[0]!), "utf8");
+    const content = await readFile(join(menglanDir, "pending", mdFiles[0]!), "utf8");
     // inbox_write() is now a @deprecated wrapper → ATM Envelope format: type: request + action: implement
     assert.ok(content.includes("type: request") || content.includes("type: implement"), "Missing type: request/implement");
     assert.ok(content.includes("action: implement") || content.includes("req_id: REQ-021"), "Missing action/req_id");
@@ -276,11 +276,11 @@ test("TC-023-04: tc_complete blocked iteration=1 routes fix to for-huahua with i
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
     const huahuaDir = join(tmpDir, "inbox", "for-huahua");
-    const files = await readdir(huahuaDir);
+    const files = await readdir(join(huahuaDir, "pending"));
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    assert.ok(mdFiles.length > 0, "Expected fix message in for-huahua/");
+    assert.ok(mdFiles.length > 0, "Expected fix message in for-huahua/pending/");
 
-    const content = await readFile(join(huahuaDir, mdFiles[0]!), "utf8");
+    const content = await readFile(join(huahuaDir, "pending", mdFiles[0]!), "utf8");
     assert.ok(content.includes("iteration: 2"), "iteration should be incremented to 2");
     // inbox_write() is now a @deprecated wrapper → ATM Envelope format: type: request + action: tc_design
     assert.ok(content.includes("type: request") || content.includes("type: tc_design"), "type should be request/tc_design");
@@ -600,9 +600,10 @@ test("TC-023-05: tc_complete blocked iteration=2 triggers tg_decision, no new hu
       result.stdout.includes("[mock tg_decision]"),
       `tg_decision should be called for iteration≥2. stdout: ${result.stdout}`,
     );
-    // for-huahua should have no new tc_design files
-    const huahuaFiles = await readdir(huahuaDir);
-    assert.equal(huahuaFiles.length, 0, `for-huahua/ should have no new files, got: ${huahuaFiles.join(", ")}`);
+    // for-huahua/pending/ should have no new tc_design files (inbox_init creates subdirs but no messages)
+    const huahuaPendingFiles = await readdir(join(huahuaDir, "pending"));
+    assert.equal(huahuaPendingFiles.filter(f => f.endsWith(".md")).length, 0,
+      `for-huahua/pending/ should have no new .md files, got: ${huahuaPendingFiles.join(", ")}`);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
@@ -766,11 +767,11 @@ test("TC-033-01: inbox_write_v2 generates file with all required ATM Envelope fi
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
     const menglanDir = join(tmpDir, "inbox", "for-menglan");
-    const files = await readdir(menglanDir);
+    const files = await readdir(join(menglanDir, "pending"));
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    assert.ok(mdFiles.length > 0, "Expected .md file in for-menglan/");
+    assert.ok(mdFiles.length > 0, "Expected .md file in for-menglan/pending/");
 
-    const content = await readFile(join(menglanDir, mdFiles[0]!), "utf8");
+    const content = await readFile(join(menglanDir, "pending", mdFiles[0]!), "utf8");
     assert.ok(content.startsWith("---"), "File should start with YAML frontmatter");
     assert.ok(content.includes("message_id:"), "Missing message_id field");
     assert.ok(content.includes("type: request"), "Missing type: request");
@@ -800,8 +801,8 @@ test("TC-033-02: inbox_write_v2 type=request includes action and response_requir
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
     const menglanDir = join(tmpDir, "inbox", "for-menglan");
-    const files = await readdir(menglanDir);
-    const content = await readFile(join(menglanDir, files.filter((f) => f.endsWith(".md"))[0]!), "utf8");
+    const files = await readdir(join(menglanDir, "pending"));
+    const content = await readFile(join(menglanDir, "pending", files.filter((f) => f.endsWith(".md"))[0]!), "utf8");
     assert.ok(content.includes("type: request"), "Missing type: request");
     assert.ok(content.includes("action: implement"), "Missing action field");
     assert.ok(content.includes("response_required: true"), "Missing response_required field");
@@ -825,9 +826,9 @@ test("TC-033-03: inbox_write_v2 type=response includes in_reply_to, status, summ
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
     const pandasDir = join(tmpDir, "inbox", "for-pandas");
-    const files = await readdir(pandasDir);
+    const files = await readdir(join(pandasDir, "pending"));
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    const content = await readFile(join(pandasDir, mdFiles[0]!), "utf8");
+    const content = await readFile(join(pandasDir, "pending", mdFiles[0]!), "utf8");
     assert.ok(content.includes("type: response"), "Missing type: response");
     assert.ok(content.includes("in_reply_to: msg_orig_001"), "Missing in_reply_to field");
     assert.ok(content.includes("status: completed"), "Missing status field in response envelope");
@@ -852,9 +853,9 @@ test("TC-033-04: inbox_write_v2 type=notification includes event_type and severi
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
     const pandasDir = join(tmpDir, "inbox", "for-pandas");
-    const files = await readdir(pandasDir);
+    const files = await readdir(join(pandasDir, "pending"));
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    const content = await readFile(join(pandasDir, mdFiles[0]!), "utf8");
+    const content = await readFile(join(pandasDir, "pending", mdFiles[0]!), "utf8");
     assert.ok(content.includes("type: notification"), "Missing type: notification");
     assert.ok(content.includes("event_type: deploy_complete"), "Missing event_type field");
     assert.ok(content.includes("severity: info"), "Missing severity field in notification envelope");
@@ -878,11 +879,11 @@ test("TC-033-05: inbox_write() @deprecated wrapper calls inbox_write_v2 and prod
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
     const menglanDir = join(tmpDir, "inbox", "for-menglan");
-    const files = await readdir(menglanDir);
+    const files = await readdir(join(menglanDir, "pending"));
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    assert.ok(mdFiles.length > 0, "Expected .md file from deprecated inbox_write()");
+    assert.ok(mdFiles.length > 0, "Expected .md file from deprecated inbox_write() in for-menglan/pending/");
 
-    const content = await readFile(join(menglanDir, mdFiles[0]!), "utf8");
+    const content = await readFile(join(menglanDir, "pending", mdFiles[0]!), "utf8");
     // New ATM envelope fields
     assert.ok(content.includes("message_id:"), "Missing message_id — inbox_write_v2 not called");
     assert.ok(content.includes("type: request"), "Missing type: request");
@@ -922,9 +923,9 @@ test("TC-033-06: inbox_read_pandas routes ATM response (legacy_type=tc_complete,
 
     // tc_complete + status=completed → _handle_tc_complete → route implement to menglan
     const menglanDir = join(tmpDir, "inbox", "for-menglan");
-    const files = await readdir(menglanDir);
+    const files = await readdir(join(menglanDir, "pending"));
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    assert.ok(mdFiles.length > 0, "Expected implement message routed to for-menglan/ via _handle_tc_complete");
+    assert.ok(mdFiles.length > 0, "Expected implement message routed to for-menglan/pending/ via _handle_tc_complete");
     // Verify direction: response stdout should mention tc_complete routing path
     assert.ok(
       result.stdout.includes("tc_complete") || result.stdout.includes("ATM response"),
@@ -1031,9 +1032,266 @@ test("TC-033-09: inbox_read_pandas routes legacy type=tc_complete via _inbox_rea
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
     const menglanDir = join(tmpDir, "inbox", "for-menglan");
-    const files = await readdir(menglanDir);
+    const files = await readdir(join(menglanDir, "pending"));
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    assert.ok(mdFiles.length > 0, "Expected implement message routed to for-menglan/ via legacy handler");
+    assert.ok(mdFiles.length > 0, "Expected implement message routed to for-menglan/pending/ via legacy handler");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-034: TC-034-* Claim 原子性 + 生命周期目录 ────────────────────────────
+
+// TC-034-01: 正常 claim → done/
+test("TC-034-01: inbox_read_pandas moves message from pending/ to done/ after successful dispatch", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-034-01-${Date.now()}`);
+  const pendingDir = join(tmpDir, "inbox", "for-pandas", "pending");
+  await mkdir(pendingDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  const msgFile = join(pendingDir, "2026-03-20-test-034-01.md");
+  await writeFile(
+    msgFile,
+    "---\ntype: review_blocked\nreq_id: REQ-034\nsummary: test\nstatus: blocked\nblocking_reason: test\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    const doneDir = join(tmpDir, "inbox", "for-pandas", "done");
+    const doneFiles = await readdir(doneDir);
+    assert.ok(doneFiles.includes("2026-03-20-test-034-01.md"), "Message should be in done/");
+    assert.ok(!existsSync(msgFile), "Message should no longer be in pending/");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-034-02: Claim 竞争 → skip（不报错）
+test("TC-034-02: inbox_read_pandas skips without error when pending file already claimed (mv fails)", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-034-02-${Date.now()}`);
+  const pendingDir = join(tmpDir, "inbox", "for-pandas", "pending");
+  const claimedDir = join(tmpDir, "inbox", "for-pandas", "claimed");
+  await mkdir(pendingDir, { recursive: true });
+  await mkdir(claimedDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  // Pre-move the file to claimed to simulate a competing claim
+  const basename = "2026-03-20-test-034-02.md";
+  await writeFile(
+    join(claimedDir, basename),
+    "---\ntype: review_blocked\nreq_id: REQ-034\nsummary: test\nstatus: blocked\nblocking_reason: test\n---\n",
+    "utf8",
+  );
+  // pending/ is empty — nothing to claim
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, "Should exit 0 even with competing claim scenario");
+    assert.ok(!result.stderr.includes("ERROR:"), `No ERROR in stderr. stderr: ${result.stderr}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-034-03: Handler 成功 → done/ 内容与原 pending/ 一致
+test("TC-034-03: message in done/ after success retains original frontmatter content", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-034-03-${Date.now()}`);
+  const pendingDir = join(tmpDir, "inbox", "for-pandas", "pending");
+  await mkdir(pendingDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  const originalContent =
+    "---\nmessage_id: msg_test_034_03\ntype: response\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-20T00:00:00Z\nthread_id: t1\ncorrelation_id: c1\npriority: P2\n---\nreq_id: REQ-034\nstatus: completed\nlegacy_type: dev_complete\npr_number: 1\nsummary: done\n";
+  const msgFile = join(pendingDir, "2026-03-20-test-034-03.md");
+  await writeFile(msgFile, originalContent, "utf8");
+
+  try {
+    const result = await runBash(
+      `tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       source "${SCRIPT}" 2>/dev/null
+       tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       inbox_init
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    const doneFile = join(tmpDir, "inbox", "for-pandas", "done", "2026-03-20-test-034-03.md");
+    assert.ok(existsSync(doneFile), "Message should be in done/");
+    const doneContent = await readFile(doneFile, "utf8");
+    assert.ok(doneContent.includes("message_id: msg_test_034_03"), "done/ file should retain original message_id");
+    assert.ok(doneContent.startsWith("---"), "done/ file should retain frontmatter");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-034-04: Handler 失败 → failed/ + 错误摘要行
+test("TC-034-04: handler failure moves message to failed/ with ERROR: line appended", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-034-04-${Date.now()}`);
+  const pendingDir = join(tmpDir, "inbox", "for-pandas", "pending");
+  await mkdir(pendingDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  const msgFile = join(pendingDir, "2026-03-20-test-034-04.md");
+  await writeFile(
+    msgFile,
+    // type=request with unknown action → dispatch returns 0 (warns), but we mock _dispatch_msg to fail
+    "---\ntype: review_blocked\nreq_id: REQ-034\nsummary: test\nstatus: blocked\nblocking_reason: test\n---\n",
+    "utf8",
+  );
+
+  try {
+    // Override _dispatch_msg to return 1 (simulate handler failure)
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null
+       inbox_init
+       _dispatch_msg() { return 1; }
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    // May exit non-zero (err() call), but failed/ file should exist
+    const failedDir = join(tmpDir, "inbox", "for-pandas", "failed");
+    const failedFiles = await readdir(failedDir);
+    assert.ok(failedFiles.includes("2026-03-20-test-034-04.md"), "Message should be in failed/");
+
+    const failedContent = await readFile(join(failedDir, "2026-03-20-test-034-04.md"), "utf8");
+    assert.ok(failedContent.includes("ERROR:"), "failed/ file should contain ERROR: summary line");
+    assert.ok(!existsSync(msgFile), "Message should no longer be in pending/");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-034-05: inbox_init 幂等
+test("TC-034-05: inbox_init is idempotent — repeated calls do not error and dirs exist", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-034-05-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; inbox_init; inbox_init; echo "exit_ok"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(result.stdout.includes("exit_ok"), "Should complete without error");
+    for (const agent of ["pandas", "huahua", "menglan"]) {
+      for (const sub of ["pending", "claimed", "done", "failed"]) {
+        const subDir = join(tmpDir, "inbox", `for-${agent}`, sub);
+        assert.ok(existsSync(subDir), `${agent}/${sub}/ should exist`);
+      }
+    }
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-034-06: inbox_write_v2 落在 pending/
+test("TC-034-06: inbox_write_v2 writes to for-target/pending/ not flat directory", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-034-06-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write_v2 "huahua" "request" "tc_design" "thread_034_6" "corr_034_6" "" "P1" "false" ""`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // pending/ should have the file
+    const pendingDir = join(tmpDir, "inbox", "for-huahua", "pending");
+    const pendingFiles = await readdir(pendingDir);
+    assert.ok(pendingFiles.some((f) => f.endsWith(".md")), "Expected .md file in for-huahua/pending/");
+
+    // flat for-huahua/ should have no .md files
+    const flatDir = join(tmpDir, "inbox", "for-huahua");
+    const flatFiles = await readdir(flatDir);
+    assert.ok(!flatFiles.some((f) => f.endsWith(".md")), "No .md files should be in flat for-huahua/");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-034-07: 旧扁平格式仍可处理（向后兼容）
+test("TC-034-07: inbox_read_pandas still processes legacy flat-directory messages", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-034-07-${Date.now()}`);
+  const inboxDir = join(tmpDir, "inbox", "for-pandas");
+  await mkdir(inboxDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  // Write flat-format message (old style)
+  const msgFile = join(inboxDir, "2026-03-20-flat-legacy-034-07.md");
+  await writeFile(
+    msgFile,
+    "---\ntype: review_blocked\nreq_id: REQ-034\nsummary: legacy test\nstatus: blocked\nblocking_reason: test\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    // Flat file should be consumed (deleted) by the compat path
+    assert.ok(!existsSync(msgFile), "Legacy flat message should be consumed");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-034-08: failed/ 文件格式 — 包含原 frontmatter + ERROR: 摘要行
+test("TC-034-08: failed/ file contains original frontmatter and appended ERROR: line", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-034-08-${Date.now()}`);
+  const pendingDir = join(tmpDir, "inbox", "for-pandas", "pending");
+  await mkdir(pendingDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  const originalFrontmatter =
+    "---\nmessage_id: msg_034_08\ntype: notification\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-20T10:00:00Z\nthread_id: t034\ncorrelation_id: c034\npriority: P1\nevent_type: test_event\nseverity: info\n---\n";
+  const msgFile = join(pendingDir, "2026-03-20-test-034-08.md");
+  await writeFile(msgFile, originalFrontmatter, "utf8");
+
+  try {
+    // Override _dispatch_msg to return 1 (simulate handler failure)
+    await runBash(
+      `source "${SCRIPT}" 2>/dev/null
+       inbox_init
+       _dispatch_msg() { return 1; }
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+
+    const failedFile = join(tmpDir, "inbox", "for-pandas", "failed", "2026-03-20-test-034-08.md");
+    assert.ok(existsSync(failedFile), "Message should be in failed/");
+    const content = await readFile(failedFile, "utf8");
+
+    // Original frontmatter must be preserved
+    assert.ok(content.includes("message_id: msg_034_08"), "failed/ file must retain original message_id");
+    assert.ok(content.includes("---"), "failed/ file must retain frontmatter delimiters");
+
+    // ERROR: summary line must be appended
+    assert.ok(content.includes("ERROR:"), "failed/ file must contain ERROR: summary line");
+    // ERROR: line should be after the original content (appended, not prepended)
+    const errorIndex = content.indexOf("ERROR:");
+    const fmIndex = content.indexOf("message_id:");
+    assert.ok(errorIndex > fmIndex, "ERROR: line should appear after original frontmatter");
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

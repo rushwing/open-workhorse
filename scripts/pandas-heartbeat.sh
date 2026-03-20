@@ -60,11 +60,15 @@ HOLD_FLAG="${REPO_ROOT}/.pandas_hold"
 
 # ── REQ-021: 收件箱 IPC 函数 ─────────────────────────────────────────────────
 
-# inbox_init — 确保 inbox 目录结构存在
+# inbox_init — 确保 inbox 目录结构存在（REQ-034：含四级生命周期子目录）
 inbox_init() {
-  mkdir -p "${INBOX_ROOT}/for-pandas" \
-           "${INBOX_ROOT}/for-huahua" \
-           "${INBOX_ROOT}/for-menglan"
+  for agent in pandas huahua menglan; do
+    mkdir -p \
+      "${INBOX_ROOT}/for-${agent}/pending" \
+      "${INBOX_ROOT}/for-${agent}/claimed" \
+      "${INBOX_ROOT}/for-${agent}/done" \
+      "${INBOX_ROOT}/for-${agent}/failed"
+  done
 }
 
 # @deprecated — 旧 inbox 格式，逐步迁移到 inbox_write_v2()（REQ-033）
@@ -155,7 +159,8 @@ inbox_write_v2() {
   msg_id="msg_${AGENT_ORCHESTRATOR:-pandas}_${now}_${rand4}"
   date_str="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   filename="${date_str//:/-}__${type}__${AGENT_ORCHESTRATOR:-pandas}_to_${target}__${correlation_id:-notset}.md"
-  target_dir="${INBOX_ROOT}/for-${target}"
+  # REQ-034: write to pending/ sub-directory for atomic claim lifecycle
+  target_dir="${INBOX_ROOT}/for-${target}/pending"
   mkdir -p "$target_dir"
 
   {
@@ -197,107 +202,149 @@ _get_fm_field() {
   awk -F': ' "/^${field}:/{gsub(/^[[:space:]]+|[[:space:]]+$/, \"\", \$2); print \$2; exit}" "$file"
 }
 
-# inbox_read_pandas — 处理 inbox/for-pandas/ 中所有消息（REQ-021, REQ-023, REQ-033）
+# _dispatch_msg <msg_file> — 路由并处理单条消息，不做文件删除，返回 0/1
+# 供 inbox_read_pandas() 在 claim 循环和 flat compat 路径中复用
+_dispatch_msg() {
+  local msg_file="$1"
+
+  local msg_type
+  msg_type="$(_get_fm_field "$msg_file" "type")"
+
+  if [[ -z "$msg_type" ]]; then
+    warn "消息缺少 type 字段，跳过: $(basename "$msg_file")"
+    return 1
+  fi
+
+  info "处理消息: type=${msg_type} file=$(basename "$msg_file")"
+
+  # ── 新格式路由（ATM Envelope）────────────────────────────────────────────
+  case "$msg_type" in
+    request)
+      local action_val; action_val="$(_get_fm_field "$msg_file" "action")"
+      local req_id; req_id="$(_get_fm_field "$msg_file" "req_id")"
+      local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
+      info "ATM request: action=${action_val} req_id=${req_id}"
+      case "$action_val" in
+        # implement は Pandas→Menglan 方向のみ。Pandas inbox で受信した場合は方向違い
+        implement)
+          warn "ATM request action=implement received in Pandas inbox — wrong direction (should be Pandas→Menglan). Dropping."
+          ;;
+        tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
+          warn "ATM request action=${action_val} — 暂无专用 handler，忽略"
+          ;;
+        decision_required|major_decision_needed)
+          _handle_major_decision "$req_id" "$blocking_reason"
+          ;;
+        *)
+          warn "未知 ATM request action: ${action_val}"
+          ;;
+      esac
+      ;;
+    response)
+      local req_id; req_id="$(_get_fm_field "$msg_file" "req_id")"
+      local pr_number; pr_number="$(_get_fm_field "$msg_file" "pr_number")"
+      local summary; summary="$(_get_fm_field "$msg_file" "summary")"
+      local status; status="$(_get_fm_field "$msg_file" "status")"
+      local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
+      local iteration; iteration="$(_get_fm_field "$msg_file" "iteration")"
+      # legacy_type: 由 inbox_write() wrapper 写入 payload，区分 tc_complete / dev_complete
+      local legacy_type; legacy_type="$(_get_fm_field "$msg_file" "legacy_type")"
+      info "ATM response: req_id=${req_id} status=${status} legacy_type=${legacy_type}"
+      case "$legacy_type" in
+        tc_complete)
+          _handle_tc_complete "$req_id" "$pr_number" "${status:-success}" "$blocking_reason" "$iteration"
+          ;;
+        review_complete)
+          # 阶段 5（Code Review）完成信号 — 与 dev_complete（阶段 2）语义独立
+          _handle_review_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
+          ;;
+        review_blocked)
+          warn "ATM response review_blocked for ${req_id}: ${blocking_reason}"
+          ;;
+        dev_complete|"")
+          # dev_complete 或未知 legacy_type → 向后兼容路径
+          _handle_dev_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
+          ;;
+        *)
+          _handle_dev_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
+          ;;
+      esac
+      ;;
+    notification)
+      local severity_val; severity_val="$(_get_fm_field "$msg_file" "severity")"
+      local event_val; event_val="$(_get_fm_field "$msg_file" "event_type")"
+      local req_id; req_id="$(_get_fm_field "$msg_file" "req_id")"
+      local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
+      info "ATM notification: event=${event_val} severity=${severity_val}"
+      if [[ "$severity_val" == "action-required" ]]; then
+        tg_notify "⚠️ [open-workhorse] ${event_val}: $(basename "$msg_file")" || true
+      fi
+      # decision_required event → escalate
+      if [[ "$event_val" == "decision_required" ]]; then
+        _handle_major_decision "$req_id" "$blocking_reason"
+      fi
+      ;;
+    # ── 旧格式路由（legacy）──────────────────────────────────────────────────
+    dev_complete|review_complete|tc_complete|major_decision_needed|review_blocked|implement|tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
+      _inbox_read_legacy "$msg_file" "$msg_type"
+      ;;
+    *)
+      warn "未知消息类型: ${msg_type}（文件: $(basename "$msg_file")）"
+      ;;
+  esac
+  return 0
+}
+
+# inbox_read_pandas — 处理 inbox/for-pandas/ 中所有消息（REQ-021, REQ-023, REQ-033, REQ-034）
 # 支持新格式（ATM Envelope, type=request|response|notification）和旧格式双路由
+# REQ-034: 先处理 pending/（原子 claim → claimed → done/failed），再处理扁平目录（compat）
 inbox_read_pandas() {
   local inbox_dir="${INBOX_ROOT}/for-pandas"
   [[ -d "$inbox_dir" ]] || { info "inbox/for-pandas/ 不存在，跳过"; return 0; }
 
   local count=0
+
+  # ── A. 新格式：pending/ → claimed → done/failed（原子 claim）────────────
+  local pending_dir="${inbox_dir}/pending"
+  local claimed_dir="${inbox_dir}/claimed"
+  local done_dir="${inbox_dir}/done"
+  local failed_dir="${inbox_dir}/failed"
+
+  if [[ -d "$pending_dir" ]]; then
+    for msg_file in "${pending_dir}"/*.md; do
+      [[ -f "$msg_file" ]] || continue
+      count=$(( count + 1 ))
+      local basename; basename="$(basename "$msg_file")"
+      local claimed_file="${claimed_dir}/${basename}"
+
+      # 原子 claim：mv 失败说明已被其他进程认领，skip
+      if ! mv "$msg_file" "$claimed_file" 2>/dev/null; then
+        info "Claim 竞争，跳过: ${basename}"; continue
+      fi
+
+      if _dispatch_msg "$claimed_file"; then
+        mv "$claimed_file" "${done_dir}/${basename}"
+        info "done: ${basename}"
+      else
+        mv "$claimed_file" "${failed_dir}/${basename}" 2>/dev/null || true
+        printf '\nERROR: handler failed — %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          >> "${failed_dir}/${basename}"
+        err "failed: ${basename}"
+      fi
+    done
+  fi
+
+  # ── B. 旧格式：扁平目录（向后兼容）──────────────────────────────────────
   for msg_file in "${inbox_dir}"/*.md; do
     [[ -f "$msg_file" ]] || continue
     count=$(( count + 1 ))
-
-    local msg_type
-    msg_type="$(_get_fm_field "$msg_file" "type")"
-
-    if [[ -z "$msg_type" ]]; then
-      warn "消息缺少 type 字段，跳过: $(basename "$msg_file")"
+    if _dispatch_msg "$msg_file"; then
       rm -f "$msg_file"
-      continue
+      info "消费消息: $(basename "$msg_file")"
+    else
+      rm -f "$msg_file"
+      info "消费消息（dispatch失败）: $(basename "$msg_file")"
     fi
-
-    info "处理消息: type=${msg_type} file=$(basename "$msg_file")"
-
-    # ── 新格式路由（ATM Envelope）────────────────────────────────────────────
-    case "$msg_type" in
-      request)
-        local action_val; action_val="$(_get_fm_field "$msg_file" "action")"
-        local req_id; req_id="$(_get_fm_field "$msg_file" "req_id")"
-        local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
-        info "ATM request: action=${action_val} req_id=${req_id}"
-        case "$action_val" in
-          # implement は Pandas→Menglan 方向のみ。Pandas inbox で受信した場合は方向違い
-          implement)
-            warn "ATM request action=implement received in Pandas inbox — wrong direction (should be Pandas→Menglan). Dropping."
-            ;;
-          tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
-            warn "ATM request action=${action_val} — 暂无专用 handler，忽略"
-            ;;
-          decision_required|major_decision_needed)
-            _handle_major_decision "$req_id" "$blocking_reason"
-            ;;
-          *)
-            warn "未知 ATM request action: ${action_val}"
-            ;;
-        esac
-        ;;
-      response)
-        local req_id; req_id="$(_get_fm_field "$msg_file" "req_id")"
-        local pr_number; pr_number="$(_get_fm_field "$msg_file" "pr_number")"
-        local summary; summary="$(_get_fm_field "$msg_file" "summary")"
-        local status; status="$(_get_fm_field "$msg_file" "status")"
-        local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
-        local iteration; iteration="$(_get_fm_field "$msg_file" "iteration")"
-        # legacy_type: 由 inbox_write() wrapper 写入 payload，区分 tc_complete / dev_complete
-        local legacy_type; legacy_type="$(_get_fm_field "$msg_file" "legacy_type")"
-        info "ATM response: req_id=${req_id} status=${status} legacy_type=${legacy_type}"
-        case "$legacy_type" in
-          tc_complete)
-            _handle_tc_complete "$req_id" "$pr_number" "${status:-success}" "$blocking_reason" "$iteration"
-            ;;
-          review_complete)
-            # 阶段 5（Code Review）完成信号 — 与 dev_complete（阶段 2）语义独立
-            _handle_review_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
-            ;;
-          review_blocked)
-            warn "ATM response review_blocked for ${req_id}: ${blocking_reason}"
-            ;;
-          dev_complete|"")
-            # dev_complete 或未知 legacy_type → 向后兼容路径
-            _handle_dev_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
-            ;;
-          *)
-            _handle_dev_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
-            ;;
-        esac
-        ;;
-      notification)
-        local severity_val; severity_val="$(_get_fm_field "$msg_file" "severity")"
-        local event_val; event_val="$(_get_fm_field "$msg_file" "event_type")"
-        local req_id; req_id="$(_get_fm_field "$msg_file" "req_id")"
-        local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
-        info "ATM notification: event=${event_val} severity=${severity_val}"
-        if [[ "$severity_val" == "action-required" ]]; then
-          tg_notify "⚠️ [open-workhorse] ${event_val}: $(basename "$msg_file")" || true
-        fi
-        # decision_required event → escalate
-        if [[ "$event_val" == "decision_required" ]]; then
-          _handle_major_decision "$req_id" "$blocking_reason"
-        fi
-        ;;
-      # ── 旧格式路由（legacy）──────────────────────────────────────────────────
-      dev_complete|review_complete|tc_complete|major_decision_needed|review_blocked|implement|tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
-        _inbox_read_legacy "$msg_file" "$msg_type"
-        ;;
-      *)
-        warn "未知消息类型: ${msg_type}（文件: $(basename "$msg_file")）"
-        ;;
-    esac
-
-    # 消费消息（删除已处理文件）
-    rm -f "$msg_file"
-    info "消费消息: $(basename "$msg_file")"
   done
 
   if [[ $count -eq 0 ]]; then info "inbox/for-pandas/ 为空，无消息"; fi
