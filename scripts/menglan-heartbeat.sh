@@ -164,7 +164,10 @@ main() {
     for msg_file in "${pending_dir}"/*.md; do
       [[ -f "$msg_file" ]] || continue
       local base; base="$(basename "$msg_file")"
-      if ! mv "$msg_file" "${claimed_dir}/${base}" 2>/dev/null; then continue; fi
+      if ! mv "$msg_file" "${claimed_dir}/${base}" 2>/dev/null; then
+        [[ ! -f "$msg_file" ]] && continue  # genuine race: source gone
+        warn "Claim mv 失败（非竞争错误），跳过: ${base}"; continue
+      fi
       local req_id; req_id="$(_get_fm_field "${claimed_dir}/${base}" "req_id")"
       if _process_message "${claimed_dir}/${base}"; then
         mv "${claimed_dir}/${base}" "${done_dir}/${base}"

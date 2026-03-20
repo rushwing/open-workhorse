@@ -317,9 +317,14 @@ inbox_read_pandas() {
       local basename; basename="$(basename "$msg_file")"
       local claimed_file="${claimed_dir}/${basename}"
 
-      # 原子 claim：mv 失败说明已被其他进程认领，skip
+      # 原子 claim：mv 失败时区分竞争（源文件消失）和真实错误
       if ! mv "$msg_file" "$claimed_file" 2>/dev/null; then
-        info "Claim 竞争，跳过: ${basename}"; continue
+        if [[ ! -f "$msg_file" ]]; then
+          info "Claim 竞争，跳过: ${basename}"
+        else
+          err "Claim mv 失败（非竞争错误），跳过: ${basename}"
+        fi
+        continue
       fi
 
       if _dispatch_msg "$claimed_file"; then

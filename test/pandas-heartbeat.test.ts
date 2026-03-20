@@ -1074,40 +1074,43 @@ test("TC-034-01: inbox_read_pandas moves message from pending/ to done/ after su
 });
 
 // TC-034-02: Claim 竞争 → skip（不报错）
-test("TC-034-02: inbox_read_pandas skips without error when pending file already claimed (mv fails)", async () => {
+test("TC-034-02: inbox_read_pandas skips silently when pending file is taken by a competing worker (ENOENT race)", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-034-02-${Date.now()}`);
   const pendingDir = join(tmpDir, "inbox", "for-pandas", "pending");
-  const claimedDir = join(tmpDir, "inbox", "for-pandas", "claimed");
   await mkdir(pendingDir, { recursive: true });
-  await mkdir(claimedDir, { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
 
-  // Place file in pending/ so the glob finds it and executes the mv line
   const basename = "2026-03-20-test-034-02.md";
   await writeFile(
     join(pendingDir, basename),
     "---\ntype: review_blocked\nreq_id: REQ-034\nsummary: test\nstatus: blocked\nblocking_reason: test\n---\n",
     "utf8",
   );
-  // Make claimed/ read-only so mv pending/ -> claimed/ fails — this is the race condition branch
-  await chmod(claimedDir, 0o555);
 
   try {
+    // Simulate genuine race: override mv so that for pending->claimed moves it removes the
+    // source (simulating another worker already took it) then returns 1 (ENOENT scenario).
+    // The fixed code checks [[ ! -f source ]] after mv failure — this branch should be silent.
     const result = await runBash(
-      `source "${SCRIPT}" 2>/dev/null; inbox_init; inbox_read_pandas`,
+      `source "${SCRIPT}" 2>/dev/null
+       inbox_init
+       mv() {
+         if [[ "$1" == */pending/* && "$2" == */claimed/* ]]; then
+           /bin/rm -f "$1"
+           return 1
+         fi
+         /bin/mv "$@"
+       }
+       inbox_read_pandas`,
       { SHARED_RESOURCES_ROOT: tmpDir },
     );
-    assert.equal(result.code, 0, "Should exit 0 even when mv to claimed/ fails (skip branch)");
-    assert.ok(!result.stderr.includes("ERROR:"), `No ERROR in stderr. stderr: ${result.stderr}`);
-    // File should remain in pending/ (was not moved because mv failed)
-    assert.ok(
-      existsSync(join(pendingDir, basename)),
-      "File should remain in pending/ when mv to claimed/ fails",
-    );
+    assert.equal(result.code, 0, "Should exit 0 for genuine race (source file gone after mv failure)");
+    // Genuine race must not emit ERROR to stderr
+    assert.ok(!result.stderr.includes("ERROR:"), `No ERROR for genuine race. stderr: ${result.stderr}`);
+    // Source consumed (removed by the competing-worker simulation)
+    assert.ok(!existsSync(join(pendingDir, basename)), "File should be gone from pending/ after race");
   } finally {
-    // Restore permissions before cleanup
-    await chmod(claimedDir, 0o755);
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
