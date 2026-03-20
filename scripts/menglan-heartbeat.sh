@@ -89,7 +89,8 @@ _notify_pandas_failure() {
   local date_str filename
   date_str="$(date +%Y-%m-%d)"
   filename="${date_str}-menglan-fail-${req_id}-$$-${RANDOM}.md"
-  mkdir -p "${INBOX_ROOT}/for-pandas"
+  # REQ-034: write to pending/ so pandas heartbeat picks it up via atomic-claim path
+  mkdir -p "${INBOX_ROOT}/for-pandas/pending"
   {
     echo "---"
     echo "type: major_decision_needed"
@@ -98,8 +99,8 @@ _notify_pandas_failure() {
     echo "status: blocked"
     echo "blocking_reason: ${reason}; task reset to blocked/unassigned — review before re-dispatching"
     echo "---"
-  } > "${INBOX_ROOT}/for-pandas/${filename}"
-  warn "已写入失败告警 → for-pandas/${filename}"
+  } > "${INBOX_ROOT}/for-pandas/pending/${filename}"
+  warn "已写入失败告警 → for-pandas/pending/${filename}"
 }
 
 # ── 单条消息处理（在 if 内调用，不触发 set -e 退出）──────────────────────────
@@ -169,12 +170,13 @@ main() {
         mv "${claimed_dir}/${base}" "${done_dir}/${base}"
         ok "done: ${base}"
       else
+        local pm_exit=$?
         mv "${claimed_dir}/${base}" "${failed_dir}/${base}" 2>/dev/null || true
         printf '\nERROR: handler failed — %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
           >> "${failed_dir}/${base}"
         _rollback_task "$req_id"
         _notify_pandas_failure "$base" \
-          "exit $? — see ${failed_dir}/${base}" "$req_id"
+          "exit ${pm_exit} — see ${failed_dir}/${base}" "$req_id"
       fi
     done
   fi

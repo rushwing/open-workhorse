@@ -1083,23 +1083,31 @@ test("TC-034-02: inbox_read_pandas skips without error when pending file already
   await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
 
-  // Pre-move the file to claimed to simulate a competing claim
+  // Place file in pending/ so the glob finds it and executes the mv line
   const basename = "2026-03-20-test-034-02.md";
   await writeFile(
-    join(claimedDir, basename),
+    join(pendingDir, basename),
     "---\ntype: review_blocked\nreq_id: REQ-034\nsummary: test\nstatus: blocked\nblocking_reason: test\n---\n",
     "utf8",
   );
-  // pending/ is empty — nothing to claim
+  // Make claimed/ read-only so mv pending/ -> claimed/ fails — this is the race condition branch
+  await chmod(claimedDir, 0o555);
 
   try {
     const result = await runBash(
       `source "${SCRIPT}" 2>/dev/null; inbox_init; inbox_read_pandas`,
       { SHARED_RESOURCES_ROOT: tmpDir },
     );
-    assert.equal(result.code, 0, "Should exit 0 even with competing claim scenario");
+    assert.equal(result.code, 0, "Should exit 0 even when mv to claimed/ fails (skip branch)");
     assert.ok(!result.stderr.includes("ERROR:"), `No ERROR in stderr. stderr: ${result.stderr}`);
+    // File should remain in pending/ (was not moved because mv failed)
+    assert.ok(
+      existsSync(join(pendingDir, basename)),
+      "File should remain in pending/ when mv to claimed/ fails",
+    );
   } finally {
+    // Restore permissions before cleanup
+    await chmod(claimedDir, 0o755);
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
