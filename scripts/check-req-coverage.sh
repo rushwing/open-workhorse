@@ -107,7 +107,13 @@ for req_file in "${REQ_FILES[@]}"; do
 
   [[ -n "$status" ]] && check_enum "$status" "$STATUS_ENUM" "${req_id}.status"
   [[ -n "$priority" ]] && check_enum "$priority" "$PRIORITY_ENUM" "${req_id}.priority"
-  [[ -n "$scope" ]] && check_enum "$scope" "$SCOPE_ENUM" "${req_id}.scope"
+  if [[ -n "$scope" ]]; then
+    IFS=',' read -ra _scope_parts <<< "$scope"
+    for _part in "${_scope_parts[@]}"; do
+      _part="${_part// /}"
+      check_enum "$_part" "$SCOPE_ENUM" "${req_id}.scope"
+    done
+  fi
   [[ -n "$owner" ]] && check_enum "$owner" "$OWNER_ENUM" "${req_id}.owner"
 
   # 3. depends_on 引用存在性检查

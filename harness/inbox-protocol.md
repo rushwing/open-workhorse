@@ -11,7 +11,7 @@ last_reviewed: 2026-03-20
 # Inbox Protocol — ATM Envelope 规范
 
 > 本文档是 open-workhorse 多 Agent 系统 inbox IPC 消息 Envelope 格式的 **repo canonical 规范**。
-> 如有歧义，以本文档为准。外部讨论纪要（`~/github-kb/rushwing/knowledge-topics/agent-teams-messaging/`）仅供参考。
+> 如有歧义，以本文档为准。外部讨论纪要（`~/Dev/github-kb/knowledge-topics/agent-teams-messaging/`）仅供参考。
 > 相关 REQ：REQ-032（Umbrella）、REQ-033（P0）、REQ-034（P1a）、REQ-035（P1b）、REQ-036（P2）
 >
 > **实施范围（status: partial）**：REQ-033 范围内，Pandas writer（`inbox_write_v2`）和 Pandas reader（`inbox_read_pandas`）已升级为 ATM Envelope 格式。Huahua reader 已同步支持 ATM request 路由。Menglan/Huahua 的 writer 仍发旧格式，Pandas reader 通过 `_inbox_read_legacy()` 向后兼容——writer 侧迁移待 REQ-034+。
