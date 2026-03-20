@@ -1147,10 +1147,10 @@ test("TC-034-09: non-race mv failure (source still present) emits error log and 
       { SHARED_RESOURCES_ROOT: tmpDir },
     );
     assert.equal(result.code, 0, "Should exit 0 overall (other messages can still be processed)");
-    // Non-race error must be surfaced — err() writes to stderr
+    // Non-race error must be surfaced — err() writes "[pandas] Claim mv 失败..." to stderr
     assert.ok(
-      result.stderr.includes("Claim mv") || result.stderr.includes("pandas"),
-      `Expected error log on stderr for non-race mv failure. stderr: ${result.stderr}`,
+      result.stderr.includes("pandas") && result.stderr.includes("Claim mv"),
+      `Expected [pandas] prefix and "Claim mv" in stderr for non-race mv failure. stderr: ${result.stderr}`,
     );
     // Source must remain in pending/ (not consumed silently)
     assert.ok(
