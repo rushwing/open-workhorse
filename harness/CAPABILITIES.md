@@ -377,6 +377,7 @@ avoid_when:
   - the task is actually a review packet
 notes:
   - compose one clear goal, one authority boundary, and one completion contract
+  - output becomes the payload_file for inbox_write_v2(); must satisfy ATM Envelope §2.1–2.2 (harness/inbox-protocol.md)
 ```
 
 ### `handoff-packet-compose_review`
@@ -398,6 +399,7 @@ avoid_when:
   - no review trigger has fired
 notes:
   - include review surface, key risks, and expected verdict contract
+  - output becomes the payload_file for inbox_write_v2() action=review; must satisfy ATM Envelope §2.1–2.2 (harness/inbox-protocol.md)
 ```
 
 ### `agent-inbox-write_task_packet`
@@ -418,6 +420,7 @@ avoid_when:
   - the packet is incomplete or misrouted
 notes:
   - writing the packet is delivery, not routing logic
+  - must call inbox_write_v2() with type=request action=implement|bugfix|fix_review; schema: harness/inbox-protocol.md §2.1–2.2
 ```
 
 ### `agent-inbox-write_review_packet`
@@ -438,6 +441,7 @@ avoid_when:
   - review is not required or the packet lacks review surface metadata
 notes:
   - use after route-review-decide_required and handoff-packet-compose_review
+  - must call inbox_write_v2() with type=request action=review; schema: harness/inbox-protocol.md §2.1–2.2
 ```
 
 ### `agent-inbox-read_result_packet`
