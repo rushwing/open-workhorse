@@ -812,14 +812,14 @@ test("TC-033-02: inbox_write_v2 type=request includes action and response_requir
 
 // ── REQ-033: TC-033-03 inbox_write_v2 type=response fields ───────────────────
 
-test("TC-033-03: inbox_write_v2 type=response includes in_reply_to", async () => {
+test("TC-033-03: inbox_write_v2 type=response includes in_reply_to, status, summary", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-03-${Date.now()}`);
   await mkdir(tmpDir, { recursive: true });
 
   try {
     const result = await runBash(
       `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
-      `inbox_write_v2 "pandas" "response" "" "thread_t1" "corr_t1" "msg_orig_001" "P2" "false" ""`,
+      `inbox_write_v2 "pandas" "response" "" "thread_t1" "corr_t1" "msg_orig_001" "P2" "false" "" "completed" "" "TC approved"`,
       { SHARED_RESOURCES_ROOT: tmpDir },
     );
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
@@ -830,6 +830,8 @@ test("TC-033-03: inbox_write_v2 type=response includes in_reply_to", async () =>
     const content = await readFile(join(pandasDir, mdFiles[0]!), "utf8");
     assert.ok(content.includes("type: response"), "Missing type: response");
     assert.ok(content.includes("in_reply_to: msg_orig_001"), "Missing in_reply_to field");
+    assert.ok(content.includes("status: completed"), "Missing status field in response envelope");
+    assert.ok(content.includes("summary: TC approved"), "Missing summary field in response envelope");
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
@@ -837,14 +839,14 @@ test("TC-033-03: inbox_write_v2 type=response includes in_reply_to", async () =>
 
 // ── REQ-033: TC-033-04 inbox_write_v2 type=notification fields ───────────────
 
-test("TC-033-04: inbox_write_v2 type=notification includes event_type", async () => {
+test("TC-033-04: inbox_write_v2 type=notification includes event_type and severity", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-04-${Date.now()}`);
   await mkdir(tmpDir, { recursive: true });
 
   try {
     const result = await runBash(
       `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
-      `inbox_write_v2 "pandas" "notification" "deploy_complete" "thread_t1" "corr_t1" "" "P2" "false" ""`,
+      `inbox_write_v2 "pandas" "notification" "deploy_complete" "thread_t1" "corr_t1" "" "P2" "false" "" "" "info"`,
       { SHARED_RESOURCES_ROOT: tmpDir },
     );
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
@@ -855,6 +857,7 @@ test("TC-033-04: inbox_write_v2 type=notification includes event_type", async ()
     const content = await readFile(join(pandasDir, mdFiles[0]!), "utf8");
     assert.ok(content.includes("type: notification"), "Missing type: notification");
     assert.ok(content.includes("event_type: deploy_complete"), "Missing event_type field");
+    assert.ok(content.includes("severity: info"), "Missing severity field in notification envelope");
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

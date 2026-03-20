@@ -9,8 +9,8 @@ last_reviewed: 2026-03-20
 
 # Inbox Protocol — ATM Envelope 规范
 
-> 本文档定义 open-workhorse 多 Agent 系统 inbox IPC 消息的 Envelope 格式规范。
-> 权威设计来源：`~/github-kb/rushwing/knowledge-topics/agent-teams-messaging/`
+> 本文档是 open-workhorse 多 Agent 系统 inbox IPC 消息 Envelope 格式的 **repo canonical 规范**。
+> 如有歧义，以本文档为准。外部讨论纪要（`~/github-kb/rushwing/knowledge-topics/agent-teams-messaging/`）仅供参考。
 > 相关 REQ：REQ-032（Umbrella）、REQ-033（P0）、REQ-034（P1a）、REQ-035（P1b）、REQ-036（P2）
 
 ---

@@ -117,17 +117,23 @@ inbox_write() {
     [[ -n "$body" ]] && echo "" && echo "$body"
   } > "$tmpfile"
 
+  # Pass status (param 10) so response envelope frontmatter includes status field
   inbox_write_v2 "$target" "$new_type" "$action_or_event" \
-    "$thread_id" "$correlation_id" "" "P2" "false" "$tmpfile"
+    "$thread_id" "$correlation_id" "" "P2" "false" "$tmpfile" \
+    "$status"
   rm -f "$tmpfile"
 }
 
 # inbox_write_v2 <target> <type> <action_or_event> <thread_id> <correlation_id>
 #                [in_reply_to] [priority] [response_required] [payload_file]
+#                [status] [severity] [summary]
 #
-# type:           request | response | notification
+# type:            request | response | notification
 # action_or_event: request → action verb; notification → event_type; response → ""
-# payload_file:   临时文件，含 type-specific 附加字段 + Markdown body（可选）
+# status:          response only — completed | partial | blocked | failed | rejected | deferred
+# severity:        notification only — info | warn | action-required
+# summary:         response only — optional free-text summary
+# payload_file:    临时文件，含 type-specific 附加字段 + Markdown body（可选）
 inbox_write_v2() {
   local target="$1"
   local type="$2"
@@ -138,6 +144,9 @@ inbox_write_v2() {
   local priority="${7:-P2}"
   local response_required="${8:-false}"
   local payload_file="${9:-}"
+  local status="${10:-}"
+  local severity="${11:-}"
+  local summary="${12:-}"
 
   local now msg_id date_str filename target_dir
   now="$(date -u +%Y%m%d%H%M%S)"
@@ -166,9 +175,12 @@ inbox_write_v2() {
         ;;
       response)
         [[ -n "$in_reply_to" ]] && echo "in_reply_to: ${in_reply_to}"
+        [[ -n "$status" ]]      && echo "status: ${status}"
+        [[ -n "$summary" ]]     && echo "summary: ${summary}"
         ;;
       notification)
         echo "event_type: ${action_or_event}"
+        [[ -n "$severity" ]] && echo "severity: ${severity}"
         ;;
     esac
     echo "---"
