@@ -162,7 +162,7 @@ ${req_content:-"(REQ file not found at ${req_file}. Use the req_id to locate it.
 ## Steps
 1. Create branch: tc/${req_id}-<short-slug>
 2. Read the REQ acceptance criteria carefully
-3. For each acceptance criterion, write at least one test case file under tasks/test_cases/
+3. For each acceptance criterion, write at least one test case file under tasks/test-cases/
 4. Commit TC files with message: 'tc: ${req_id} test case design'
 5. Open PR with: gh pr create --fill
 6. Reply summary of TCs designed and the PR URL"
