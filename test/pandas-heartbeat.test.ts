@@ -1115,6 +1115,53 @@ test("TC-034-02: inbox_read_pandas skips silently when pending file is taken by 
   }
 });
 
+// TC-034-09: 非竞争 mv 错误（源文件仍在）→ 报错日志，file 留在 pending/
+test("TC-034-09: non-race mv failure (source still present) emits error log and leaves file in pending/", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-034-09-${Date.now()}`);
+  const pendingDir = join(tmpDir, "inbox", "for-pandas", "pending");
+  await mkdir(pendingDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  const basename = "2026-03-20-test-034-09.md";
+  await writeFile(
+    join(pendingDir, basename),
+    "---\ntype: review_blocked\nreq_id: REQ-034\nsummary: test\nstatus: blocked\nblocking_reason: test\n---\n",
+    "utf8",
+  );
+
+  try {
+    // Override mv to fail WITHOUT removing the source — simulates a real fs error
+    // (e.g. disk full, permission on destination) where source is still intact.
+    // The fixed code should emit an error log for this path (not silently skip).
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null
+       inbox_init
+       mv() {
+         if [[ "$1" == */pending/* && "$2" == */claimed/* ]]; then
+           return 1  # fail but leave source untouched
+         fi
+         /bin/mv "$@"
+       }
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, "Should exit 0 overall (other messages can still be processed)");
+    // Non-race error must be surfaced — err() writes to stderr
+    assert.ok(
+      result.stderr.includes("Claim mv") || result.stderr.includes("pandas"),
+      `Expected error log on stderr for non-race mv failure. stderr: ${result.stderr}`,
+    );
+    // Source must remain in pending/ (not consumed silently)
+    assert.ok(
+      existsSync(join(pendingDir, basename)),
+      "File should remain in pending/ when mv fails with source still present",
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 // TC-034-03: Handler 成功 → done/ 内容与原 pending/ 一致
 test("TC-034-03: message in done/ after success retains original frontmatter content", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-034-03-${Date.now()}`);
