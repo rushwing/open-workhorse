@@ -582,11 +582,15 @@ auto_claim() {
   for f in tasks/features/REQ-*.md; do
     [[ -f "$f" ]] || continue
 
-    local status owner tc_policy priority
+    local status owner tc_policy priority tc_exempt_reason
     status="$(_get_fm_field "$f" "status")"
     owner="$(_get_fm_field "$f" "owner")"
     tc_policy="$(_get_fm_field "$f" "tc_policy")"
     priority="$(_get_fm_field "$f" "priority")"
+    tc_exempt_reason="$(_get_fm_field "$f" "tc_exempt_reason")"
+
+    # Umbrella REQ 不可认领（仅追踪子 REQ 进度，无实现任务）
+    [[ "$tc_exempt_reason" == *"Umbrella"* ]] && continue
 
     # 过滤可认领状态（按 harness 标准）
     local claimable=false status_tier=99
@@ -679,10 +683,18 @@ auto_claim_specific() {
     return 1
   fi
 
-  local owner
+  local owner tc_exempt_reason
   owner="$(_get_fm_field "$req_file" "owner")"
+  tc_exempt_reason="$(_get_fm_field "$req_file" "tc_exempt_reason")"
+
   if [[ "$owner" != "unassigned" ]]; then
     warn "${req_id} 已被 ${owner} 认领，跳过"
+    return 0
+  fi
+
+  # Umbrella REQ 不可认领（仅追踪子 REQ 进度，无实现任务）
+  if [[ "$tc_exempt_reason" == *"Umbrella"* ]]; then
+    warn "${req_id} 为 Umbrella REQ，不可认领实现"
     return 0
   fi
 
