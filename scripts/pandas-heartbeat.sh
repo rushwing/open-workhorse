@@ -67,9 +67,9 @@ inbox_init() {
            "${INBOX_ROOT}/for-menglan"
 }
 
+# @deprecated — 旧 inbox 格式，逐步迁移到 inbox_write_v2()（REQ-033）
+# 仍可调用，内部透传到 inbox_write_v2()（向后兼容）
 # inbox_write <target> <type> <req_id> <summary> [pr_number] [status] [blocking_reason] [iteration] [body]
-# 写入消息到 inbox/for-<target>/
-# body（第 9 参数）会追加在 frontmatter 之后，供接收 agent 读取完整上下文
 inbox_write() {
   local target="$1"
   local type="$2"
@@ -81,29 +81,113 @@ inbox_write() {
   local iteration="${8:-}"
   local body="${9:-}"
 
-  local date_str
-  date_str="$(date +%Y-%m-%d)"
-  local slug
-  slug="$(echo "${type}-${req_id}" | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
-  # Append PID + RANDOM to prevent same-day same-type collision (silent overwrite bug)
-  local filename="${date_str}-pandas-${slug}-$$-${RANDOM}.md"
-  local target_dir="${INBOX_ROOT}/for-${target}"
+  # 生成兼容 thread_id / correlation_id（epoch-based）
+  local epoch; epoch="$(date +%s)"
+  local thread_id="thread_${req_id}_${epoch}"
+  local correlation_id="corr_${req_id}_${epoch}"
+
+  # 旧 type → 新 type/action 映射
+  # code_review 规范化为 review（Daniel 决策 2026-03-20）
+  local new_type action_or_event
+  case "$type" in
+    implement|tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
+      new_type="request"
+      # code_review → review（canonical action）
+      [[ "$type" == "code_review" ]] && action_or_event="review" || action_or_event="$type"
+      ;;
+    dev_complete|tc_complete|review_blocked)
+      new_type="response"; action_or_event="" ;;
+    major_decision_needed)
+      new_type="notification"; action_or_event="decision_required" ;;
+    *)
+      new_type="notification"; action_or_event="$type" ;;
+  esac
+
+  # 构造 payload_file（legacy 字段 + body）
+  local tmpfile; tmpfile="$(mktemp)"
+  {
+    echo "req_id: ${req_id}"
+    echo "summary: ${summary}"
+    echo "status: ${status}"
+    # legacy_type: 保留原始 type，供 response 路由区分 tc_complete / dev_complete
+    echo "legacy_type: ${type}"
+    [[ -n "$pr_number" ]]       && echo "pr_number: ${pr_number}"
+    [[ -n "$blocking_reason" ]] && echo "blocking_reason: ${blocking_reason}"
+    [[ -n "$iteration" ]]       && echo "iteration: ${iteration}"
+    [[ -n "$body" ]] && echo "" && echo "$body"
+  } > "$tmpfile"
+
+  # Pass status (param 10) so response envelope frontmatter includes status field
+  inbox_write_v2 "$target" "$new_type" "$action_or_event" \
+    "$thread_id" "$correlation_id" "" "P2" "false" "$tmpfile" \
+    "$status"
+  rm -f "$tmpfile"
+}
+
+# inbox_write_v2 <target> <type> <action_or_event> <thread_id> <correlation_id>
+#                [in_reply_to] [priority] [response_required] [payload_file]
+#                [status] [severity] [summary]
+#
+# type:            request | response | notification
+# action_or_event: request → action verb; notification → event_type; response → ""
+# status:          response only — completed | partial | blocked | failed | rejected | deferred
+# severity:        notification only — info | warn | action-required
+# summary:         response only — optional free-text summary
+# payload_file:    临时文件，含 type-specific 附加字段 + Markdown body（可选）
+inbox_write_v2() {
+  local target="$1"
+  local type="$2"
+  local action_or_event="$3"
+  local thread_id="$4"
+  local correlation_id="$5"
+  local in_reply_to="${6:-}"
+  local priority="${7:-P2}"
+  local response_required="${8:-false}"
+  local payload_file="${9:-}"
+  local status="${10:-}"
+  local severity="${11:-}"
+  local summary="${12:-}"
+
+  local now msg_id date_str filename target_dir
+  now="$(date -u +%Y%m%d%H%M%S)"
+  # Use subshell with pipefail disabled to avoid SIGPIPE when head closes the pipe
+  local rand4; rand4="$(set +o pipefail; tr -dc 'a-z0-9' < /dev/urandom 2>/dev/null | head -c 4)"
+  msg_id="msg_${AGENT_ORCHESTRATOR:-pandas}_${now}_${rand4}"
+  date_str="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  filename="${date_str//:/-}__${type}__${AGENT_ORCHESTRATOR:-pandas}_to_${target}__${correlation_id:-notset}.md"
+  target_dir="${INBOX_ROOT}/for-${target}"
   mkdir -p "$target_dir"
 
   {
     echo "---"
+    echo "message_id: ${msg_id}"
     echo "type: ${type}"
-    echo "req_id: ${req_id}"
-    [[ -n "$pr_number" ]] && echo "pr_number: ${pr_number}"
-    echo "summary: ${summary}"
-    echo "status: ${status}"
-    [[ -n "$blocking_reason" ]] && echo "blocking_reason: ${blocking_reason}"
-    [[ -n "$iteration" ]] && echo "iteration: ${iteration}"
+    echo "from: ${AGENT_ORCHESTRATOR:-pandas}"
+    echo "to: ${target}"
+    echo "created_at: ${date_str}"
+    echo "thread_id: ${thread_id}"
+    echo "correlation_id: ${correlation_id}"
+    echo "priority: ${priority}"
+    case "$type" in
+      request)
+        echo "action: ${action_or_event}"
+        echo "response_required: ${response_required}"
+        ;;
+      response)
+        [[ -n "$in_reply_to" ]] && echo "in_reply_to: ${in_reply_to}"
+        [[ -n "$status" ]]      && echo "status: ${status}"
+        [[ -n "$summary" ]]     && echo "summary: ${summary}"
+        ;;
+      notification)
+        echo "event_type: ${action_or_event}"
+        [[ -n "$severity" ]] && echo "severity: ${severity}"
+        ;;
+    esac
     echo "---"
-    [[ -n "$body" ]] && echo "" && echo "$body"
+    [[ -n "$payload_file" && -f "$payload_file" ]] && cat "$payload_file"
   } > "${target_dir}/${filename}"
 
-  info "inbox_write → for-${target}/${filename}"
+  info "inbox_write_v2 → for-${target}/${filename} [${type}/${action_or_event}]"
 }
 
 # _get_fm_field <file> <field>
@@ -113,7 +197,8 @@ _get_fm_field() {
   awk -F': ' "/^${field}:/{gsub(/^[[:space:]]+|[[:space:]]+$/, \"\", \$2); print \$2; exit}" "$file"
 }
 
-# inbox_read_pandas — 处理 inbox/for-pandas/ 中所有消息（REQ-021, REQ-023）
+# inbox_read_pandas — 处理 inbox/for-pandas/ 中所有消息（REQ-021, REQ-023, REQ-033）
+# 支持新格式（ATM Envelope, type=request|response|notification）和旧格式双路由
 inbox_read_pandas() {
   local inbox_dir="${INBOX_ROOT}/for-pandas"
   [[ -d "$inbox_dir" ]] || { info "inbox/for-pandas/ 不存在，跳过"; return 0; }
@@ -123,32 +208,90 @@ inbox_read_pandas() {
     [[ -f "$msg_file" ]] || continue
     count=$(( count + 1 ))
 
-    local type req_id pr_number summary status blocking_reason iteration
-    type="$(_get_fm_field "$msg_file" "type")"
-    req_id="$(_get_fm_field "$msg_file" "req_id")"
-    pr_number="$(_get_fm_field "$msg_file" "pr_number")"
-    summary="$(_get_fm_field "$msg_file" "summary")"
-    status="$(_get_fm_field "$msg_file" "status")"
-    blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
-    iteration="$(_get_fm_field "$msg_file" "iteration")"
+    local msg_type
+    msg_type="$(_get_fm_field "$msg_file" "type")"
 
-    info "处理消息: type=${type} req_id=${req_id} status=${status}"
+    if [[ -z "$msg_type" ]]; then
+      warn "消息缺少 type 字段，跳过: $(basename "$msg_file")"
+      rm -f "$msg_file"
+      continue
+    fi
 
-    case "$type" in
-      dev_complete)
-        _handle_dev_complete "$req_id" "$pr_number" "$summary" "$status" "$blocking_reason"
+    info "处理消息: type=${msg_type} file=$(basename "$msg_file")"
+
+    # ── 新格式路由（ATM Envelope）────────────────────────────────────────────
+    case "$msg_type" in
+      request)
+        local action_val; action_val="$(_get_fm_field "$msg_file" "action")"
+        local req_id; req_id="$(_get_fm_field "$msg_file" "req_id")"
+        local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
+        info "ATM request: action=${action_val} req_id=${req_id}"
+        case "$action_val" in
+          # implement は Pandas→Menglan 方向のみ。Pandas inbox で受信した場合は方向違い
+          implement)
+            warn "ATM request action=implement received in Pandas inbox — wrong direction (should be Pandas→Menglan). Dropping."
+            ;;
+          tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
+            warn "ATM request action=${action_val} — 暂无专用 handler，忽略"
+            ;;
+          decision_required|major_decision_needed)
+            _handle_major_decision "$req_id" "$blocking_reason"
+            ;;
+          *)
+            warn "未知 ATM request action: ${action_val}"
+            ;;
+        esac
         ;;
-      tc_complete)
-        _handle_tc_complete "$req_id" "$pr_number" "$status" "$blocking_reason" "$iteration"
+      response)
+        local req_id; req_id="$(_get_fm_field "$msg_file" "req_id")"
+        local pr_number; pr_number="$(_get_fm_field "$msg_file" "pr_number")"
+        local summary; summary="$(_get_fm_field "$msg_file" "summary")"
+        local status; status="$(_get_fm_field "$msg_file" "status")"
+        local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
+        local iteration; iteration="$(_get_fm_field "$msg_file" "iteration")"
+        # legacy_type: 由 inbox_write() wrapper 写入 payload，区分 tc_complete / dev_complete
+        local legacy_type; legacy_type="$(_get_fm_field "$msg_file" "legacy_type")"
+        info "ATM response: req_id=${req_id} status=${status} legacy_type=${legacy_type}"
+        case "$legacy_type" in
+          tc_complete)
+            _handle_tc_complete "$req_id" "$pr_number" "${status:-success}" "$blocking_reason" "$iteration"
+            ;;
+          review_complete)
+            # 阶段 5（Code Review）完成信号 — 与 dev_complete（阶段 2）语义独立
+            _handle_review_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
+            ;;
+          review_blocked)
+            warn "ATM response review_blocked for ${req_id}: ${blocking_reason}"
+            ;;
+          dev_complete|"")
+            # dev_complete 或未知 legacy_type → 向后兼容路径
+            _handle_dev_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
+            ;;
+          *)
+            _handle_dev_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
+            ;;
+        esac
         ;;
-      major_decision_needed)
-        _handle_major_decision "$req_id" "$blocking_reason"
+      notification)
+        local severity_val; severity_val="$(_get_fm_field "$msg_file" "severity")"
+        local event_val; event_val="$(_get_fm_field "$msg_file" "event_type")"
+        local req_id; req_id="$(_get_fm_field "$msg_file" "req_id")"
+        local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
+        info "ATM notification: event=${event_val} severity=${severity_val}"
+        if [[ "$severity_val" == "action-required" ]]; then
+          tg_notify "⚠️ [open-workhorse] ${event_val}: $(basename "$msg_file")" || true
+        fi
+        # decision_required event → escalate
+        if [[ "$event_val" == "decision_required" ]]; then
+          _handle_major_decision "$req_id" "$blocking_reason"
+        fi
         ;;
-      review_blocked)
-        warn "review_blocked for ${req_id}: ${blocking_reason}"
+      # ── 旧格式路由（legacy）──────────────────────────────────────────────────
+      dev_complete|review_complete|tc_complete|major_decision_needed|review_blocked|implement|tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
+        _inbox_read_legacy "$msg_file" "$msg_type"
         ;;
       *)
-        warn "未知消息类型: ${type}（文件: $(basename "$msg_file")）"
+        warn "未知消息类型: ${msg_type}（文件: $(basename "$msg_file")）"
         ;;
     esac
 
@@ -160,11 +303,49 @@ inbox_read_pandas() {
   if [[ $count -eq 0 ]]; then info "inbox/for-pandas/ 为空，无消息"; fi
 }
 
+# _inbox_read_legacy — 旧格式消息路由（type 字段为旧枚举值）
+_inbox_read_legacy() {
+  local msg_file="$1"
+  local type="$2"
+
+  local req_id pr_number summary status blocking_reason iteration
+  req_id="$(_get_fm_field "$msg_file" "req_id")"
+  pr_number="$(_get_fm_field "$msg_file" "pr_number")"
+  summary="$(_get_fm_field "$msg_file" "summary")"
+  status="$(_get_fm_field "$msg_file" "status")"
+  blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
+  iteration="$(_get_fm_field "$msg_file" "iteration")"
+
+  info "旧格式路由: type=${type} req_id=${req_id} status=${status}"
+
+  case "$type" in
+    dev_complete)
+      _handle_dev_complete "$req_id" "$pr_number" "$summary" "$status" "$blocking_reason"
+      ;;
+    review_complete)
+      _handle_review_complete "$req_id" "$pr_number" "$summary" "$status" "$blocking_reason"
+      ;;
+    tc_complete)
+      _handle_tc_complete "$req_id" "$pr_number" "$status" "$blocking_reason" "$iteration"
+      ;;
+    major_decision_needed)
+      _handle_major_decision "$req_id" "$blocking_reason"
+      ;;
+    review_blocked)
+      warn "review_blocked for ${req_id}: ${blocking_reason}"
+      ;;
+    *)
+      warn "旧格式未知消息类型: ${type}（文件: $(basename "$msg_file")）"
+      ;;
+  esac
+}
+
 # ── 消息处理器 ────────────────────────────────────────────────────────────────
 
 _handle_dev_complete() {
   local req_id="$1" pr_number="$2" summary="$3" status="$4" blocking_reason="$5"
-  if [[ "$status" == "success" ]]; then
+  # ATM protocol uses "completed"; legacy uses "success" — accept both
+  if [[ "$status" == "success" || "$status" == "completed" ]]; then
     info "dev_complete(success): ${req_id} PR #${pr_number} — 发送 PR 合并通知"
     local repo
     repo="${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed 's|.*github\.com[:/]||; s|\.git$||' || true)}"
@@ -182,13 +363,37 @@ _handle_dev_complete() {
   fi
 }
 
+# _handle_review_complete — 阶段 5（Code Review）完成信号
+# 语义独立于 dev_complete（阶段 2 实现完成），避免把"审核结果"误解为"开发结果"
+_handle_review_complete() {
+  local req_id="$1" pr_number="$2" summary="$3" status="$4" blocking_reason="$5"
+  # ATM protocol uses "completed"; legacy uses "success" — accept both
+  if [[ "$status" == "success" || "$status" == "completed" ]]; then
+    info "review_complete(approved): ${req_id} PR #${pr_number} — code review 通过，发送 PR merge-ready 通知"
+    local repo
+    repo="${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed 's|.*github\.com[:/]||; s|\.git$||' || true)}"
+    local pr_url
+    if [[ -n "$repo" && -n "$pr_number" ]]; then
+      pr_url="https://github.com/${repo}/pull/${pr_number}"
+    else
+      pr_url="${pr_number:-unknown}"
+    fi
+    tg_pr_ready "${pr_url}" "${summary}" || \
+      warn "tg_pr_ready 调用失败（Telegram 未配置？）"
+  else
+    warn "review_complete(rejected): ${req_id}: ${blocking_reason}"
+    tg_notify "⚠️ [${req_id}] review rejected/blocked: ${blocking_reason}" || true
+  fi
+}
+
 _handle_tc_complete() {
   local req_id="$1" pr_number="$2" status="$3" blocking_reason="$4" iteration="${5:-0}"
   local iter_num
   iter_num="$(echo "$iteration" | grep -oE '[0-9]+' || echo "0")"
   iter_num="${iter_num:-0}"
 
-  if [[ "$status" == "success" ]]; then
+  # ATM protocol uses "completed"; legacy uses "success" — accept both
+  if [[ "$status" == "success" || "$status" == "completed" ]]; then
     info "tc_complete(success): ${req_id} — 路由 implement 到 Menglan"
     local req_body=""
     local _req_f="tasks/features/${req_id}.md"
@@ -377,11 +582,15 @@ auto_claim() {
   for f in tasks/features/REQ-*.md; do
     [[ -f "$f" ]] || continue
 
-    local status owner tc_policy priority
+    local status owner tc_policy priority tc_exempt_reason
     status="$(_get_fm_field "$f" "status")"
     owner="$(_get_fm_field "$f" "owner")"
     tc_policy="$(_get_fm_field "$f" "tc_policy")"
     priority="$(_get_fm_field "$f" "priority")"
+    tc_exempt_reason="$(_get_fm_field "$f" "tc_exempt_reason")"
+
+    # Umbrella REQ 不可认领（仅追踪子 REQ 进度，无实现任务）
+    [[ "$tc_exempt_reason" == *"Umbrella"* ]] && continue
 
     # 过滤可认领状态（按 harness 标准）
     local claimable=false status_tier=99
@@ -474,10 +683,18 @@ auto_claim_specific() {
     return 1
   fi
 
-  local owner
+  local owner tc_exempt_reason
   owner="$(_get_fm_field "$req_file" "owner")"
+  tc_exempt_reason="$(_get_fm_field "$req_file" "tc_exempt_reason")"
+
   if [[ "$owner" != "unassigned" ]]; then
     warn "${req_id} 已被 ${owner} 认领，跳过"
+    return 0
+  fi
+
+  # Umbrella REQ 不可认领（仅追踪子 REQ 进度，无实现任务）
+  if [[ "$tc_exempt_reason" == *"Umbrella"* ]]; then
+    warn "${req_id} 为 Umbrella REQ，不可认领实现"
     return 0
   fi
 

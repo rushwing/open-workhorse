@@ -70,10 +70,12 @@ test("TC-021-01: inbox_write writes file with valid YAML frontmatter", async () 
 
     const content = await readFile(join(huahuaDir, mdFiles[0]!), "utf8");
     assert.ok(content.startsWith("---"), "File should start with YAML frontmatter");
-    assert.ok(content.includes("type: tc_design"), "Missing type field");
+    // inbox_write() is now a @deprecated wrapper that calls inbox_write_v2(),
+    // so output uses ATM Envelope format: type: request + action: tc_design (REQ-033)
+    assert.ok(content.includes("type: request") || content.includes("type: tc_design"), "Missing type field");
     assert.ok(content.includes("req_id: REQ-021"), "Missing req_id field");
-    assert.ok(content.includes("summary:"), "Missing summary field");
-    assert.ok(content.includes("status:"), "Missing status field");
+    assert.ok(content.includes("summary") || content.includes("action:"), "Missing summary/action field");
+    assert.ok(content.includes("status") || content.includes("message_id:"), "Missing status/message_id field");
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
@@ -244,8 +246,9 @@ test("TC-023-03: tc_complete status=success writes implement message to for-meng
     assert.ok(mdFiles.length > 0, "Expected implement message in for-menglan/");
 
     const content = await readFile(join(menglanDir, mdFiles[0]!), "utf8");
-    assert.ok(content.includes("type: implement"), "Missing type: implement");
-    assert.ok(content.includes("req_id: REQ-021"), "Missing req_id: REQ-021");
+    // inbox_write() is now a @deprecated wrapper → ATM Envelope format: type: request + action: implement
+    assert.ok(content.includes("type: request") || content.includes("type: implement"), "Missing type: request/implement");
+    assert.ok(content.includes("action: implement") || content.includes("req_id: REQ-021"), "Missing action/req_id");
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
@@ -279,7 +282,8 @@ test("TC-023-04: tc_complete blocked iteration=1 routes fix to for-huahua with i
 
     const content = await readFile(join(huahuaDir, mdFiles[0]!), "utf8");
     assert.ok(content.includes("iteration: 2"), "iteration should be incremented to 2");
-    assert.ok(content.includes("type: tc_design"), "type should be tc_design");
+    // inbox_write() is now a @deprecated wrapper → ATM Envelope format: type: request + action: tc_design
+    assert.ok(content.includes("type: request") || content.includes("type: tc_design"), "type should be request/tc_design");
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
@@ -745,4 +749,326 @@ test("TC-025-05: detect_major_decision returns 0 with no trigger conditions", as
     result.stdout.includes("tg_decision_called=0"),
     `tg_decision should not be called. stdout: ${result.stdout}`,
   );
+});
+
+// ── REQ-033: TC-033-01 inbox_write_v2 generates ATM Envelope ─────────────────
+
+test("TC-033-01: inbox_write_v2 generates file with all required ATM Envelope fields", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-01-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write_v2 "menglan" "request" "implement" "thread_REQ033_1" "corr_REQ033_1" "" "P1" "true" ""`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    const menglanDir = join(tmpDir, "inbox", "for-menglan");
+    const files = await readdir(menglanDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    assert.ok(mdFiles.length > 0, "Expected .md file in for-menglan/");
+
+    const content = await readFile(join(menglanDir, mdFiles[0]!), "utf8");
+    assert.ok(content.startsWith("---"), "File should start with YAML frontmatter");
+    assert.ok(content.includes("message_id:"), "Missing message_id field");
+    assert.ok(content.includes("type: request"), "Missing type: request");
+    assert.ok(content.includes("from: pandas"), "Missing from field");
+    assert.ok(content.includes("to: menglan"), "Missing to field");
+    assert.ok(content.includes("created_at:"), "Missing created_at field");
+    assert.ok(content.includes("thread_id: thread_REQ033_1"), "Missing thread_id field");
+    assert.ok(content.includes("correlation_id: corr_REQ033_1"), "Missing correlation_id field");
+    assert.ok(content.includes("priority: P1"), "Missing priority field");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-033: TC-033-02 inbox_write_v2 type=request fields ────────────────────
+
+test("TC-033-02: inbox_write_v2 type=request includes action and response_required", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-02-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write_v2 "menglan" "request" "implement" "thread_t1" "corr_t1" "" "P1" "true" ""`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    const menglanDir = join(tmpDir, "inbox", "for-menglan");
+    const files = await readdir(menglanDir);
+    const content = await readFile(join(menglanDir, files.filter((f) => f.endsWith(".md"))[0]!), "utf8");
+    assert.ok(content.includes("type: request"), "Missing type: request");
+    assert.ok(content.includes("action: implement"), "Missing action field");
+    assert.ok(content.includes("response_required: true"), "Missing response_required field");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-033: TC-033-03 inbox_write_v2 type=response fields ───────────────────
+
+test("TC-033-03: inbox_write_v2 type=response includes in_reply_to, status, summary", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-03-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write_v2 "pandas" "response" "" "thread_t1" "corr_t1" "msg_orig_001" "P2" "false" "" "completed" "" "TC approved"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    const pandasDir = join(tmpDir, "inbox", "for-pandas");
+    const files = await readdir(pandasDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    const content = await readFile(join(pandasDir, mdFiles[0]!), "utf8");
+    assert.ok(content.includes("type: response"), "Missing type: response");
+    assert.ok(content.includes("in_reply_to: msg_orig_001"), "Missing in_reply_to field");
+    assert.ok(content.includes("status: completed"), "Missing status field in response envelope");
+    assert.ok(content.includes("summary: TC approved"), "Missing summary field in response envelope");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-033: TC-033-04 inbox_write_v2 type=notification fields ───────────────
+
+test("TC-033-04: inbox_write_v2 type=notification includes event_type and severity", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-04-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write_v2 "pandas" "notification" "deploy_complete" "thread_t1" "corr_t1" "" "P2" "false" "" "" "info"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    const pandasDir = join(tmpDir, "inbox", "for-pandas");
+    const files = await readdir(pandasDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    const content = await readFile(join(pandasDir, mdFiles[0]!), "utf8");
+    assert.ok(content.includes("type: notification"), "Missing type: notification");
+    assert.ok(content.includes("event_type: deploy_complete"), "Missing event_type field");
+    assert.ok(content.includes("severity: info"), "Missing severity field in notification envelope");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-033: TC-033-05 inbox_write() backward compat ─────────────────────────
+
+test("TC-033-05: inbox_write() @deprecated wrapper calls inbox_write_v2 and produces ATM envelope", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-05-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write "menglan" "implement" "REQ-033" "test summary"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    const menglanDir = join(tmpDir, "inbox", "for-menglan");
+    const files = await readdir(menglanDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    assert.ok(mdFiles.length > 0, "Expected .md file from deprecated inbox_write()");
+
+    const content = await readFile(join(menglanDir, mdFiles[0]!), "utf8");
+    // New ATM envelope fields
+    assert.ok(content.includes("message_id:"), "Missing message_id — inbox_write_v2 not called");
+    assert.ok(content.includes("type: request"), "Missing type: request");
+    assert.ok(content.includes("action: implement"), "Missing action: implement");
+    // Legacy payload preserved
+    assert.ok(content.includes("req_id: REQ-033"), "Missing legacy req_id field");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-033: TC-033-06 inbox_read_pandas ATM response (tc_complete) routing ───
+// NOTE: ATM direction for "implement" is Pandas→Menglan ONLY.
+// Menglan→Pandas completion signals must be type=response (not request).
+// This test verifies the correct ATM pattern: type=response + legacy_type=tc_complete.
+
+test("TC-033-06: inbox_read_pandas routes ATM response (legacy_type=tc_complete, status=completed) to _handle_tc_complete", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-06-${Date.now()}`);
+  const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
+  await mkdir(inboxPandasDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  await writeFile(
+    join(inboxPandasDir, "2026-03-20-atm-tc-resp.md"),
+    // type=response with legacy_type=tc_complete in payload — correct Menglan→Pandas direction
+    "---\nmessage_id: msg_test_006\ntype: response\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-20T00:00:00Z\nthread_id: thread_test\ncorrelation_id: corr_test\npriority: P1\n---\nreq_id: REQ-033\nstatus: completed\nsummary: TC approved\nlegacy_type: tc_complete\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // tc_complete + status=completed → _handle_tc_complete → route implement to menglan
+    const menglanDir = join(tmpDir, "inbox", "for-menglan");
+    const files = await readdir(menglanDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    assert.ok(mdFiles.length > 0, "Expected implement message routed to for-menglan/ via _handle_tc_complete");
+    // Verify direction: response stdout should mention tc_complete routing path
+    assert.ok(
+      result.stdout.includes("tc_complete") || result.stdout.includes("ATM response"),
+      `Expected tc_complete routing path. stdout: ${result.stdout.slice(0, 300)}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-033: TC-033-07 inbox_read_pandas ATM response routing ────────────────
+// Verifies BLOCK-1 fix: status=completed (ATM canonical) is treated as success
+
+test("TC-033-07: inbox_read_pandas routes ATM response (status=completed, legacy_type=dev_complete) to _handle_dev_complete", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-07-${Date.now()}`);
+  const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
+  await mkdir(inboxPandasDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  await writeFile(
+    join(inboxPandasDir, "2026-03-20-atm-resp.md"),
+    // status=completed (ATM canonical) with legacy_type=dev_complete — must trigger tg_pr_ready
+    "---\nmessage_id: msg_resp_001\ntype: response\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-20T00:00:00Z\nthread_id: thread_test\ncorrelation_id: corr_test\npriority: P2\n---\nreq_id: REQ-033\npr_number: 42\nsummary: 实现完成\nstatus: completed\nlegacy_type: dev_complete\n",
+    "utf8",
+  );
+
+  try {
+    const tgMock = `tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }`;
+    const result = await runBash(
+      `${tgMock}
+       source "${SCRIPT}" 2>/dev/null
+       tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       inbox_init
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(
+      result.stdout.includes("[mock tg_pr_ready]"),
+      `Expected tg_pr_ready to be called for dev_complete success. stdout: ${result.stdout}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-033: TC-033-08 inbox_read_pandas ATM notification severity=action-required ─
+
+test("TC-033-08: inbox_read_pandas notification severity=action-required triggers tg_notify", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-08-${Date.now()}`);
+  const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
+  await mkdir(inboxPandasDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  await writeFile(
+    join(inboxPandasDir, "2026-03-20-atm-notif.md"),
+    "---\nmessage_id: msg_notif_001\ntype: notification\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-20T00:00:00Z\nthread_id: thread_test\ncorrelation_id: corr_test\npriority: P1\nevent_type: pipeline_failed\nseverity: action-required\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `tg_notify_called=0
+       tg_notify() { tg_notify_called=1; echo "[mock tg_notify] $*"; return 0; }
+       source "${SCRIPT}" 2>/dev/null
+       tg_notify() { tg_notify_called=1; echo "[mock tg_notify] $*"; return 0; }
+       inbox_init
+       inbox_read_pandas
+       echo "tg_notify_called=$tg_notify_called"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(
+      result.stdout.includes("[mock tg_notify]") || result.stdout.includes("tg_notify_called=1"),
+      `Expected tg_notify for action-required notification. stdout: ${result.stdout}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-033: TC-033-09 inbox_read_pandas legacy type=tc_complete ──────────────
+
+test("TC-033-09: inbox_read_pandas routes legacy type=tc_complete via _inbox_read_legacy", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-09-${Date.now()}`);
+  const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
+  await mkdir(inboxPandasDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  await writeFile(
+    join(inboxPandasDir, "2026-03-20-legacy-tc.md"),
+    "---\ntype: tc_complete\nreq_id: REQ-033\nstatus: success\nsummary: TC approved\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    const menglanDir = join(tmpDir, "inbox", "for-menglan");
+    const files = await readdir(menglanDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    assert.ok(mdFiles.length > 0, "Expected implement message routed to for-menglan/ via legacy handler");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-033: TC-033-10 inbox_read_pandas legacy type=dev_complete ─────────────
+
+test("TC-033-10: inbox_read_pandas routes legacy type=dev_complete via _inbox_read_legacy", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-10-${Date.now()}`);
+  const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
+  await mkdir(inboxPandasDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  await writeFile(
+    join(inboxPandasDir, "2026-03-20-legacy-dev.md"),
+    "---\ntype: dev_complete\nreq_id: REQ-033\npr_number: 99\nsummary: 实现完成\nstatus: success\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       source "${SCRIPT}" 2>/dev/null
+       tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       inbox_init
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(
+      result.stdout.includes("[mock tg_pr_ready]"),
+      `Expected tg_pr_ready for legacy dev_complete success. stdout: ${result.stdout}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
 });

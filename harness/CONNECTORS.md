@@ -341,11 +341,12 @@ requires:
   - complete task packet
   - SHARED_RESOURCES_ROOT env var set in .env
 returns:
-  - written inbox file
+  - written inbox file (ATM Envelope format, type=request action=implement|bugfix|fix_review)
 side_effect: local_write
 approval_mode: task_scoped
 notes:
-  - write implementation or fix packets to Meng Lan's inbox
+  - write implementation or fix packets to Meng Lan's inbox via inbox_write_v2()
+  - ATM Envelope schema: harness/inbox-protocol.md §2.1–2.2
   - SHARED_RESOURCES_ROOT defaults: see .env.example
 ```
 
@@ -360,11 +361,13 @@ requires:
   - complete review packet
   - SHARED_RESOURCES_ROOT env var set in .env
 returns:
-  - written inbox file
+  - written inbox file (ATM Envelope format, type=request action=review)
 side_effect: local_write
 approval_mode: task_scoped
 notes:
-  - write review packets to Hua Hua's inbox
+  - write review packets to Hua Hua's inbox via inbox_write_v2()
+  - ATM Envelope schema: harness/inbox-protocol.md §2.1–2.2; action=review (canonical)
+  - result packet from Huahua: type=response legacy_type=review_complete|review_blocked
 ```
 
 ### `agent-inbox-read_result_packet`
@@ -378,11 +381,13 @@ requires:
   - readable Pandas inbox
   - SHARED_RESOURCES_ROOT env var set in .env
 returns:
-  - parsed result packet
+  - parsed result packet (ATM Envelope type=response + legacy_type subtype)
 side_effect: none
 approval_mode: none
 notes:
-  - specialist success paths return here
+  - specialist success paths return here; inbox_read_pandas() dispatches by legacy_type
+  - ATM response routing: legacy_type=review_complete → _handle_review_complete;
+    legacy_type=tc_complete → _handle_tc_complete; legacy_type=dev_complete → _handle_dev_complete
   - check for-pandas/ inbox before scanning task queue in each loop iteration
 ```
 

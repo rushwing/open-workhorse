@@ -63,6 +63,7 @@ flowchart LR
 | 代码审查 | [review-standard.md](review-standard.md) | ✅ active — Pandas 触发→Huahua（CodeX）review→Telegram HITL 合并 |
 | CI / 质量门禁 | [ci-standard.md](ci-standard.md) | ✅ active |
 | Agent CLI 调用模板 | [agent-cli-playbook.md](agent-cli-playbook.md) | ✅ active — 模板 A–J，覆盖实现、Bug 修复、Fix Review、一致性审查 |
+| Inbox IPC 协议 | [inbox-protocol.md](inbox-protocol.md) | ✅ active（partial）— ATM Envelope 规范；Pandas writer/reader 已升级，Menglan/Huahua writer 迁移待 REQ-034+ |
 
 ---
 

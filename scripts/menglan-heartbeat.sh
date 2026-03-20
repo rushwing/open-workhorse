@@ -110,6 +110,18 @@ _process_message() {
   req_id="$(_get_fm_field "$msg_file" "req_id")"
   summary="$(_get_fm_field "$msg_file" "summary")"
 
+  # ATM normalization: type=request → resolve to legacy type via action field
+  if [[ "$type" == "request" ]]; then
+    local action
+    action="$(_get_fm_field "$msg_file" "action")"
+    case "$action" in
+      implement|fix_review) type="implement" ;;
+      bugfix)               type="bugfix"    ;;
+      *) warn "ATM request action=${action} 未识别 — 继续按 type 路由（将触发 unknown 分支）" ;;
+    esac
+    info "ATM normalize: action=${action} → type=${type}"
+  fi
+
   info "处理消息: type=${type} req_id=${req_id}"
   info "summary: ${summary}"
 

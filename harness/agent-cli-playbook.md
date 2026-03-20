@@ -153,10 +153,15 @@ Step 1 — Scan for claimable tasks:
   If tasks available → trigger Menglan: ./scripts/harness.sh implement <REQ-N>
   Wait for PR to be opened (poll: gh pr list --state open --json number,title --jq '.[] | .number')
 
-Step 2 — Notify Huahua to review (inbox-based):
-  Once a new PR is detected, write a review packet to Hua Hua's inbox:
-  Write file: \$SHARED_RESOURCES_ROOT/inbox/for-huahua/<timestamp>-review-PR-<N>.md
-  Content: review packet composed via handoff-packet-compose_review
+Step 2 — Notify Huahua to review (ATM inbox):
+  Once a new PR is detected, use inbox_write_v2 to send an ATM request to Huahua:
+  source scripts/pandas-heartbeat.sh 2>/dev/null
+  PAYLOAD=\$(mktemp)
+  printf 'req_id: <REQ-N>\npr_number: <N>\nsummary: review dev PR #<N> for <REQ-N>\n' > "\$PAYLOAD"
+  inbox_write_v2 "huahua" "request" "review" \
+    "thread_<REQ-N>_\$(date +%s)" "corr_<REQ-N>_\$(date +%s)" \
+    "" "P1" "true" "\$PAYLOAD"
+  rm -f "\$PAYLOAD"
   DO NOT read the PR diff yourself.
 
 Step 3 — Wait for review completion:

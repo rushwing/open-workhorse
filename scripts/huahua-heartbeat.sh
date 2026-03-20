@@ -122,7 +122,24 @@ _process_message() {
     CLAUDE_CMD=(claude "$CLAUDE_APPROVAL" -p)
   fi
 
-  case "$type" in
+  # ATM Envelope 兼容路由：type=request → 按 action 规范化为 legacy type，统一走下方 case
+  local resolved_type="$type"
+  if [[ "$type" == "request" ]]; then
+    local action_val; action_val="$(_get_fm_field "$msg_file" "action")"
+    # pr_number 可能在 payload（ATM 格式），补读一次
+    [[ -z "$pr_number" ]] && pr_number="$(_get_fm_field "$msg_file" "pr_number")"
+    case "$action_val" in
+      review|code_review) resolved_type="code_review" ;;
+      tc_design)          resolved_type="tc_design" ;;
+      *)
+        warn "ATM request action=${action_val} — 暂无专用 handler，移至 dead-letter"
+        return 1
+        ;;
+    esac
+    info "ATM request action=${action_val} → resolved type=${resolved_type}"
+  fi
+
+  case "$resolved_type" in
     tc_design)
       # tc_design with pr_number = fix findings on existing TC PR (PANDAS-ORCHESTRATION §7)
       # tc_design without pr_number = design TCs from scratch and open a TC PR
@@ -145,7 +162,7 @@ ${req_content:-"(REQ file not found at ${req_file}. Use the req_id to locate it.
 ## Steps
 1. Create branch: tc/${req_id}-<short-slug>
 2. Read the REQ acceptance criteria carefully
-3. For each acceptance criterion, write at least one test case file under tasks/test_cases/
+3. For each acceptance criterion, write at least one test case file under tasks/test-cases/
 4. Commit TC files with message: 'tc: ${req_id} test case design'
 5. Open PR with: gh pr create --fill
 6. Reply summary of TCs designed and the PR URL"
@@ -172,11 +189,35 @@ ${pr_diff}
 1. Read the diff above and any referenced files
 2. Check for: bugs, regressions, unsafe assumptions, missing tests, data integrity risks
 3. Post review using: gh pr review ${pr_number} --request-changes -b '<findings>' OR gh pr review ${pr_number} --approve -b 'LGTM'
-4. If approved, write inbox message to ${SHARED_RESOURCES_ROOT:-\${HOME}/Dev/everything_openclaw/personas/shared-resources}/inbox/for-pandas/ with type=dev_complete, req_id=${req_id}, pr_number=${pr_number}, status=success
-5. If changes requested, write inbox message to ${SHARED_RESOURCES_ROOT:-\${HOME}/Dev/everything_openclaw/personas/shared-resources}/inbox/for-pandas/ with type=review_blocked, req_id=${req_id}, pr_number=${pr_number}, status=blocked, blocking_reason=<summary>"
+4. If approved, write ATM response to for-pandas/ inbox. File content:
+   ---
+   type: response
+   from: huahua
+   to: pandas
+   created_at: <ISO8601 UTC>
+   priority: P1
+   ---
+   legacy_type: review_complete
+   req_id: ${req_id}
+   pr_number: ${pr_number}
+   status: completed
+   summary: code review approved for ${req_id}
+5. If changes requested, write ATM response to for-pandas/ inbox. File content:
+   ---
+   type: response
+   from: huahua
+   to: pandas
+   created_at: <ISO8601 UTC>
+   priority: P1
+   ---
+   legacy_type: review_blocked
+   req_id: ${req_id}
+   pr_number: ${pr_number}
+   status: blocked
+   blocking_reason: <summary of findings>"
       ;;
     *)
-      warn "未知消息类型: ${type} — 移至 dead-letter"
+      warn "未知消息类型: ${resolved_type} — 移至 dead-letter"
       return 1
       ;;
   esac
@@ -206,9 +247,15 @@ main() {
       mkdir -p "$DEAD_LETTER"
       mv "$msg_file" "${DEAD_LETTER}/"
       ok "已移至 dead-letter: $(basename "$msg_file")"
-      # code_review 失败时 REQ 已在 review 状态（dev PR 存在），不回退任务状态
+      # code_review 和 ATM request action=review/code_review：失败时 REQ 已在 review 状态，不回退
       # 其他类型（tc_design 等）仍执行回退
-      if [[ "$msg_type" != "code_review" ]]; then
+      local skip_rollback=false
+      [[ "$msg_type" == "code_review" ]] && skip_rollback=true
+      if [[ "$msg_type" == "request" ]]; then
+        local _action_rb; _action_rb="$(_get_fm_field "$msg_file" "action")"
+        [[ "$_action_rb" == "review" || "$_action_rb" == "code_review" ]] && skip_rollback=true
+      fi
+      if [[ "$skip_rollback" == "false" ]]; then
         _rollback_task "$req_id"
       fi
       _notify_pandas_failure "$(basename "$msg_file")" \
