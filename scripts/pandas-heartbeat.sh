@@ -87,10 +87,14 @@ inbox_write() {
   local correlation_id="corr_${req_id}_${epoch}"
 
   # 旧 type → 新 type/action 映射
+  # code_review 规范化为 review（Daniel 决策 2026-03-20）
   local new_type action_or_event
   case "$type" in
-    implement|tc_design|code_review|bugfix|fix_review|escalate|clarify)
-      new_type="request"; action_or_event="$type" ;;
+    implement|tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
+      new_type="request"
+      # code_review → review（canonical action）
+      [[ "$type" == "code_review" ]] && action_or_event="review" || action_or_event="$type"
+      ;;
     dev_complete|tc_complete|review_blocked)
       new_type="response"; action_or_event="" ;;
     major_decision_needed)
@@ -102,10 +106,11 @@ inbox_write() {
   # 构造 payload_file（legacy 字段 + body）
   local tmpfile; tmpfile="$(mktemp)"
   {
-    echo "# legacy fields"
     echo "req_id: ${req_id}"
     echo "summary: ${summary}"
     echo "status: ${status}"
+    # legacy_type: 保留原始 type，供 response 路由区分 tc_complete / dev_complete
+    echo "legacy_type: ${type}"
     [[ -n "$pr_number" ]]       && echo "pr_number: ${pr_number}"
     [[ -n "$blocking_reason" ]] && echo "blocking_reason: ${blocking_reason}"
     [[ -n "$iteration" ]]       && echo "iteration: ${iteration}"
@@ -207,17 +212,14 @@ inbox_read_pandas() {
       request)
         local action_val; action_val="$(_get_fm_field "$msg_file" "action")"
         local req_id; req_id="$(_get_fm_field "$msg_file" "req_id")"
-        local pr_number; pr_number="$(_get_fm_field "$msg_file" "pr_number")"
-        local summary; summary="$(_get_fm_field "$msg_file" "summary")"
-        local status; status="$(_get_fm_field "$msg_file" "status")"
         local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
-        local iteration; iteration="$(_get_fm_field "$msg_file" "iteration")"
         info "ATM request: action=${action_val} req_id=${req_id}"
         case "$action_val" in
+          # implement は Pandas→Menglan 方向のみ。Pandas inbox で受信した場合は方向違い
           implement)
-            _handle_tc_complete "$req_id" "$pr_number" "${status:-success}" "$blocking_reason" "$iteration"
+            warn "ATM request action=implement received in Pandas inbox — wrong direction (should be Pandas→Menglan). Dropping."
             ;;
-          tc_design|code_review|bugfix|fix_review|escalate|clarify)
+          tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
             warn "ATM request action=${action_val} — 暂无专用 handler，忽略"
             ;;
           decision_required|major_decision_needed)
@@ -235,21 +237,19 @@ inbox_read_pandas() {
         local status; status="$(_get_fm_field "$msg_file" "status")"
         local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
         local iteration; iteration="$(_get_fm_field "$msg_file" "iteration")"
-        info "ATM response: req_id=${req_id} status=${status}"
-        # 按 legacy status/summary 字段还原路由
-        local legacy_type; legacy_type="$(_get_fm_field "$msg_file" "# legacy fields
-req_id" 2>/dev/null || echo "")"
-        # 从 payload 中读取 legacy type hint（action 字段用于 response 时缺失，改从文件末 legacy 字段推断）
-        local action_hint; action_hint="$(_get_fm_field "$msg_file" "action")"
-        case "$action_hint" in
-          dev_complete|"")
-            _handle_dev_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
-            ;;
+        # legacy_type: 由 inbox_write() wrapper 写入 payload，区分 tc_complete / dev_complete
+        local legacy_type; legacy_type="$(_get_fm_field "$msg_file" "legacy_type")"
+        info "ATM response: req_id=${req_id} status=${status} legacy_type=${legacy_type}"
+        case "$legacy_type" in
           tc_complete)
             _handle_tc_complete "$req_id" "$pr_number" "${status:-success}" "$blocking_reason" "$iteration"
             ;;
           review_blocked)
             warn "ATM response review_blocked for ${req_id}: ${blocking_reason}"
+            ;;
+          dev_complete|"")
+            # dev_complete 或未知 legacy_type → 默认 dev_complete 路径
+            _handle_dev_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
             ;;
           *)
             _handle_dev_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
@@ -271,7 +271,7 @@ req_id" 2>/dev/null || echo "")"
         fi
         ;;
       # ── 旧格式路由（legacy）──────────────────────────────────────────────────
-      dev_complete|tc_complete|major_decision_needed|review_blocked|implement|tc_design|code_review|bugfix|fix_review|escalate|clarify)
+      dev_complete|tc_complete|major_decision_needed|review_blocked|implement|tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
         _inbox_read_legacy "$msg_file" "$msg_type"
         ;;
       *)
@@ -325,7 +325,8 @@ _inbox_read_legacy() {
 
 _handle_dev_complete() {
   local req_id="$1" pr_number="$2" summary="$3" status="$4" blocking_reason="$5"
-  if [[ "$status" == "success" ]]; then
+  # ATM protocol uses "completed"; legacy uses "success" — accept both
+  if [[ "$status" == "success" || "$status" == "completed" ]]; then
     info "dev_complete(success): ${req_id} PR #${pr_number} — 发送 PR 合并通知"
     local repo
     repo="${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed 's|.*github\.com[:/]||; s|\.git$||' || true)}"
@@ -349,7 +350,8 @@ _handle_tc_complete() {
   iter_num="$(echo "$iteration" | grep -oE '[0-9]+' || echo "0")"
   iter_num="${iter_num:-0}"
 
-  if [[ "$status" == "success" ]]; then
+  # ATM protocol uses "completed"; legacy uses "success" — accept both
+  if [[ "$status" == "success" || "$status" == "completed" ]]; then
     info "tc_complete(success): ${req_id} — 路由 implement 到 Menglan"
     local req_body=""
     local _req_f="tasks/features/${req_id}.md"

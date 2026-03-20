@@ -75,7 +75,7 @@ $SHARED_RESOURCES_ROOT/inbox/
 |--------|--------|--------|------|
 | `implement` | Pandas | Menglan | TC 已完成或 tc_policy=exempt，开始实现 |
 | `tc_design` | Pandas | Huahua | 需要 TC 设计或修复 |
-| `code_review` | Pandas | Huahua | 需要 PR code review |
+| `review` | Pandas | Huahua | 需要 PR code review（canonical；`code_review` 为兼容别名，reader 端接受，writer 端只写 `review`） |
 | `bugfix` | Pandas | Menglan | 需要 Bug 修复 |
 | `fix_review` | Pandas | Menglan | 需要修复 review findings |
 | `escalate` | Any | Pandas | 升级决策 |
@@ -84,14 +84,16 @@ $SHARED_RESOURCES_ROOT/inbox/
 
 ### 2.6 response status 枚举
 
-| status | 说明 |
-|--------|------|
-| `completed` | 任务成功完成 |
-| `partial` | 部分完成，需后续处理 |
-| `blocked` | 被阻塞，需升级 |
-| `failed` | 执行失败 |
-| `rejected` | 被 review 拒绝 |
-| `deferred` | 延期处理 |
+| status | 说明 | 兼容别名 |
+|--------|------|---------|
+| `completed` | 任务成功完成（ATM canonical） | `success`（legacy，reader 接受） |
+| `partial` | 部分完成，需后续处理 | — |
+| `blocked` | 被阻塞，需升级 | — |
+| `failed` | 执行失败 | — |
+| `rejected` | 被 review 拒绝 | — |
+| `deferred` | 延期处理 | — |
+
+> **兼容说明**：`_handle_dev_complete()` 和 `_handle_tc_complete()` 同时接受 `success`（旧）和 `completed`（ATM 协议）作为成功路径。Writer 新实现应写 `completed`；Pandas orchestrator 两者都能正确路由。
 
 ### 2.7 notification event_type 枚举
 
@@ -107,13 +109,16 @@ $SHARED_RESOURCES_ROOT/inbox/
 
 ## 4. 文件命名
 
-### 4.1 ATM 格式（REQ-033，当前）
+### 4.1 ATM 过渡格式（REQ-033，inbox_write_v2 当前使用）
+
+> 注：REQ-033 范围内 `inbox_write_v2()` 使用如下**过渡格式**用于 Envelope 消息可识别性。
+> 最终规范化命名（含 `_` 分隔符）由 **REQ-036（ATM-P2）** 定义。
 
 ```
-{ISO8601_datetime}___{type}___{from}_to_{to}___{correlation_id}.md
+{ISO8601_datetime//:/-}__{type}__{from}_to_{to}__{correlation_id}.md
 
 示例：
-2026-03-20T17-47-00Z___request___pandas_to_menglan___corr_REQ-033_1710867000.md
+2026-03-20T17-47-00Z__request__pandas_to_menglan__corr_REQ-033_1710867000.md
 ```
 
 ### 4.2 旧格式（legacy，兼容期）
@@ -134,9 +139,24 @@ $SHARED_RESOURCES_ROOT/inbox/
 
 Envelope `---` 之后为 payload 区域（可选），包含：
 - type-specific 附加字段（如 `req_id`, `summary`, `pr_number`）
+- `legacy_type:` 字段 — `inbox_write()` wrapper 写入，供 response 路由区分 `tc_complete` / `dev_complete`
 - Markdown body（自由格式任务上下文）
 
-Legacy `inbox_write()` 调用会在 payload 中写入旧格式字段（标注 `# legacy fields`）。
+### legacy_type 字段
+
+`inbox_write()` 在生成 `type=response` 消息时，会在 payload 中写入：
+
+```yaml
+legacy_type: tc_complete   # 或 dev_complete, review_blocked
+```
+
+`inbox_read_pandas()` 的 response 路由优先读取 `legacy_type` 进行分支：
+
+| legacy_type | 路由目标 |
+|-------------|---------|
+| `tc_complete` | `_handle_tc_complete()` |
+| `review_blocked` | warn only |
+| `dev_complete` 或空 | `_handle_dev_complete()` |
 
 ---
 
@@ -146,7 +166,7 @@ Legacy `inbox_write()` 调用会在 payload 中写入旧格式字段（标注 `#
 |------------|---------|------------------------|
 | `implement` | `request` | `action: implement` |
 | `tc_design` | `request` | `action: tc_design` |
-| `code_review` | `request` | `action: code_review` |
+| `code_review` | `request` | `action: review`（规范化为 canonical）|
 | `bugfix` | `request` | `action: bugfix` |
 | `fix_review` | `request` | `action: fix_review` |
 | `escalate` | `request` | `action: escalate` |

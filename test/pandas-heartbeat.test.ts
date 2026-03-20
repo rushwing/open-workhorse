@@ -891,9 +891,12 @@ test("TC-033-05: inbox_write() @deprecated wrapper calls inbox_write_v2 and prod
   }
 });
 
-// ── REQ-033: TC-033-06 inbox_read_pandas ATM request routing ─────────────────
+// ── REQ-033: TC-033-06 inbox_read_pandas ATM response (tc_complete) routing ───
+// NOTE: ATM direction for "implement" is Pandas→Menglan ONLY.
+// Menglan→Pandas completion signals must be type=response (not request).
+// This test verifies the correct ATM pattern: type=response + legacy_type=tc_complete.
 
-test("TC-033-06: inbox_read_pandas routes ATM request (action=implement) to _handle_tc_complete", async () => {
+test("TC-033-06: inbox_read_pandas routes ATM response (legacy_type=tc_complete, status=completed) to _handle_tc_complete", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-06-${Date.now()}`);
   const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
   await mkdir(inboxPandasDir, { recursive: true });
@@ -901,8 +904,9 @@ test("TC-033-06: inbox_read_pandas routes ATM request (action=implement) to _han
   await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
 
   await writeFile(
-    join(inboxPandasDir, "2026-03-20-atm-req.md"),
-    "---\nmessage_id: msg_test_001\ntype: request\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-20T00:00:00Z\nthread_id: thread_test\ncorrelation_id: corr_test\npriority: P1\naction: implement\nresponse_required: false\n---\n# legacy fields\nreq_id: REQ-033\nstatus: success\nsummary: TC approved\n",
+    join(inboxPandasDir, "2026-03-20-atm-tc-resp.md"),
+    // type=response with legacy_type=tc_complete in payload — correct Menglan→Pandas direction
+    "---\nmessage_id: msg_test_006\ntype: response\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-20T00:00:00Z\nthread_id: thread_test\ncorrelation_id: corr_test\npriority: P1\n---\nreq_id: REQ-033\nstatus: completed\nsummary: TC approved\nlegacy_type: tc_complete\n",
     "utf8",
   );
 
@@ -913,19 +917,25 @@ test("TC-033-06: inbox_read_pandas routes ATM request (action=implement) to _han
     );
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
-    // tc_complete success → route implement to menglan
+    // tc_complete + status=completed → _handle_tc_complete → route implement to menglan
     const menglanDir = join(tmpDir, "inbox", "for-menglan");
     const files = await readdir(menglanDir);
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    assert.ok(mdFiles.length > 0, "Expected implement message routed to for-menglan/");
+    assert.ok(mdFiles.length > 0, "Expected implement message routed to for-menglan/ via _handle_tc_complete");
+    // Verify direction: response stdout should mention tc_complete routing path
+    assert.ok(
+      result.stdout.includes("tc_complete") || result.stdout.includes("ATM response"),
+      `Expected tc_complete routing path. stdout: ${result.stdout.slice(0, 300)}`,
+    );
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
 
 // ── REQ-033: TC-033-07 inbox_read_pandas ATM response routing ────────────────
+// Verifies BLOCK-1 fix: status=completed (ATM canonical) is treated as success
 
-test("TC-033-07: inbox_read_pandas routes ATM response (status=success) to _handle_dev_complete", async () => {
+test("TC-033-07: inbox_read_pandas routes ATM response (status=completed, legacy_type=dev_complete) to _handle_dev_complete", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-07-${Date.now()}`);
   const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
   await mkdir(inboxPandasDir, { recursive: true });
@@ -934,7 +944,8 @@ test("TC-033-07: inbox_read_pandas routes ATM response (status=success) to _hand
 
   await writeFile(
     join(inboxPandasDir, "2026-03-20-atm-resp.md"),
-    "---\nmessage_id: msg_resp_001\ntype: response\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-20T00:00:00Z\nthread_id: thread_test\ncorrelation_id: corr_test\npriority: P2\n---\n# legacy fields\nreq_id: REQ-033\npr_number: 42\nsummary: 实现完成\nstatus: success\n",
+    // status=completed (ATM canonical) with legacy_type=dev_complete — must trigger tg_pr_ready
+    "---\nmessage_id: msg_resp_001\ntype: response\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-20T00:00:00Z\nthread_id: thread_test\ncorrelation_id: corr_test\npriority: P2\n---\nreq_id: REQ-033\npr_number: 42\nsummary: 实现完成\nstatus: completed\nlegacy_type: dev_complete\n",
     "utf8",
   );
 
