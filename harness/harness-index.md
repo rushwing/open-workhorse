@@ -2,7 +2,7 @@
 harness_id: HARNESS-INDEX
 component: process / orchestration
 owner: Engineering
-version: 0.4
+version: 0.5
 status: active
 last_reviewed: 2026-03-21
 ---
@@ -117,14 +117,16 @@ Pandas orchestration loop（模板 K）：
     └─▶ 检查 for-pandas/ inbox 新结果包（inbox_read_pandas()，原子 mv pending→claimed）
             └─▶ harness.sh status → 有可认领任务
                     └─▶ harness.sh implement <REQ-N>（触发 Menglan）
-                            └─▶ Menglan 开 PR
-                                    └─▶ Pandas 写 review packet → for-huahua/ inbox
-                                            └─▶ Huahua（CodeX）输出 review comments
-                                                    └─▶ Pandas 触发 fix-review（如有 blocking findings）
-                                                            └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
-                                                                    └─▶ Daniel merge PR
-                                                                            └─▶ Pandas 心跳 S2：扫到 status:done → 发 Telegram 归档通知
-                                                                                    └─▶ Daniel 确认 → Pandas 执行归档（mv REQ + TC → tasks/archive/done/）
+                            └─▶ worktree 创建：~/workspace-menglan/open-workhorse/ → feat/REQ-N
+                                    └─▶ Menglan 开 PR
+                                            └─▶ Pandas 写 review packet → for-huahua/ inbox
+                                                    └─▶ Huahua（CodeX）输出 review comments
+                                                            └─▶ Pandas 触发 fix-review（如有 blocking findings）
+                                                                    └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
+                                                                            └─▶ Daniel merge PR
+                                                                                    └─▶ Pandas: harness.sh worktree-clean <REQ-N>（清理 worktree）
+                                                                                            └─▶ Pandas 心跳 S2：扫到 status:done → 发 Telegram 归档通知
+                                                                                                    └─▶ Daniel 确认 → Pandas 执行归档（mv REQ + TC → tasks/archive/done/）
 
 dev-cycle-watchdog（每 5h cron）：
     └─▶ 检测 in_progress 任务停滞 / PR 无 review → Telegram 告警 Daniel
@@ -178,3 +180,4 @@ Pandas 在 session 结束或批量任务完成后将候选提升至 `project.db`
 | 0.2 | 2026-03-15 | 引入 Pandas orchestrator 角色（不读 PR diff）；将 claude_code 明确为 Menglan；Huahua review 方式改为 CodeX + GH LLM Issue Orchestrator；自动化流程更新为 semi-autonomous loop（Telegram HITL + watchdog cron）；review-standard 更新为 active |
 | 0.3 | 2026-03-18 | 引入 Tool Registration（CAPABILITIES.md / CONNECTORS.md）+ Memory Integration 节；inbox-based dispatch 说明；对齐 everything_openclaw agent_persona_harness_v0 ground truth |
 | 0.4 | 2026-03-21 | inbox-protocol 行更新：status partial → active，ATM REQ-033–036 全部落地；frontmatter 版本同步；playbook 模板集更新为 A–L（含 K Pandas 编排、L Memory Curation）；自动化流程函数名更新为 inbox_read_pandas() |
+| 0.5 | 2026-03-21 | REQ-037 git worktree 隔离落地：harness.sh implement 自动创建 ~/workspace-menglan/open-workhorse/ worktree；新增 worktree-clean 命令；自动化流程图补充 worktree 生命周期；playbook 模板 B/K 更新 worktree 路径说明 |

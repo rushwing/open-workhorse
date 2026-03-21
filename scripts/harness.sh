@@ -94,6 +94,48 @@ check_depends_done() {
   $any_blocked && return 1 || return 0
 }
 
+# ── Worktree 管理 ─────────────────────────────────────────────────────────────
+
+# Menglan worktree 路径（可通过 .env 中的 MENGLAN_WORKTREE_ROOT 覆盖）
+MENGLAN_WORKTREE_ROOT="${MENGLAN_WORKTREE_ROOT:-$HOME/workspace-menglan/open-workhorse}"
+
+# 为指定 REQ 创建 git worktree（幂等）
+cmd_worktree_setup() {
+  local req_id="$1"
+  local branch="feat/${req_id}"
+  local worktree_path="$MENGLAN_WORKTREE_ROOT"
+
+  if git worktree list | grep -qF "$worktree_path"; then
+    info "worktree 已存在：${worktree_path}（幂等，跳过）"
+    return 0
+  fi
+
+  # 分支不存在则基于当前 HEAD 创建
+  if ! git show-ref --verify --quiet "refs/heads/${branch}"; then
+    git branch "$branch"
+    info "分支已创建：${branch}"
+  fi
+
+  git worktree add "$worktree_path" "$branch"
+  ok "worktree 已创建：${worktree_path} → ${branch}"
+}
+
+# 移除 Menglan worktree（幂等）
+cmd_worktree_clean() {
+  local req_id="${1:-}"
+  if [[ -z "$req_id" ]]; then
+    err "用法：./scripts/harness.sh worktree-clean <REQ-N>"
+    exit 1
+  fi
+  local worktree_path="$MENGLAN_WORKTREE_ROOT"
+  if git worktree list | grep -qF "$worktree_path"; then
+    git worktree remove --force "$worktree_path"
+    ok "worktree 已移除：${worktree_path}"
+  else
+    info "worktree 不存在，跳过：${worktree_path}"
+  fi
+}
+
 # 列出可认领的 REQ 任务
 list_claimable_reqs() {
   local count=0
@@ -241,6 +283,9 @@ cmd_implement() {
     fi
   fi
 
+  # worktree セットアップ（Menglan 専用作業ツリーを確保）
+  cmd_worktree_setup "$req_id"
+
   info "触发 Claude Code 实现 ${req_id}..."
   log_session "implement" "$req_id"
 
@@ -248,6 +293,10 @@ cmd_implement() {
   prompt="Read CLAUDE.md and harness/harness-index.md.
 Your task: implement ${req_id}.
 Do not ask clarifying questions — proceed with your best judgment at every step.
+
+Working directory for all git and npm operations: ${MENGLAN_WORKTREE_ROOT}
+You are working in a git worktree (feat/${req_id}), not the main checkout.
+Do NOT run git or npm commands from ~/workspace-pandas/open-workhorse/.
 
 Steps:
 1. Read ${req_file} and all test_case_ref TC files before writing any code
@@ -540,16 +589,21 @@ case "$COMMAND" in
     shift
     cmd_runbook "${1:-}"
     ;;
+  worktree-clean)
+    shift
+    cmd_worktree_clean "${1:-}"
+    ;;
   "")
     echo "用法：./scripts/harness.sh <命令> [参数]"
     echo ""
     echo "命令："
-    echo "  status              列出当前可认领任务"
-    echo "  implement <REQ-N>   Claude Code 认领并实现需求"
-    echo "  bugfix <BUG-N>      Claude Code 认领并修复 Bug"
-    echo "  fix-review <PR#>    Claude Code 修复 PR review comments"
-    echo "  tc-review <PR#>     Menglan 评审 TC PR（adequate/missing-branch/redundant）"
-    echo "  runbook [keyword]   列出 / 搜索 harness/runbook/ 条目"
+    echo "  status                  列出当前可认领任务"
+    echo "  implement <REQ-N>       Claude Code 认领并实现需求（自动创建 Menglan worktree）"
+    echo "  worktree-clean <REQ-N>  移除 Menglan worktree（PR merge 后调用）"
+    echo "  bugfix <BUG-N>          Claude Code 认领并修复 Bug"
+    echo "  fix-review <PR#>        Claude Code 修复 PR review comments"
+    echo "  tc-review <PR#>         Menglan 评审 TC PR（adequate/missing-branch/redundant）"
+    echo "  runbook [keyword]       列出 / 搜索 harness/runbook/ 条目"
     echo ""
     echo "环境变量："
     echo "  CLAUDE_APPROVAL     覆盖 claude 默认的 --dangerously-skip-permissions"
