@@ -53,6 +53,10 @@ Report what you find — do not claim anything yet.
 claude -p "
 Your task: implement REQ-<N>.
 
+Working directory for all git and npm operations: ~/workspace-menglan/open-workhorse/
+(harness.sh has already created this git worktree on branch feat/REQ-<N>)
+Do NOT run git or npm commands from ~/workspace-pandas/open-workhorse/.
+
 Steps:
 1. Read tasks/features/REQ-<N>.md and all test_case_ref TC files before writing any code
 2. Read the current Phase doc in tasks/phases/ to confirm iteration boundary
@@ -153,6 +157,8 @@ Step 0 — Check for-pandas/ inbox first:
 Step 1 — Scan for claimable tasks:
   Run: ./scripts/harness.sh status
   If tasks available → trigger Menglan: ./scripts/harness.sh implement <REQ-N>
+    (implement automatically creates a git worktree at ~/workspace-menglan/open-workhorse/
+     on branch feat/<REQ-N>. Pandas stays on main in ~/workspace-pandas/open-workhorse/.)
   Wait for PR to be opened (poll: gh pr list --state open --json number,title --jq '.[] | .number')
 
 Step 2 — Notify Huahua to review (ATM inbox):
@@ -178,6 +184,11 @@ Step 4 — Trigger fix-review if needed:
 Step 5 — Notify Daniel via Telegram:
   bash scripts/telegram.sh tg_pr_ready '<pr_url>' '<one-line summary>'
   Log result. Do NOT merge — HITL only.
+
+Step 6 — After Daniel merges PR:
+  Worktree cleanup is automatic: once REQ status reaches done, the next heartbeat tick
+  calls _auto_worktree_clean and removes ~/workspace-menglan/open-workhorse/ automatically.
+  Manual override if needed: ./scripts/harness.sh worktree-clean <REQ-N>
 
 Loop back to Step 0.
 "
