@@ -1831,3 +1831,268 @@ test("TC-035-08: response without correlation_id field skips validation and rout
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── REQ-036: TC-036-* Delegation 结构化 + 文件命名规范 ────────────────────────
+
+// TC-036-01: delegation 完整 — 无 warn，无 delegation_incomplete，文件名为新格式
+test("TC-036-01: inbox_write_v2 type=request with all delegation fields: no warn, no delegation_incomplete, new filename format", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-036-01-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+  const payloadFile = join(tmpDir, "payload.md");
+  await writeFile(
+    payloadFile,
+    "objective: implement feature X\nscope: scripts only\nexpected_output: working function\ndone_criteria: all tests pass\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write_v2 "menglan" "request" "implement" "thread_036_1" "corr_036_1" "" "P1" "true" "${payloadFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // No delegation warn
+    assert.ok(
+      !result.stderr.includes("delegation incomplete"),
+      `Should not warn about delegation. stderr: ${result.stderr}`,
+    );
+
+    // File exists in pending/
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = await readdir(pendingDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    assert.ok(mdFiles.length > 0, "Expected .md file in for-menglan/pending/");
+
+    // New filename format: YYYYMMDDHHMMSS_request_pandas_to_menglan_corr_036_1.md
+    // No double underscores, no ISO date prefix, no colons
+    const filename = mdFiles[0];
+    assert.ok(
+      /^\d{14}_request_pandas_to_menglan_corr_036_1\.md$/.test(filename),
+      `Filename should match new canonical format YYYYMMDDHHMMSS_request_pandas_to_menglan_corr_036_1.md, got: ${filename}`,
+    );
+
+    // Content should not contain delegation_incomplete
+    const content = await readFile(join(pendingDir, filename), "utf8");
+    assert.ok(
+      !content.includes("delegation_incomplete:"),
+      `File should not contain delegation_incomplete. content: ${content}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-036-02: delegation 不完整 — warn + delegation_incomplete: true 写入 envelope
+test("TC-036-02: inbox_write_v2 type=request missing done_criteria: emits warn and writes delegation_incomplete: true", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-036-02-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+  const payloadFile = join(tmpDir, "payload.md");
+  await writeFile(
+    payloadFile,
+    "objective: implement feature Y\nscope: scripts only\nexpected_output: working function\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write_v2 "menglan" "request" "implement" "thread_036_2" "corr_036_2" "" "P1" "true" "${payloadFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed (should still succeed)\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // Warn emitted
+    assert.ok(
+      result.stderr.includes("delegation incomplete"),
+      `Expected delegation incomplete warn. stderr: ${result.stderr}`,
+    );
+    assert.ok(
+      result.stderr.includes("done_criteria"),
+      `Warn should mention missing field done_criteria. stderr: ${result.stderr}`,
+    );
+
+    // File written with delegation_incomplete: true
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = await readdir(pendingDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    assert.ok(mdFiles.length > 0, "File should still be written despite incomplete delegation");
+    const content = await readFile(join(pendingDir, mdFiles[0]), "utf8");
+    assert.ok(
+      content.includes("delegation_incomplete: true"),
+      `File must contain delegation_incomplete: true. content: ${content}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-036-03: 新命名格式文件 — inbox_read_pandas 正常解析并路由到 done/
+test("TC-036-03: inbox_read_pandas processes message with new canonical filename format", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-036-03-${Date.now()}`);
+  const pendingDir = join(tmpDir, "inbox", "for-pandas", "pending");
+  await mkdir(pendingDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  // New canonical format filename
+  const newFmtFile = join(pendingDir, "20260321000000_response_menglan_to_pandas_corr_REQ036_new.md");
+  await writeFile(
+    newFmtFile,
+    "---\nmessage_id: msg_tc036_03\ntype: response\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-21T00:00:00Z\nthread_id: thread_036_3\ncorrelation_id: corr_036_3\npriority: P2\nstatus: completed\n---\nreq_id: REQ-036\npr_number: 100\nsummary: done\nlegacy_type: dev_complete\nstatus: completed\n",
+    "utf8",
+  );
+
+  try {
+    const tgMock = `tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }`;
+    const result = await runBash(
+      `${tgMock}
+       source "${SCRIPT}" 2>/dev/null
+       tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       inbox_init
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // Message should be moved to done/ (new-format filename works)
+    const doneDir = join(tmpDir, "inbox", "for-pandas", "done");
+    assert.ok(existsSync(doneDir), "done/ dir should exist");
+    const doneFiles = await readdir(doneDir);
+    assert.ok(
+      doneFiles.some((f) => f.endsWith(".md")),
+      `Message should be in done/ after processing new-format filename. done/: ${doneFiles.join(", ")}`,
+    );
+    // Original pending file should be gone
+    assert.ok(!existsSync(newFmtFile), "Pending file should be consumed");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-036-04: 旧命名格式文件 — inbox_read_pandas 仍可正常解析（向后兼容）
+test("TC-036-04: inbox_read_pandas processes message with old REQ-033 filename format (backward compat)", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-036-04-${Date.now()}`);
+  const pendingDir = join(tmpDir, "inbox", "for-pandas", "pending");
+  await mkdir(pendingDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  // Old REQ-033 transitional format filename
+  const oldFmtFile = join(pendingDir, "2026-03-21T00-00-00Z__response__menglan_to_pandas__corr_REQ036_old.md");
+  await writeFile(
+    oldFmtFile,
+    "---\nmessage_id: msg_tc036_04\ntype: response\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-21T00:00:00Z\nthread_id: thread_036_4\ncorrelation_id: corr_036_4\npriority: P2\nstatus: completed\n---\nreq_id: REQ-036\npr_number: 101\nsummary: done\nlegacy_type: dev_complete\nstatus: completed\n",
+    "utf8",
+  );
+
+  try {
+    const tgMock = `tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }`;
+    const result = await runBash(
+      `${tgMock}
+       source "${SCRIPT}" 2>/dev/null
+       tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       inbox_init
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // Message should be moved to done/ (old-format filename still works)
+    const doneDir = join(tmpDir, "inbox", "for-pandas", "done");
+    assert.ok(existsSync(doneDir), "done/ dir should exist");
+    const doneFiles = await readdir(doneDir);
+    assert.ok(
+      doneFiles.some((f) => f.endsWith(".md")),
+      `Old-format message should be in done/ after processing. done/: ${doneFiles.join(", ")}`,
+    );
+    assert.ok(!existsSync(oldFmtFile), "Pending file should be consumed");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-036-05: context_summary 超 500 字 — 自动截断至 500 字 + warn
+test("TC-036-05: inbox_write_v2 truncates context_summary >500 chars to 500 and emits warn", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-036-05-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+  const payloadFile = join(tmpDir, "payload.md");
+  const longSummary = "x".repeat(600);
+  await writeFile(
+    payloadFile,
+    `context_summary: ${longSummary}\nobjective: test\nscope: test\nexpected_output: test\ndone_criteria: test\n`,
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write_v2 "menglan" "request" "implement" "thread_036_5" "corr_036_5" "" "P2" "false" "${payloadFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // Warn emitted
+    assert.ok(
+      result.stderr.includes("context_summary truncated"),
+      `Expected truncation warn. stderr: ${result.stderr}`,
+    );
+
+    // Written file has context_summary ≤ 500 chars
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = await readdir(pendingDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    assert.ok(mdFiles.length > 0, "File should be written");
+    const content = await readFile(join(pendingDir, mdFiles[0]), "utf8");
+    const csMatch = content.match(/^context_summary: (.*)$/m);
+    assert.ok(csMatch, `File should contain context_summary field. content: ${content}`);
+    assert.ok(
+      csMatch![1].length <= 500,
+      `context_summary value should be ≤500 chars, got ${csMatch![1].length}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-036-06: references type 不在枚举内 — warn
+test("TC-036-06: inbox_write_v2 emits warn when references block contains type not in enum", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-036-06-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+  const payloadFile = join(tmpDir, "payload.md");
+  await writeFile(
+    payloadFile,
+    "objective: test\nscope: test\nexpected_output: test\ndone_criteria: test\nreferences:\n  - type: invalid_type\n    id: REQ-999\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write_v2 "menglan" "request" "implement" "thread_036_6" "corr_036_6" "" "P2" "false" "${payloadFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed (should still succeed)\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // Warn about invalid references type
+    assert.ok(
+      result.stderr.includes("references type"),
+      `Expected references type warn. stderr: ${result.stderr}`,
+    );
+    assert.ok(
+      result.stderr.includes("not in enum"),
+      `Warn should say 'not in enum'. stderr: ${result.stderr}`,
+    );
+
+    // File still written (non-blocking)
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = await readdir(pendingDir);
+    assert.ok(
+      files.some((f) => f.endsWith(".md")),
+      "File should still be written despite invalid references type",
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
