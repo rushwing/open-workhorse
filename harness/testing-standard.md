@@ -2,9 +2,9 @@
 harness_id: TEST-001
 component: testing / verification
 owner: Engineering
-version: 0.1
+version: 0.3
 status: active
-last_reviewed: 2026-03-15
+last_reviewed: 2026-03-21
 ---
 
 # Harness Standard — 测试与验证规程
@@ -105,6 +105,16 @@ test/fixtures/
 | 命令 | `npm run release:audit` |
 | 检查项 | 无绝对路径（macOS home 路径、Linux home 路径）、无硬编码 token、必需文件存在 |
 | 失败含义 | 有安全或可移植性问题，不能发布 |
+
+## 2.5 Bash 脚本测试（L1 变体）
+
+| 项目 | 内容 |
+|---|---|
+| 框架 | `node:test` + bash subprocess（`spawn("bash", ["-c", "source script.sh; fn_name"])` ） |
+| Mock 策略 | 在 tmpdir 内写 mock 可执行文件（如 `git`），通过 PATH 前置注入覆盖真实命令 |
+| 环境隔离 | 测试通过 env 变量传入 `REPO_ROOT`、`MENGLAN_WORKTREE_ROOT` 等路径，指向 tmpdir |
+| 典型范例 | `test/pandas-heartbeat.test.ts` TC-037（`_auto_worktree_clean` 的 mock-git 测试） |
+| 适用场景 | harness.sh 新命令、pandas-heartbeat.sh 新函数；纯文档操作无需测试 |
 
 ---
 
@@ -220,6 +230,7 @@ bash scripts/check-req-coverage.sh  # REQ frontmatter 校验
 |---|---|---|
 | 0.1 | 2026-03-15 | 初始版本；完整重写（从 hydro-om-copilot 改写）；删去 Playwright E2E、LLM Canary、Vitest、Python/FastAPI；改为 node:test + tsx；定义四层测试（L1–L4）；smoke:ui 不进 CI |
 | 0.2 | 2026-03-16 | 多 Agent 扩展（REQ-027）：新增 §10 TC 所有权流转（Pandas→Huahua→Menglan 路径、打回规程、2 轮上限）|
+| 0.3 | 2026-03-21 | worktree 隔离（REQ-037）：新增 §2.5 Bash 脚本 L1 测试——node:test 中 source 脚本、PATH 注入 mock git binary；以 test/pandas-heartbeat.test.ts TC-037 为范例 |
 
 ---
 

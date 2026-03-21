@@ -104,6 +104,8 @@ rg '^### `agent-' harness/CAPABILITIES.md
 | `mem-longterm-write_knowledge` | `mem-*` | no | `local_write` | Write accepted candidates into project.db (Pandas only) |
 | `notify-human-send_status_update` | `notify-*` | no | `remote_write` | Send a user-facing status update or merge-ready notice |
 | `runtime-agent-read_worker_status` | `runtime-*` | yes | `none` | Read worker idle/busy state and runtime heartbeat data |
+| `runtime-harness-worktree_setup` | `runtime-*` | no | `local_write` | 为 Menglan 创建 git worktree（harness.sh implement 自动调用） |
+| `runtime-harness-worktree_clean` | `runtime-*` | no | `local_write` | 移除 Menglan worktree（heartbeat 自动 或 手动 worktree-clean 调用） |
 
 ## Capability Specs
 
@@ -642,4 +644,46 @@ avoid_when:
   - the next step does not depend on worker availability
 notes:
   - worker availability informs dispatch timing, not task legality
+```
+
+### `runtime-harness-worktree_setup`
+
+```yaml
+capability: runtime-harness-worktree_setup
+family: runtime-*
+default_enabled: false
+side_effect: local_write
+inputs:
+  - req_id（决定分支名 feat/<REQ-N>）
+outputs:
+  - MENGLAN_WORKTREE_ROOT 下的 git worktree，绑定到 feat/<REQ-N>
+use_when:
+  - Pandas 通过 harness.sh implement 派发实现任务给 Menglan 时
+avoid_when:
+  - 该 REQ 的 worktree 已存在且分支正确（幂等检查会跳过）
+notes:
+  - 由 cmd_worktree_setup() 在 harness.sh implement 内自动调用，Pandas 不直接调用
+  - 分支基于 origin/main 创建，防止从调用方 HEAD 继承无关提交
+  - 路径占用检查：若路径已存在但分支不匹配，exit 1 并提示先 worktree-clean
+```
+
+### `runtime-harness-worktree_clean`
+
+```yaml
+capability: runtime-harness-worktree_clean
+family: runtime-*
+default_enabled: false
+side_effect: local_write
+inputs:
+  - req_id（用于校验挂载分支是否匹配 feat/<REQ-N>）
+outputs:
+  - MENGLAN_WORKTREE_ROOT 下的 worktree 移除；不存在时静默跳过
+use_when:
+  - REQ 达到 status=done 后（heartbeat 自动执行）
+  - 手动清理：harness.sh worktree-clean <REQ-N>
+avoid_when:
+  - 挂载分支与请求的 REQ-N 不符（会拒绝操作，防止跨任务误删）
+notes:
+  - 主路径：pandas-heartbeat.sh _auto_worktree_clean() 在每次心跳检测 status=done 后自动触发
+  - 手动路径：harness.sh worktree-clean <REQ-N>（会先校验分支匹配）
 ```
