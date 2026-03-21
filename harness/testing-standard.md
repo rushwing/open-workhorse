@@ -2,9 +2,9 @@
 harness_id: TEST-001
 component: testing / verification
 owner: Engineering
-version: 0.1
+version: 0.3
 status: active
-last_reviewed: 2026-03-15
+last_reviewed: 2026-03-21
 ---
 
 # Harness Standard — 测试与验证规程
@@ -230,6 +230,7 @@ bash scripts/check-req-coverage.sh  # REQ frontmatter 校验
 |---|---|---|
 | 0.1 | 2026-03-15 | 初始版本；完整重写（从 hydro-om-copilot 改写）；删去 Playwright E2E、LLM Canary、Vitest、Python/FastAPI；改为 node:test + tsx；定义四层测试（L1–L4）；smoke:ui 不进 CI |
 | 0.2 | 2026-03-16 | 多 Agent 扩展（REQ-027）：新增 §10 TC 所有权流转（Pandas→Huahua→Menglan 路径、打回规程、2 轮上限）|
+| 0.3 | 2026-03-21 | worktree 隔离（REQ-037）：新增 §2.5 Bash 脚本 L1 测试——node:test 中 source 脚本、PATH 注入 mock git binary；以 test/pandas-heartbeat.test.ts TC-037 为范例 |
 
 ---
 
