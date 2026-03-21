@@ -137,16 +137,16 @@ $SHARED_RESOURCES_ROOT/inbox/
 
 | 占位符 | 说明 |
 |--------|------|
-| `{timestamp}` | `YYYYMMDDTHHMMSSz`（UTC，无冒号/破折号） |
+| `{timestamp}` | `YYYYMMDDHHMMSS`（UTC，`date -u +%Y%m%d%H%M%S`，无 T 分隔符、无冒号/破折号） |
 | `{type}` | `request` / `response` / `notification` |
 | `{from}_to_{to}` | 发送方 → 接收方，如 `pandas_to_menglan` |
-| `{corr_or_evt}` | request/response：`correlation_id`；notification：`event_type` |
+| `{corr_or_evt}` | request/response：`correlation_id`；notification：`evt_{event_type}_{timestamp}` |
 
 示例：
 ```
-20260320T174700Z_request_pandas_to_menglan_corr_REQ-033_1710867000.md
-20260320T175100Z_response_menglan_to_pandas_corr_REQ-033_1710867000.md
-20260320T180000Z_notification_pandas_to_menglan_stall_detected.md
+20260320174700_request_pandas_to_menglan_corr_REQ-033_1710867000.md
+20260320175100_response_menglan_to_pandas_corr_REQ-033_1710867000.md
+20260320180000_notification_pandas_to_menglan_evt_stall_detected_20260320180000.md
 ```
 
 > **已废弃的过渡格式**（REQ-033 阶段，inbox_read_pandas() 仍可解析）：
