@@ -85,10 +85,9 @@ inbox_write() {
   local iteration="${8:-}"
   local body="${9:-}"
 
-  # 生成兼容 thread_id / correlation_id（epoch-based）
-  local epoch; epoch="$(date +%s)"
-  local thread_id="thread_${req_id}_${epoch}"
-  local correlation_id="corr_${req_id}_${epoch}"
+  # 生成兼容 thread_id / correlation_id（REQ-035：thread 复用，corr 唯一）
+  local thread_id; thread_id="$(thread_get_or_create "$req_id")"
+  local correlation_id; correlation_id="$(correlation_new "$req_id")"
 
   # 旧 type → 新 type/action 映射
   # code_review 规范化为 review（Daniel 决策 2026-03-20）
@@ -202,6 +201,84 @@ _get_fm_field() {
   awk -F': ' "/^${field}:/{gsub(/^[[:space:]]+|[[:space:]]+$/, \"\", \$2); print \$2; exit}" "$file"
 }
 
+# thread_get_or_create <req_id>
+# Returns existing thread_id from any inbox trail message for req_id, or creates a new one.
+# 幂等：同一消息轨迹状态下多次调用返回相同值（REQ-035）
+thread_get_or_create() {
+  local req_id="$1"
+  local search_dirs=(
+    "${INBOX_ROOT}/for-pandas/done"     "${INBOX_ROOT}/for-pandas/failed"
+    "${INBOX_ROOT}/for-pandas/claimed"  "${INBOX_ROOT}/for-pandas/pending"
+    "${INBOX_ROOT}/for-menglan/done"    "${INBOX_ROOT}/for-menglan/failed"
+    "${INBOX_ROOT}/for-menglan/claimed" "${INBOX_ROOT}/for-menglan/pending"
+    "${INBOX_ROOT}/for-huahua/done"     "${INBOX_ROOT}/for-huahua/failed"
+    "${INBOX_ROOT}/for-huahua/claimed"  "${INBOX_ROOT}/for-huahua/pending"
+  )
+  local dir f candidate_thread
+  for dir in "${search_dirs[@]}"; do
+    [[ -d "$dir" ]] || continue
+    for f in "${dir}"/*.md; do
+      [[ -f "$f" ]] || continue
+      grep -q "^req_id: ${req_id}$" "$f" 2>/dev/null || continue
+      candidate_thread="$(awk '
+        /^---/{delim++; if(delim==2) exit; next}
+        delim==1 && /^thread_id:/{sub(/^thread_id:[[:space:]]*/,""); print; exit}
+      ' "$f")"
+      if [[ -n "$candidate_thread" ]]; then
+        echo "$candidate_thread"
+        return 0
+      fi
+    done
+  done
+  echo "thread_${req_id}_$(date +%s)"
+}
+
+# correlation_new <req_id>
+# Generates a unique correlation_id using epoch + rand4 for sub-second uniqueness.（REQ-035）
+correlation_new() {
+  local req_id="$1"
+  local rand4; rand4="$(set +o pipefail; tr -dc 'a-z0-9' < /dev/urandom 2>/dev/null | head -c 4)"
+  echo "corr_${req_id}_$(date +%s)_${rand4}"
+}
+
+# _corr_valid_for_req <req_id> <corr_id>
+# Checks whether corr_id matches any outgoing request for req_id in outbox dirs.
+# Returns:
+#   0 — corr_id found in a matching request (valid)
+#   1 — at least one request found for req_id but none carry this corr_id (mismatch)
+#   2 — no requests found for req_id at all (skip validation, forward-compat)
+# Fixes Bug 1: checks ALL requests for req_id, not just the first.（REQ-035）
+_corr_valid_for_req() {
+  local req_id="$1" corr_id="$2"
+  local search_dirs=(
+    "${INBOX_ROOT}/for-menglan/done"    "${INBOX_ROOT}/for-menglan/claimed"
+    "${INBOX_ROOT}/for-menglan/pending"
+    "${INBOX_ROOT}/for-huahua/done"     "${INBOX_ROOT}/for-huahua/claimed"
+    "${INBOX_ROOT}/for-huahua/pending"
+  )
+  local found_any=false dir f msg_type candidate_corr
+  for dir in "${search_dirs[@]}"; do
+    [[ -d "$dir" ]] || continue
+    for f in "${dir}"/*.md; do
+      [[ -f "$f" ]] || continue
+      msg_type="$(awk '
+        /^---/{delim++; if(delim==2) exit; next}
+        delim==1 && /^type:/{sub(/^type:[[:space:]]*/,""); print; exit}
+      ' "$f")"
+      [[ "$msg_type" == "request" ]] || continue
+      grep -q "^req_id: ${req_id}$" "$f" 2>/dev/null || continue
+      found_any=true
+      candidate_corr="$(awk '
+        /^---/{delim++; if(delim==2) exit; next}
+        delim==1 && /^correlation_id:/{sub(/^correlation_id:[[:space:]]*/,""); print; exit}
+      ' "$f")"
+      [[ "$candidate_corr" == "$corr_id" ]] && return 0  # exact match found
+    done
+  done
+  $found_any && return 1  # requests exist but none carry this corr_id
+  return 2                # no requests found — skip validation
+}
+
 # _dispatch_msg <msg_file> — 路由并处理单条消息，不做文件删除，返回 0/1
 # 供 inbox_read_pandas() 在 claim 循环和 flat compat 路径中复用
 _dispatch_msg() {
@@ -242,6 +319,23 @@ _dispatch_msg() {
       ;;
     response)
       local req_id; req_id="$(_get_fm_field "$msg_file" "req_id")"
+      # ── REQ-035: correlation_id 校验 ──────────────────────────────────
+      local resp_corr; resp_corr="$(awk '
+        /^---/{delim++; if(delim==2) exit; next}
+        delim==1 && /^correlation_id:/{sub(/^correlation_id:[[:space:]]*/,""); print; exit}
+      ' "$msg_file")"
+      # Fixes Bug 2: only validate when response carries a correlation_id.
+      # Responders that omit it (e.g. Huahua legacy format) are allowed through.
+      if [[ -n "$resp_corr" ]]; then
+        _corr_valid_for_req "$req_id" "$resp_corr"
+        local corr_rc=$?
+        if [[ $corr_rc -eq 1 ]]; then
+          warn "correlation_id 不匹配: response=${resp_corr} req_id=${req_id}"
+          return 1
+        fi
+        # corr_rc=0 (matched) or corr_rc=2 (no requests found) — proceed normally
+      fi
+      # ── END REQ-035 ────────────────────────────────────────────────────
       local pr_number; pr_number="$(_get_fm_field "$msg_file" "pr_number")"
       local summary; summary="$(_get_fm_field "$msg_file" "summary")"
       local status; status="$(_get_fm_field "$msg_file" "status")"
