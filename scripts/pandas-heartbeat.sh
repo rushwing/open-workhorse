@@ -48,7 +48,7 @@ else
   CYAN=''; YELLOW=''; RED=''; GREEN=''; NC=''
 fi
 info()  { echo -e "${CYAN}[pandas]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[pandas]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[pandas]${NC} $*" >&2; }
 err()   { echo -e "${RED}[pandas]${NC} $*" >&2; }
 ok()    { echo -e "${GREEN}[pandas]${NC} $*"; }
 
@@ -157,10 +157,56 @@ inbox_write_v2() {
   local rand4; rand4="$(set +o pipefail; tr -dc 'a-z0-9' < /dev/urandom 2>/dev/null | head -c 4)"
   msg_id="msg_${AGENT_ORCHESTRATOR:-pandas}_${now}_${rand4}"
   date_str="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  filename="${date_str//:/-}__${type}__${AGENT_ORCHESTRATOR:-pandas}_to_${target}__${correlation_id:-notset}.md"
+  # REQ-036: canonical filename — {timestamp}_{type}_{from}_to_{to}_{corr_or_evt}.md
+  local corr_or_evt
+  case "$type" in
+    notification) corr_or_evt="evt_${action_or_event}_${now}" ;;
+    *)            corr_or_evt="${correlation_id:-notset}" ;;
+  esac
+  filename="${now}_${type}_${AGENT_ORCHESTRATOR:-pandas}_to_${target}_${corr_or_evt}.md"
   # REQ-034: write to pending/ sub-directory for atomic claim lifecycle
   target_dir="${INBOX_ROOT}/for-${target}/pending"
   mkdir -p "$target_dir"
+
+  # REQ-036: delegation field validation (type=request only)
+  local delegation_incomplete=false
+  if [[ "$type" == "request" && -n "$payload_file" && -f "$payload_file" ]]; then
+    local _missing_fields=()
+    for _field in objective scope expected_output done_criteria; do
+      grep -q "^${_field}:" "$payload_file" || _missing_fields+=("$_field")
+    done
+    if [[ ${#_missing_fields[@]} -gt 0 ]]; then
+      warn "inbox_write_v2: delegation incomplete — missing: ${_missing_fields[*]}"
+      delegation_incomplete=true
+    fi
+  fi
+
+  # REQ-036: context_summary truncation (>500 chars → truncate + warn)
+  local effective_payload="$payload_file"
+  if [[ -n "$payload_file" && -f "$payload_file" ]]; then
+    local _cs_val
+    _cs_val="$(awk '/^context_summary:/{sub(/^context_summary:[[:space:]]*/,""); print; exit}' "$payload_file")"
+    if [[ ${#_cs_val} -gt 500 ]]; then
+      warn "inbox_write_v2: context_summary truncated from ${#_cs_val} to 500 chars"
+      local _tmp_payload; _tmp_payload="$(mktemp)"
+      awk '/^context_summary:/{printf "context_summary: %s\n", substr($0, index($0, ": ")+2, 500); next} {print}' \
+        "$payload_file" > "$_tmp_payload"
+      effective_payload="$_tmp_payload"
+    fi
+  fi
+
+  # REQ-036: references type validation
+  if [[ -n "$payload_file" && -f "$payload_file" ]]; then
+    while IFS= read -r _ref_line; do
+      # Match both "  type: val" and "  - type: val" (YAML list item format)
+      if [[ "$_ref_line" =~ ^[[:space:]]+(-[[:space:]]+)?type:[[:space:]]+(.*) ]]; then
+        local _ref_type="${BASH_REMATCH[2]}"
+        if [[ ! "$_ref_type" =~ ^(req|pr|bug|doc|file)$ ]]; then
+          warn "inbox_write_v2: references type '${_ref_type}' not in enum (req|pr|bug|doc|file)"
+        fi
+      fi
+    done < "$payload_file"
+  fi
 
   {
     echo "---"
@@ -176,6 +222,7 @@ inbox_write_v2() {
       request)
         echo "action: ${action_or_event}"
         echo "response_required: ${response_required}"
+        [[ "$delegation_incomplete" == "true" ]] && echo "delegation_incomplete: true"
         ;;
       response)
         [[ -n "$in_reply_to" ]] && echo "in_reply_to: ${in_reply_to}"
@@ -188,8 +235,11 @@ inbox_write_v2() {
         ;;
     esac
     echo "---"
-    [[ -n "$payload_file" && -f "$payload_file" ]] && cat "$payload_file"
+    [[ -n "$effective_payload" && -f "$effective_payload" ]] && cat "$effective_payload"
   } > "${target_dir}/${filename}"
+
+  # REQ-036: clean up temp payload if created for truncation
+  [[ "$effective_payload" != "$payload_file" ]] && rm -f "$effective_payload"
 
   info "inbox_write_v2 → for-${target}/${filename} [${type}/${action_or_event}]"
 }
