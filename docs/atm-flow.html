@@ -28,6 +28,9 @@
     <marker id="swimlane-ah-purple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
       <path d="M0,0 L0,6 L8,3 z" fill="#bc8cff"/>
     </marker>
+    <marker id="swimlane-ah-red"    markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#f85149"/>
+    </marker>
   </defs>
 
   <!-- ── Lane backgrounds ── -->
@@ -115,7 +118,7 @@
   <!-- Node 7 · Menglan "implement / bugfix" cy=488 -->
   <rect x="505" y="471" width="190" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
   <text x="600" y="488" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="11" font-weight="bold">implement / bugfix</text>
-  <text x="600" y="500" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">in MENGLAN_WORKTREE_ROOT</text>
+  <text x="600" y="500" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">implement: worktree · bugfix: direct</text>
 
   <!-- Node 8 · Menglan "write response" cy=561 -->
   <rect x="505" y="544" width="190" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
@@ -178,12 +181,20 @@
         stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#swimlane-ah-gray)"/>
   <text x="340" y="594" fill="#6e7681" font-family="monospace" font-size="8">② dev_complete</text>
 
+  <!-- A8b: Huahua Node5 → Pandas Node9 (review_blocked, dashed red, right-margin loopback)
+       Right side of node 5 (455, 358) → right margin (725, 358) → (725, 618) → right side of node 9 (215, 618)
+  -->
+  <path d="M455,358 L725,358 L725,618 L215,618"
+        stroke="#f85149" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#swimlane-ah-red)"/>
+  <text x="729" y="496" fill="#f85149" font-family="monospace" font-size="8"
+        writing-mode="tb" glyph-orientation-vertical="0">review_blocked</text>
+
 </svg>
 </div>
 <p class="note-bar">
-  ① Hua Hua response: <code>legacy_type=tc_complete</code> (TC design done) or <code>legacy_type=review_complete</code> (code review approved) → Pandas routes to respective handler.<br>
-  ② Meng Lan response: <code>legacy_type=dev_complete</code> (implementation complete) → <code>_handle_dev_complete()</code>. Both accept <code>status: completed</code> or legacy <code>success</code>.<br>
+  ① Hua Hua response: <code>legacy_type=tc_complete</code> (TC design done) or <code>legacy_type=review_complete</code> (code review approved) → Pandas routes to respective handler. <code>legacy_type=review_blocked</code> (changes requested) → warn-only path (right-margin dashed arrow).<br>
+  ② Meng Lan response: <code>legacy_type=dev_complete</code> (implementation complete) → <code>_handle_dev_complete()</code>. Both accept <code>status: completed</code> or legacy <code>success</code>. <code>implement</code> runs in <code>MENGLAN_WORKTREE_ROOT</code>; <code>bugfix</code> runs directly in repo clone.<br>
   ③ Claim is atomic: <code>mv pending/$f claimed/$f</code>; on ENOENT race → silent skip; on FS error → stderr + skip; on handler error → <code>mv claimed/$f failed/$f</code>.<br>
-  ④ Pandas verifies <code>correlation_id</code> echo on response arrival; mismatch → warn + <code>mv to failed/</code>. <code>severity=action-required</code> notifications → <code>tg_notify</code>.
+  ④ When <code>correlation_id</code> is present in a response, Pandas verifies it matches the outbound request; mismatch → warn + <code>mv to failed/</code>. Hua Hua-compatible responses may omit <code>correlation_id</code> and skip this check. <code>severity=action-required</code> notifications → <code>tg_notify</code>.
 </p>
 </body></html>
