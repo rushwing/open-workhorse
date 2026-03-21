@@ -144,8 +144,8 @@ $SHARED_RESOURCES_ROOT/inbox/
 
 示例：
 ```
-20260320174700_request_pandas_to_menglan_corr_REQ-033_1710867000.md
-20260320175100_response_menglan_to_pandas_corr_REQ-033_1710867000.md
+20260320174700_request_pandas_to_menglan_corr_REQ-033_1710867000_a3f2.md
+20260320175100_response_menglan_to_pandas_corr_REQ-033_1710867000_a3f2.md
 20260320180000_notification_pandas_to_menglan_evt_stall_detected_20260320180000.md
 ```
 
