@@ -1,0 +1,200 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><title>ATM Envelope Flow</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: monospace; background: #0d1117; color: #e6edf3; padding: 24px; }
+  h1 { font-size: 16px; color: #58a6ff; margin-bottom: 8px; }
+  h2 { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 12px; border-bottom: 1px solid #21262d; padding-bottom: 6px; }
+  .subtitle { font-size: 11px; color: #6e7681; margin-bottom: 24px; }
+  .note-bar { font-size: 10px; color: #6e7681; margin-top: 16px; line-height: 1.6; }
+  .note-bar code { background: #161b22; padding: 1px 5px; border-radius: 3px; color: #79c0ff; font-size: 10px; }
+  .swimlane-wrap { overflow-x: auto; margin-bottom: 8px; }
+</style></head>
+<body>
+<h1>ATM Envelope Flow</h1>
+<p class="subtitle">harness/inbox-protocol.md · inbox IPC message routing · 10 nodes, 11 edges</p>
+<div class="swimlane-wrap">
+<svg viewBox="0 0 760 748" style="width:100%;max-width:760px;display:block;background:#0d1117;border:1px solid #21262d;border-radius:6px;">
+  <defs>
+    <marker id="swimlane-ah-gray"   markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#8b949e"/>
+    </marker>
+    <marker id="swimlane-ah-green"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#3fb950"/>
+    </marker>
+    <marker id="swimlane-ah-yellow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#e3b341"/>
+    </marker>
+    <marker id="swimlane-ah-purple" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#bc8cff"/>
+    </marker>
+    <marker id="swimlane-ah-red"    markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#f85149"/>
+    </marker>
+  </defs>
+
+  <!-- ── Lane backgrounds ── -->
+  <rect x="0"   y="0" width="240" height="748" fill="#091510"/>
+  <rect x="240" y="0" width="240" height="748" fill="#16140a"/>
+  <rect x="480" y="0" width="240" height="748" fill="#0e0a15"/>
+  <rect x="720" y="0" width="40"  height="748" fill="#0d1117"/>
+
+  <!-- ── Lane dividers (below header) ── -->
+  <line x1="240" y1="42" x2="240" y2="748" stroke="#21262d" stroke-width="1"/>
+  <line x1="480" y1="42" x2="480" y2="748" stroke="#21262d" stroke-width="1"/>
+  <line x1="720" y1="42" x2="720" y2="748" stroke="#1e2430" stroke-width="1" stroke-dasharray="3,3"/>
+
+  <!-- ── Lane headers ── -->
+  <rect x="0"   y="0" width="240" height="42" fill="#0d2016"/>
+  <text x="120" y="21" text-anchor="middle" fill="#56d364" font-family="monospace" font-size="13" font-weight="bold">Pandas</text>
+  <text x="120" y="36" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="8.5">orchestrator</text>
+
+  <rect x="240" y="0" width="240" height="42" fill="#1f1a0d"/>
+  <text x="360" y="21" text-anchor="middle" fill="#f0c040" font-family="monospace" font-size="13" font-weight="bold">Hua Hua</text>
+  <text x="360" y="36" text-anchor="middle" fill="#e3b341" font-family="monospace" font-size="8.5">reviewer</text>
+
+  <rect x="480" y="0" width="240" height="42" fill="#150d20"/>
+  <text x="600" y="21" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="13" font-weight="bold">Meng Lan</text>
+  <text x="600" y="36" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8.5">implementer</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 1: PANDAS DISPATCHES  (band y=42)
+       Rows: cy=82, cy=155
+  ═══════════════════════════════════════════════════════════════ -->
+  <rect x="0" y="42" width="720" height="15" fill="#0d1810"/>
+  <text x="8" y="53" fill="#3fb950" font-family="monospace" font-size="8.5" letter-spacing="0.8">▶  PANDAS DISPATCHES</text>
+
+  <!-- Node 1 · Pandas "generate IDs" cy=82 -->
+  <rect x="25"  y="65" width="190" height="34" rx="5" fill="#0d2016" stroke="#3fb950"/>
+  <text x="120" y="82"  text-anchor="middle" fill="#56d364" font-family="monospace" font-size="11" font-weight="bold">generate IDs</text>
+  <text x="120" y="94"  text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="8">thread_{req}_{epoch} · corr_{req}_{epoch}_{rand4}</text>
+
+  <!-- Node 2 · Pandas "inbox_write_v2" cy=155 -->
+  <rect x="25"  y="138" width="190" height="34" rx="5" fill="#0d2016" stroke="#3fb950"/>
+  <text x="120" y="155" text-anchor="middle" fill="#56d364" font-family="monospace" font-size="11" font-weight="bold">inbox_write_v2</text>
+  <text x="120" y="167" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="8">type=request · priority=P1/P2</text>
+
+  <!-- A1: Node1 → Node2 vertical green -->
+  <path d="M120,99 L120,138" stroke="#3fb950" stroke-width="1.5" fill="none" marker-end="url(#swimlane-ah-green)"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 2: HUA HUA PHASE  (band y=172)
+       Rows: cy=212, cy=285, cy=358
+  ═══════════════════════════════════════════════════════════════ -->
+  <rect x="0" y="172" width="720" height="15" fill="#141208"/>
+  <text x="8" y="183" fill="#e3b341" font-family="monospace" font-size="8.5" letter-spacing="0.8">▶  HUA HUA PHASE</text>
+
+  <!-- Node 3 · Huahua "claim message" cy=212 (shared) -->
+  <rect x="265" y="195" width="190" height="34" rx="5" fill="#161b22" stroke="#8b949e"/>
+  <text x="360" y="212" text-anchor="middle" fill="#c9d1d9" font-family="monospace" font-size="11" font-weight="bold">claim message</text>
+  <text x="360" y="224" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="8">mv pending → claimed</text>
+
+  <!-- Node 4 · Huahua "tc_design / review" cy=285 -->
+  <rect x="265" y="268" width="190" height="34" rx="5" fill="#1f1a0d" stroke="#e3b341"/>
+  <text x="360" y="285" text-anchor="middle" fill="#f0c040" font-family="monospace" font-size="11" font-weight="bold">tc_design / review</text>
+  <text x="360" y="297" text-anchor="middle" fill="#e3b341" font-family="monospace" font-size="8">action from ATM envelope</text>
+
+  <!-- Node 5 · Huahua "write response" cy=358 -->
+  <rect x="265" y="341" width="190" height="34" rx="5" fill="#1f1a0d" stroke="#e3b341"/>
+  <text x="360" y="358" text-anchor="middle" fill="#f0c040" font-family="monospace" font-size="11" font-weight="bold">write response</text>
+  <text x="360" y="370" text-anchor="middle" fill="#e3b341" font-family="monospace" font-size="8">→ for-pandas/pending/</text>
+
+  <!-- A4: Node3 → Node4  A5: Node4 → Node5 (vertical yellow) -->
+  <path d="M360,229 L360,268" stroke="#e3b341" stroke-width="1.5" fill="none" marker-end="url(#swimlane-ah-yellow)"/>
+  <path d="M360,302 L360,341" stroke="#e3b341" stroke-width="1.5" fill="none" marker-end="url(#swimlane-ah-yellow)"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 3: MENG LAN PHASE  (band y=375)
+       Rows: cy=415, cy=488, cy=561
+  ═══════════════════════════════════════════════════════════════ -->
+  <rect x="0" y="375" width="720" height="15" fill="#100a18"/>
+  <text x="8" y="386" fill="#bc8cff" font-family="monospace" font-size="8.5" letter-spacing="0.8">▶  MENG LAN PHASE</text>
+
+  <!-- Node 6 · Menglan "claim message" cy=415 (shared) -->
+  <rect x="505" y="398" width="190" height="34" rx="5" fill="#161b22" stroke="#8b949e"/>
+  <text x="600" y="415" text-anchor="middle" fill="#c9d1d9" font-family="monospace" font-size="11" font-weight="bold">claim message</text>
+  <text x="600" y="427" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="8">mv pending → claimed</text>
+
+  <!-- Node 7 · Menglan "implement / bugfix" cy=488 -->
+  <rect x="505" y="471" width="190" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
+  <text x="600" y="488" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="11" font-weight="bold">implement / bugfix</text>
+  <text x="600" y="500" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">implement: worktree · bugfix: direct</text>
+
+  <!-- Node 8 · Menglan "write response" cy=561 -->
+  <rect x="505" y="544" width="190" height="34" rx="5" fill="#150d20" stroke="#bc8cff"/>
+  <text x="600" y="561" text-anchor="middle" fill="#d2a8ff" font-family="monospace" font-size="11" font-weight="bold">write response</text>
+  <text x="600" y="573" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="8">→ for-pandas/pending/</text>
+
+  <!-- A6: Node6 → Node7  A7: Node7 → Node8 (vertical purple) -->
+  <path d="M600,432 L600,471" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#swimlane-ah-purple)"/>
+  <path d="M600,505 L600,544" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#swimlane-ah-purple)"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECTION 4: PANDAS ROUTES RESPONSE  (band y=578)
+       Rows: cy=618, cy=691
+  ═══════════════════════════════════════════════════════════════ -->
+  <rect x="0" y="578" width="720" height="15" fill="#0d1810"/>
+  <text x="8" y="589" fill="#3fb950" font-family="monospace" font-size="8.5" letter-spacing="0.8">▶  PANDAS ROUTES RESPONSE</text>
+
+  <!-- Node 9 · Pandas "inbox_read_pandas" cy=618 -->
+  <rect x="25"  y="601" width="190" height="34" rx="5" fill="#0d2016" stroke="#3fb950"/>
+  <text x="120" y="618" text-anchor="middle" fill="#56d364" font-family="monospace" font-size="11" font-weight="bold">inbox_read_pandas</text>
+  <text x="120" y="630" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="8">claim pending → claimed</text>
+
+  <!-- Node 10 · Pandas "route response" cy=691 (terminal — done class, stroke-width=2) -->
+  <rect x="25"  y="674" width="190" height="34" rx="5" fill="#0d2016" stroke="#3fb950" stroke-width="2"/>
+  <text x="120" y="691" text-anchor="middle" fill="#56d364" font-family="monospace" font-size="11" font-weight="bold">route response</text>
+  <text x="120" y="703" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="8">type → legacy_type → status</text>
+
+  <!-- A10: Node9 → Node10 vertical green -->
+  <path d="M120,635 L120,674" stroke="#3fb950" stroke-width="1.5" fill="none" marker-end="url(#swimlane-ah-green)"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       CROSS-LANE ARROWS
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- A2: Pandas Node2 → Huahua Node3 (tc_design / review path, solid yellow)
+       from (120, 172) to (360, 195), Δ=96
+  -->
+  <path d="M120,172 C216,172 264,195 360,195"
+        stroke="#e3b341" stroke-width="1.5" fill="none" marker-end="url(#swimlane-ah-yellow)"/>
+  <text x="148" y="179" fill="#6e7681" font-family="monospace" font-size="8">tc_design / review</text>
+
+  <!-- A3: Pandas Node2 → Menglan Node6 (implement / bugfix path, dashed purple)
+       from (120, 172) to (600, 398), Δ=192
+  -->
+  <path d="M120,172 C312,172 408,398 600,398"
+        stroke="#bc8cff" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#swimlane-ah-purple)"/>
+  <text x="252" y="258" fill="#6e7681" font-family="monospace" font-size="8">implement / bugfix</text>
+
+  <!-- A8: Huahua Node5 → Pandas Node9 (response, gray)
+       from (360, 375) to (120, 601), Δ=96
+  -->
+  <path d="M360,375 C264,375 216,601 120,601"
+        stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#swimlane-ah-gray)"/>
+  <text x="175" y="470" fill="#6e7681" font-family="monospace" font-size="8">① tc/review complete</text>
+
+  <!-- A9: Menglan Node8 → Pandas Node9 (response, gray)
+       from (600, 578) to (120, 601), Δ=192
+  -->
+  <path d="M600,578 C408,578 312,601 120,601"
+        stroke="#8b949e" stroke-width="1.5" fill="none" marker-end="url(#swimlane-ah-gray)"/>
+  <text x="340" y="594" fill="#6e7681" font-family="monospace" font-size="8">② dev_complete</text>
+
+  <!-- A8b: Huahua Node5 → Pandas Node9 (review_blocked, dashed red, right-margin loopback)
+       Right side of node 5 (455, 358) → right margin (725, 358) → (725, 618) → right side of node 9 (215, 618)
+  -->
+  <path d="M455,358 L725,358 L725,618 L215,618"
+        stroke="#f85149" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#swimlane-ah-red)"/>
+  <text x="729" y="496" fill="#f85149" font-family="monospace" font-size="8"
+        writing-mode="tb" glyph-orientation-vertical="0">review_blocked</text>
+
+</svg>
+</div>
+<p class="note-bar">
+  ① Hua Hua response: <code>legacy_type=tc_complete</code> (TC design done) or <code>legacy_type=review_complete</code> (code review approved) → Pandas routes to respective handler. <code>legacy_type=review_blocked</code> (changes requested) → warn-only path (right-margin dashed arrow).<br>
+  ② Meng Lan response: <code>legacy_type=dev_complete</code> (implementation complete) → <code>_handle_dev_complete()</code>. Both accept <code>status: completed</code> or legacy <code>success</code>. <code>implement</code> runs in <code>MENGLAN_WORKTREE_ROOT</code>; <code>bugfix</code> runs directly in repo clone.<br>
+  ③ Claim is atomic: <code>mv pending/$f claimed/$f</code>; on ENOENT race → silent skip; on FS error → stderr + skip; on handler error → <code>mv claimed/$f failed/$f</code>.<br>
+  ④ When <code>correlation_id</code> is present in a response, Pandas verifies it matches the outbound request; mismatch → warn + <code>mv to failed/</code>. Hua Hua-compatible responses may omit <code>correlation_id</code> and skip this check. <code>severity=action-required</code> notifications → <code>tg_notify</code>.
+</p>
+</body></html>
