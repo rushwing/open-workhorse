@@ -124,8 +124,8 @@ Pandas orchestration loop（模板 K）：
                                                             └─▶ Pandas 触发 fix-review（如有 blocking findings）
                                                                     └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
                                                                             └─▶ Daniel merge PR
-                                                                                    └─▶ Pandas: harness.sh worktree-clean <REQ-N>（清理 worktree）
-                                                                                            └─▶ Pandas 心跳 S2：扫到 status:done → 发 Telegram 归档通知
+                                                                                    └─▶ Pandas 心跳 S2：扫到 status:done → 发 Telegram 归档通知
+                                                                                            └─▶ _auto_worktree_clean（心跳内联，status=done 时自动移除 worktree）
                                                                                                     └─▶ Daniel 确认 → Pandas 执行归档（mv REQ + TC → tasks/archive/done/）
 
 dev-cycle-watchdog（每 5h cron）：

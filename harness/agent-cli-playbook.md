@@ -186,7 +186,9 @@ Step 5 — Notify Daniel via Telegram:
   Log result. Do NOT merge — HITL only.
 
 Step 6 — After Daniel merges PR:
-  Clean up Menglan worktree: ./scripts/harness.sh worktree-clean <REQ-N>
+  Worktree cleanup is automatic: once REQ status reaches done, the next heartbeat tick
+  calls _auto_worktree_clean and removes ~/workspace-menglan/open-workhorse/ automatically.
+  Manual override if needed: ./scripts/harness.sh worktree-clean <REQ-N>
 
 Loop back to Step 0.
 "

@@ -935,6 +935,46 @@ auto_claim_specific() {
   fi
 }
 
+# ── REQ-037: Worktree 自动清理 ───────────────────────────────────────────────
+
+# 每次心跳检查：若 MENGLAN_WORKTREE_ROOT 已挂载且对应 REQ 已 done，自动移除 worktree
+_auto_worktree_clean() {
+  local worktree_path="${MENGLAN_WORKTREE_ROOT:-$HOME/workspace-menglan/open-workhorse}"
+
+  # worktree 未挂载则跳过
+  git worktree list | grep -qF "$worktree_path" || return 0
+
+  # 读取 worktree 当前分支
+  local current_branch
+  current_branch="$(git -C "$worktree_path" branch --show-current 2>/dev/null || true)"
+  [[ -z "$current_branch" ]] && return 0
+
+  # 仅处理 feat/REQ-N 格式的分支
+  [[ "$current_branch" == feat/* ]] || return 0
+  local req_id="${current_branch#feat/}"
+
+  # 检查 REQ 是否已 done（features/ 或 archive/done/）
+  local req_status=""
+  local search_path
+  for search_path in \
+    "${REPO_ROOT}/tasks/features/${req_id}.md" \
+    "${REPO_ROOT}/tasks/archive/done/${req_id}.md"; do
+    if [[ -f "$search_path" ]]; then
+      req_status="$(_get_fm_field "$search_path" "status")"
+      break
+    fi
+  done
+
+  if [[ "$req_status" == "done" ]]; then
+    info "auto_worktree_clean: ${req_id} status=done，自动移除 worktree ${worktree_path}"
+    if git worktree remove --force "$worktree_path"; then
+      ok "worktree 已自动移除：${worktree_path}（${req_id} done）"
+    else
+      warn "worktree 自动移除失败：${worktree_path}"
+    fi
+  fi
+}
+
 # ── REQ-022: 停滞检测 ─────────────────────────────────────────────────────────
 
 stall_detection() {
@@ -1002,6 +1042,9 @@ main() {
 
   # 5. 停滞检测（REQ-022）
   stall_detection
+
+  # 6. Worktree 自动清理（REQ-037）
+  _auto_worktree_clean
 
   info "pandas-heartbeat 完成"
 }
