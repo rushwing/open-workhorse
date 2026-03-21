@@ -2,9 +2,9 @@
 harness_id: HARNESS-INDEX
 component: process / orchestration
 owner: Engineering
-version: 0.3
+version: 0.4
 status: active
-last_reviewed: 2026-03-18
+last_reviewed: 2026-03-21
 ---
 
 # Harness Engineering — 流程总索引
@@ -62,8 +62,8 @@ flowchart LR
 | Bug 管理 | [bug-standard.md](bug-standard.md) | ✅ active |
 | 代码审查 | [review-standard.md](review-standard.md) | ✅ active — Pandas 触发→Huahua（CodeX）review→Telegram HITL 合并 |
 | CI / 质量门禁 | [ci-standard.md](ci-standard.md) | ✅ active |
-| Agent CLI 调用模板 | [agent-cli-playbook.md](agent-cli-playbook.md) | ✅ active — 模板 A–J，覆盖实现、Bug 修复、Fix Review、一致性审查 |
-| Inbox IPC 协议 | [inbox-protocol.md](inbox-protocol.md) | ✅ active（partial）— ATM Envelope 规范；Pandas writer/reader 已升级，Menglan/Huahua writer 迁移待 REQ-034+ |
+| Agent CLI 调用模板 | [agent-cli-playbook.md](agent-cli-playbook.md) | ✅ active — 模板 A–L，覆盖实现、Bug 修复、Fix Review、一致性审查、Pandas 编排（K）、Memory Curation（L） |
+| Inbox IPC 协议 | [inbox-protocol.md](inbox-protocol.md) | ✅ active — ATM Envelope 规范（REQ-033–036 全部完成）；lifecycle 目录 pending/claimed/done/failed；Thread/Correlation 追踪；Delegation 结构化；规范文件命名 |
 
 ---
 
@@ -114,7 +114,7 @@ PR merged to main
             └─▶ 扫描 tasks/features/：frontmatter 校验 + orphan/ghost 检测
 
 Pandas orchestration loop（模板 K）：
-    └─▶ 检查 for-pandas/ inbox 新结果包（agent-inbox-read_result_packet）
+    └─▶ 检查 for-pandas/ inbox 新结果包（inbox_read_pandas()，原子 mv pending→claimed）
             └─▶ harness.sh status → 有可认领任务
                     └─▶ harness.sh implement <REQ-N>（触发 Menglan）
                             └─▶ Menglan 开 PR
@@ -177,3 +177,4 @@ Pandas 在 session 结束或批量任务完成后将候选提升至 `project.db`
 | 0.1 | 2026-03-15 | 初始版本（从 hydro-om-copilot 改写）；适配单 Agent 模式（删去 openai_codex）；TC 设计内嵌为实现前步骤；删去 kb-ingestion-standard |
 | 0.2 | 2026-03-15 | 引入 Pandas orchestrator 角色（不读 PR diff）；将 claude_code 明确为 Menglan；Huahua review 方式改为 CodeX + GH LLM Issue Orchestrator；自动化流程更新为 semi-autonomous loop（Telegram HITL + watchdog cron）；review-standard 更新为 active |
 | 0.3 | 2026-03-18 | 引入 Tool Registration（CAPABILITIES.md / CONNECTORS.md）+ Memory Integration 节；inbox-based dispatch 说明；对齐 everything_openclaw agent_persona_harness_v0 ground truth |
+| 0.4 | 2026-03-21 | inbox-protocol 行更新：status partial → active，ATM REQ-033–036 全部落地；frontmatter 版本同步；playbook 模板集更新为 A–L（含 K Pandas 编排、L Memory Curation）；自动化流程函数名更新为 inbox_read_pandas() |
