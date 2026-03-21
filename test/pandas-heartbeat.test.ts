@@ -1707,3 +1707,127 @@ test("TC-035-06: after processing, thread_id in done/ dirs links request and res
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// TC-035-07: Second round-trip response (newer corr) passes validation
+test("TC-035-07: response with second request's correlation_id passes validation when two requests exist in outbox", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-035-07-${Date.now()}`);
+  const pandasPending = join(tmpDir, "inbox", "for-pandas", "pending");
+  const menglanDone = join(tmpDir, "inbox", "for-menglan", "done");
+  await mkdir(pandasPending, { recursive: true });
+  await mkdir(menglanDone, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  const threadId = "thread_REQ-035_multi";
+  const corrOld = "corr_REQ-035_round1";
+  const corrNew = "corr_REQ-035_round2";
+
+  // First (older) request already in done/ with corrOld
+  await writeFile(
+    join(menglanDone, "2026-03-21-req-035-07-request-1.md"),
+    `---\nmessage_id: msg_tc035_07_req1\ntype: request\nfrom: pandas\nto: menglan\ncreated_at: 2026-03-21T00:00:00Z\nthread_id: ${threadId}\ncorrelation_id: ${corrOld}\npriority: P1\naction: implement\nresponse_required: true\n---\nreq_id: REQ-035\nsummary: first round\nlegacy_type: implement\n`,
+    "utf8",
+  );
+
+  // Second (newer) request in done/ with corrNew
+  await writeFile(
+    join(menglanDone, "2026-03-21-req-035-07-request-2.md"),
+    `---\nmessage_id: msg_tc035_07_req2\ntype: request\nfrom: pandas\nto: menglan\ncreated_at: 2026-03-21T01:00:00Z\nthread_id: ${threadId}\ncorrelation_id: ${corrNew}\npriority: P1\naction: implement\nresponse_required: true\n---\nreq_id: REQ-035\nsummary: second round\nlegacy_type: implement\n`,
+    "utf8",
+  );
+
+  // Response to second request carries corrNew
+  await writeFile(
+    join(pandasPending, "2026-03-21-req-035-07-response.md"),
+    `---\nmessage_id: msg_tc035_07_resp\ntype: response\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-21T02:00:00Z\nthread_id: ${threadId}\ncorrelation_id: ${corrNew}\npriority: P1\nstatus: completed\n---\nreq_id: REQ-035\npr_number: 42\nsummary: second round done\nlegacy_type: dev_complete\nstatus: completed\n`,
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       source "${SCRIPT}" 2>/dev/null
+       tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       inbox_init
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // Response must be in done/ — corrNew matches the second request (valid)
+    const pandaDone = join(tmpDir, "inbox", "for-pandas", "done");
+    const doneFiles = await readdir(pandaDone);
+    assert.ok(
+      doneFiles.includes("2026-03-21-req-035-07-response.md"),
+      `Second-round response (corrNew) should pass and be in done/. done/: ${doneFiles.join(", ")}`,
+    );
+
+    // No false correlation_id error
+    assert.ok(
+      !result.stdout.includes("correlation_id 不匹配") && !result.stderr.includes("correlation_id 不匹配"),
+      `Should not emit correlation mismatch warn. stdout: ${result.stdout}\nstderr: ${result.stderr}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-035-08: Response without correlation_id (Huahua compat) skips validation and routes to done/
+test("TC-035-08: response without correlation_id field skips validation and routes to for-pandas/done/ (Huahua compat)", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-035-08-${Date.now()}`);
+  const pandasPending = join(tmpDir, "inbox", "for-pandas", "pending");
+  const menglanDone = join(tmpDir, "inbox", "for-menglan", "done");
+  await mkdir(pandasPending, { recursive: true });
+  await mkdir(menglanDone, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  const threadId = "thread_REQ-035_compat";
+  const corrKnown = "corr_REQ-035_known";
+
+  // Known request exists in outbox with corrKnown
+  await writeFile(
+    join(menglanDone, "2026-03-21-req-035-08-request.md"),
+    `---\nmessage_id: msg_tc035_08_req\ntype: request\nfrom: pandas\nto: menglan\ncreated_at: 2026-03-21T00:00:00Z\nthread_id: ${threadId}\ncorrelation_id: ${corrKnown}\npriority: P1\naction: review\nresponse_required: true\n---\nreq_id: REQ-035\nsummary: review request\nlegacy_type: review\n`,
+    "utf8",
+  );
+
+  // Huahua-style response: no correlation_id field in frontmatter
+  await writeFile(
+    join(pandasPending, "2026-03-21-req-035-08-response.md"),
+    `---\nmessage_id: msg_tc035_08_resp\ntype: response\nfrom: huahua\nto: pandas\ncreated_at: 2026-03-21T01:00:00Z\nthread_id: ${threadId}\npriority: P1\nstatus: completed\n---\nreq_id: REQ-035\npr_number: 35\nsummary: review approved\nlegacy_type: review_complete\nstatus: success\n`,
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       source "${SCRIPT}" 2>/dev/null
+       tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       inbox_init
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // Response with no corr field must still reach done/ (validation skipped)
+    const pandaDone = join(tmpDir, "inbox", "for-pandas", "done");
+    const doneFiles = await readdir(pandaDone);
+    assert.ok(
+      doneFiles.includes("2026-03-21-req-035-08-response.md"),
+      `Huahua-compat response (no corr field) should be in done/. done/: ${doneFiles.join(", ")}`,
+    );
+
+    // No false correlation_id error
+    assert.ok(
+      !result.stdout.includes("correlation_id 不匹配") && !result.stderr.includes("correlation_id 不匹配"),
+      `Should not emit correlation mismatch for missing corr field. stdout: ${result.stdout}\nstderr: ${result.stderr}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});

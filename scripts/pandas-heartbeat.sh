@@ -241,19 +241,22 @@ correlation_new() {
   echo "corr_${req_id}_$(date +%s)_${rand4}"
 }
 
-# _find_request_corr <req_id>
-# Searches for-menglan and for-huahua outbox dirs for a type=request file
-# whose payload body contains req_id: <req_id>. Returns its correlation_id or empty.
-# Used by _dispatch_msg to validate incoming response correlation_id.（REQ-035）
-_find_request_corr() {
-  local req_id="$1"
+# _corr_valid_for_req <req_id> <corr_id>
+# Checks whether corr_id matches any outgoing request for req_id in outbox dirs.
+# Returns:
+#   0 — corr_id found in a matching request (valid)
+#   1 — at least one request found for req_id but none carry this corr_id (mismatch)
+#   2 — no requests found for req_id at all (skip validation, forward-compat)
+# Fixes Bug 1: checks ALL requests for req_id, not just the first.（REQ-035）
+_corr_valid_for_req() {
+  local req_id="$1" corr_id="$2"
   local search_dirs=(
     "${INBOX_ROOT}/for-menglan/done"    "${INBOX_ROOT}/for-menglan/claimed"
     "${INBOX_ROOT}/for-menglan/pending"
     "${INBOX_ROOT}/for-huahua/done"     "${INBOX_ROOT}/for-huahua/claimed"
     "${INBOX_ROOT}/for-huahua/pending"
   )
-  local dir f msg_type candidate_corr
+  local found_any=false dir f msg_type candidate_corr
   for dir in "${search_dirs[@]}"; do
     [[ -d "$dir" ]] || continue
     for f in "${dir}"/*.md; do
@@ -264,17 +267,16 @@ _find_request_corr() {
       ' "$f")"
       [[ "$msg_type" == "request" ]] || continue
       grep -q "^req_id: ${req_id}$" "$f" 2>/dev/null || continue
+      found_any=true
       candidate_corr="$(awk '
         /^---/{delim++; if(delim==2) exit; next}
         delim==1 && /^correlation_id:/{sub(/^correlation_id:[[:space:]]*/,""); print; exit}
       ' "$f")"
-      if [[ -n "$candidate_corr" ]]; then
-        echo "$candidate_corr"
-        return 0
-      fi
+      [[ "$candidate_corr" == "$corr_id" ]] && return 0  # exact match found
     done
   done
-  echo ""
+  $found_any && return 1  # requests exist but none carry this corr_id
+  return 2                # no requests found — skip validation
 }
 
 # _dispatch_msg <msg_file> — 路由并处理单条消息，不做文件删除，返回 0/1
@@ -322,10 +324,16 @@ _dispatch_msg() {
         /^---/{delim++; if(delim==2) exit; next}
         delim==1 && /^correlation_id:/{sub(/^correlation_id:[[:space:]]*/,""); print; exit}
       ' "$msg_file")"
-      local expected_corr; expected_corr="$(_find_request_corr "$req_id")"
-      if [[ -n "$expected_corr" && "$resp_corr" != "$expected_corr" ]]; then
-        warn "correlation_id 不匹配: response=${resp_corr} expected=${expected_corr} req_id=${req_id}"
-        return 1
+      # Fixes Bug 2: only validate when response carries a correlation_id.
+      # Responders that omit it (e.g. Huahua legacy format) are allowed through.
+      if [[ -n "$resp_corr" ]]; then
+        _corr_valid_for_req "$req_id" "$resp_corr"
+        local corr_rc=$?
+        if [[ $corr_rc -eq 1 ]]; then
+          warn "correlation_id 不匹配: response=${resp_corr} req_id=${req_id}"
+          return 1
+        fi
+        # corr_rc=0 (matched) or corr_rc=2 (no requests found) — proceed normally
       fi
       # ── END REQ-035 ────────────────────────────────────────────────────
       local pr_number; pr_number="$(_get_fm_field "$msg_file" "pr_number")"
