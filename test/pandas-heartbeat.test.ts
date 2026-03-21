@@ -2096,3 +2096,67 @@ test("TC-036-06: inbox_write_v2 emits warn when references block contains type n
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// TC-036-07: type=request without payload_file — warn + delegation_incomplete: true
+test("TC-036-07: inbox_write_v2 type=request with no payload_file: emits warn and writes delegation_incomplete: true", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-036-07-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write_v2 "menglan" "request" "implement" "thread_036_7" "corr_036_7" "" "P1" "true" ""`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed (should still succeed)\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // Warn emitted about missing payload_file
+    assert.ok(
+      result.stderr.includes("delegation incomplete"),
+      `Expected delegation incomplete warn. stderr: ${result.stderr}`,
+    );
+
+    // File written with delegation_incomplete: true
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = await readdir(pendingDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    assert.ok(mdFiles.length > 0, "File should still be written despite missing payload_file");
+    const content = await readFile(join(pendingDir, mdFiles[0]), "utf8");
+    assert.ok(
+      content.includes("delegation_incomplete: true"),
+      `File must contain delegation_incomplete: true. content: ${content}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-036-08: non-references type: field should NOT trigger references warn (false-positive regression)
+test("TC-036-08: inbox_write_v2 does not emit references warn for type: field outside references block", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-036-08-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+  const payloadFile = join(tmpDir, "payload.md");
+  // payload has a non-references top-level block with an indented type: field
+  await writeFile(
+    payloadFile,
+    "objective: test\nscope: test\nexpected_output: test\ndone_criteria: test\nmetadata:\n  type: internal\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; ` +
+      `inbox_write_v2 "menglan" "request" "implement" "thread_036_8" "corr_036_8" "" "P2" "false" "${payloadFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // No references warn should be emitted
+    assert.ok(
+      !result.stderr.includes("references type"),
+      `Should not emit references type warn for non-references block. stderr: ${result.stderr}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});

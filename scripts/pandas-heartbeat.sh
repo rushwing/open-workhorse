@@ -170,13 +170,18 @@ inbox_write_v2() {
 
   # REQ-036: delegation field validation (type=request only)
   local delegation_incomplete=false
-  if [[ "$type" == "request" && -n "$payload_file" && -f "$payload_file" ]]; then
-    local _missing_fields=()
-    for _field in objective scope expected_output done_criteria; do
-      grep -q "^${_field}:" "$payload_file" || _missing_fields+=("$_field")
-    done
-    if [[ ${#_missing_fields[@]} -gt 0 ]]; then
-      warn "inbox_write_v2: delegation incomplete — missing: ${_missing_fields[*]}"
+  if [[ "$type" == "request" ]]; then
+    if [[ -n "$payload_file" && -f "$payload_file" ]]; then
+      local _missing_fields=()
+      for _field in objective scope expected_output done_criteria; do
+        grep -q "^${_field}:" "$payload_file" || _missing_fields+=("$_field")
+      done
+      if [[ ${#_missing_fields[@]} -gt 0 ]]; then
+        warn "inbox_write_v2: delegation incomplete — missing: ${_missing_fields[*]}"
+        delegation_incomplete=true
+      fi
+    else
+      warn "inbox_write_v2: delegation incomplete — no payload_file for type=request"
       delegation_incomplete=true
     fi
   fi
@@ -195,11 +200,21 @@ inbox_write_v2() {
     fi
   fi
 
-  # REQ-036: references type validation
+  # REQ-036: references type validation (only within references: block)
   if [[ -n "$payload_file" && -f "$payload_file" ]]; then
+    local _in_references=false
     while IFS= read -r _ref_line; do
-      # Match both "  type: val" and "  - type: val" (YAML list item format)
-      if [[ "$_ref_line" =~ ^[[:space:]]+(-[[:space:]]+)?type:[[:space:]]+(.*) ]]; then
+      # Detect start of references block (top-level key)
+      if [[ "$_ref_line" =~ ^references: ]]; then
+        _in_references=true
+        continue
+      fi
+      # Detect end of references block: any non-empty top-level key that is not a continuation
+      if [[ "$_in_references" == "true" && "$_ref_line" =~ ^[^[:space:]] && -n "$_ref_line" ]]; then
+        _in_references=false
+      fi
+      # Only validate type: lines within the references block
+      if [[ "$_in_references" == "true" && "$_ref_line" =~ ^[[:space:]]+(-[[:space:]]+)?type:[[:space:]]+(.*) ]]; then
         local _ref_type="${BASH_REMATCH[2]}"
         if [[ ! "$_ref_type" =~ ^(req|pr|bug|doc|file)$ ]]; then
           warn "inbox_write_v2: references type '${_ref_type}' not in enum (req|pr|bug|doc|file)"
