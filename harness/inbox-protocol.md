@@ -2,10 +2,9 @@
 harness_id: INBOX-PROTOCOL-001
 component: inbox / IPC
 owner: Engineering
-version: 1.0
-status: partial
-scope_note: "REQ-033（Pandas read/write）active。Menglan/Huahua writer 迁移待 REQ-034+。"
-last_reviewed: 2026-03-20
+version: 1.1
+status: active
+last_reviewed: 2026-03-21
 ---
 
 # Inbox Protocol — ATM Envelope 规范
@@ -14,7 +13,10 @@ last_reviewed: 2026-03-20
 > 如有歧义，以本文档为准。外部讨论纪要（`~/Dev/github-kb/knowledge-topics/agent-teams-messaging/`）仅供参考。
 > 相关 REQ：REQ-032（Umbrella）、REQ-033（P0）、REQ-034（P1a）、REQ-035（P1b）、REQ-036（P2）
 >
-> **实施范围（status: partial）**：REQ-033 范围内，Pandas writer（`inbox_write_v2`）和 Pandas reader（`inbox_read_pandas`）已升级为 ATM Envelope 格式。Huahua reader 已同步支持 ATM request 路由。Menglan/Huahua 的 writer 仍发旧格式，Pandas reader 通过 `_inbox_read_legacy()` 向后兼容——writer 侧迁移待 REQ-034+。
+> **实施范围（status: active）**：ATM 四个子 REQ（REQ-033–036）全部完成。
+> Pandas writer（`inbox_write_v2`）和 Pandas reader（`inbox_read_pandas`）使用 ATM Envelope 格式；
+> 生命周期目录（pending/claimed/done/failed）、Thread/Correlation 追踪、Delegation 结构化、规范文件命名均已落地。
+> Menglan/Huahua 的 writer 仍发旧格式，Pandas reader 通过 `_inbox_read_legacy()` 向后兼容。
 
 ---
 
@@ -22,12 +24,18 @@ last_reviewed: 2026-03-20
 
 ```
 $SHARED_RESOURCES_ROOT/inbox/
-  for-pandas/          # Pandas 收件箱（扁平目录，REQ-033）
-  for-menglan/         # Menglan 收件箱
-  for-huahua/          # Huahua 收件箱
+  for-pandas/
+    pending/     # inbox_write_v2() 默认写入点
+    claimed/     # 原子 mv（防重复消费）
+    done/        # 处理成功
+    failed/      # 处理失败（含末尾错误摘要）
+  for-menglan/
+    pending/ claimed/ done/ failed/
+  for-huahua/
+    pending/ claimed/ done/ failed/
 ```
 
-> REQ-034（ATM-P1a）将引入 `pending/claimed/done/failed/` 子目录。
+> 目录由 `inbox_init()` 创建（幂等）。旧格式扁平文件（REQ-033 之前）仍可被 `_inbox_read_legacy()` 处理。
 
 ---
 
@@ -43,15 +51,24 @@ $SHARED_RESOURCES_ROOT/inbox/
 | `to` | string | 接收方 agent 名称 |
 | `created_at` | ISO 8601 | 创建时间（UTC），格式：`YYYY-MM-DDTHH:MM:SSZ` |
 | `thread_id` | string | 同一任务链路的追踪 ID，格式：`thread_{req_id}_{epoch}` |
-| `correlation_id` | string | 单次请求-响应对的关联 ID，格式：`corr_{req_id}_{epoch}` |
+| `correlation_id` | string | 单次请求-响应对的关联 ID，格式：`corr_{req_id}_{epoch}_{rand4}` |
 | `priority` | enum | `P0` \| `P1` \| `P2` \| `P3` |
 
 ### 2.2 type=request 附加字段
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `action` | string | 请求动词，见 §2.5 合法枚举 |
-| `response_required` | bool | 是否要求响应（true / false） |
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `action` | string | ✅ | 请求动词，见 §2.5 合法枚举 |
+| `response_required` | bool | ✅ | 是否要求响应（true / false） |
+| `objective` | string | ✅ | 任务目标 |
+| `scope` | string | ✅ | 任务范围 |
+| `expected_output` | string | ✅ | 预期产出 |
+| `done_criteria` | string | ✅ | 完成标准 |
+| `context_summary` | string | — | 补充上下文（超 500 字时自动截断 + warn） |
+| `references` | list | — | 参考资源列表；每项 `type` 须在枚举 `req\|pr\|bug\|doc\|file` 内，否则 warn |
+
+> **Delegation 校验**（REQ-036）：`inbox_write_v2()` 在 type=request 时校验上述四个必填字段；
+> 任意字段缺失时 warn + 在 envelope 中写入 `delegation_incomplete: true`，消息仍写入。
 
 ### 2.3 type=response 附加字段
 
@@ -112,17 +129,28 @@ $SHARED_RESOURCES_ROOT/inbox/
 
 ## 4. 文件命名
 
-### 4.1 ATM 过渡格式（REQ-033，inbox_write_v2 当前使用）
-
-> 注：REQ-033 范围内 `inbox_write_v2()` 使用如下**过渡格式**用于 Envelope 消息可识别性。
-> 最终规范化命名（含 `_` 分隔符）由 **REQ-036（ATM-P2）** 定义。
+### 4.1 ATM 规范格式（REQ-036 canonical，inbox_write_v2 当前使用）
 
 ```
-{ISO8601_datetime//:/-}__{type}__{from}_to_{to}__{correlation_id}.md
+{timestamp}_{type}_{from}_to_{to}_{corr_or_evt}.md
+```
+
+| 占位符 | 说明 |
+|--------|------|
+| `{timestamp}` | `YYYYMMDDHHMMSS`（UTC，`date -u +%Y%m%d%H%M%S`，无 T 分隔符、无冒号/破折号） |
+| `{type}` | `request` / `response` / `notification` |
+| `{from}_to_{to}` | 发送方 → 接收方，如 `pandas_to_menglan` |
+| `{corr_or_evt}` | request/response：`correlation_id`；notification：`evt_{event_type}_{timestamp}` |
 
 示例：
-2026-03-20T17-47-00Z__request__pandas_to_menglan__corr_REQ-033_1710867000.md
 ```
+20260320174700_request_pandas_to_menglan_corr_REQ-033_1710867000_a3f2.md
+20260320175100_response_menglan_to_pandas_corr_REQ-033_1710867000_a3f2.md
+20260320180000_notification_pandas_to_menglan_evt_stall_detected_20260320180000.md
+```
+
+> **已废弃的过渡格式**（REQ-033 阶段，inbox_read_pandas() 仍可解析）：
+> `{ISO8601_datetime//:/-}__{type}__{from}_to_{to}__{correlation_id}.md`（双下划线分隔）
 
 ### 4.2 旧格式（legacy，兼容期）
 
@@ -162,7 +190,7 @@ legacy_type: tc_complete   # 或 dev_complete, review_blocked
 | `review_blocked` | warn only | 阶段 5 Code Review 拒绝/阻塞 |
 | `dev_complete` 或空 | `_handle_dev_complete()` | 旧式实现完成（向后兼容） |
 
-> **重要**：`legacy_type` 是 REQ-033 阶段的 response 路由主判据（子类型路由），`status` 字段仅用于同一子类型内的成功/失败分支判定。两者协同，缺一不可。这是过渡机制，将在 REQ-035（Thread/Correlation）中被正式的消息类型体系取代。
+> **重要**：`legacy_type` 是 response 路由主判据（子类型路由），`status` 字段仅用于同一子类型内的成功/失败分支判定。两者协同，缺一不可。REQ-035 引入了 Thread/Correlation 追踪，但未替换 `legacy_type` 路由机制——后者仍为 Pandas reader 的 response 分派依据。
 
 ---
 
@@ -205,20 +233,55 @@ legacy_type: tc_complete   # 或 dev_complete, review_blocked
 
 ### 7.2 消费语义
 
-- 处理成功：`rm -f` 消息文件（当前，REQ-033）
-- REQ-034 引入后：处理成功 → `mv claimed/ → done/`；失败 → `mv claimed/ → failed/`
+1. 读取前原子 claim：`mv pending/$f claimed/$f`
+   - mv 失败且源文件消失（ENOENT 竞争）→ 静默 skip，不报错
+   - mv 失败且源文件仍在（真实 fs 错误）→ `err()` 输出到 stderr，skip
+2. handler 执行成功：`mv claimed/$f done/$f`
+3. handler 异常退出：`mv claimed/$f failed/$f`，将错误摘要追加到文件末尾
+
+### 7.3 Thread / Correlation 规则（REQ-035）
+
+- **thread_id**：Pandas 路由第一个 request 时通过 `thread_get_or_create <req_id>` 创建
+  - 格式：`thread_{req_id}_{epoch}`
+  - 持久化位置：**仅写入消息 Envelope frontmatter**，不写回 REQ 文件（Daniel 决策 2026-03-20）
+  - 同一 REQ 的所有后续 request 复用相同 `thread_id`
+  - 链路重建：`grep thread_id done/ failed/` 可还原完整协作轨迹
+
+- **correlation_id**：每次新 request 由 `correlation_new <req_id>` 生成
+  - 格式：`corr_{req_id}_{epoch}_{rand4}`（`rand4` 为随机 4 位小写字母数字，保证亚秒唯一性）
+  - Response 到达时 Pandas 验证 `correlation_id` 是否与发出的 request 配对
+  - 配对失败 → warn 日志 + 消息移到 `failed/`
 
 ---
 
 ## 8. 函数签名参考
 
 ```bash
-# inbox_write_v2 <target> <type> <action_or_event> <thread_id> <correlation_id>
-#                [in_reply_to] [priority] [response_required] [payload_file]
+# — 初始化生命周期目录（幂等，每次 cron 启动前调用）
+inbox_init
+
+# — 生成或复用 thread_id（REQ-035）
+thread_id=$(thread_get_or_create "REQ-033")   # 格式：thread_REQ-033_{epoch}
+
+# — 生成新 correlation_id（REQ-035）
+corr_id=$(correlation_new "REQ-033")          # 格式：corr_REQ-033_{epoch}_{rand4}
+
+# — inbox_write_v2 <target> <type> <action_or_event> <thread_id> <correlation_id>
+#                  [in_reply_to] [priority] [response_required] [payload_file]
+# payload_file (type=request) 必须包含 objective / scope / expected_output / done_criteria
 inbox_write_v2 "menglan" "request" "implement" \
-  "thread_REQ-033_$(date +%s)" "corr_REQ-033_$(date +%s)" \
+  "$thread_id" "$corr_id" \
   "" "P1" "true" "$payload_tmpfile"
 
-# inbox_write — @deprecated wrapper, delegates to inbox_write_v2
+# — @deprecated wrapper，委托给 inbox_write_v2
 inbox_write "menglan" "implement" "REQ-033" "实现 REQ-033"
 ```
+
+---
+
+## 9. 变更日志
+
+| 版本 | 日期 | 变更摘要 |
+|------|------|---------|
+| 1.0 | 2026-03-20 | 初始版本（status: partial）；REQ-033 范围：统一 ATM Envelope 格式、inbox_write_v2、_inbox_read_legacy 向后兼容、过渡文件命名格式 |
+| 1.1 | 2026-03-21 | status partial → active；REQ-034–036 全部落地：生命周期目录结构（§1）、规范文件命名（§4.1）、delegation 字段规范（§2.2）、Thread/Correlation 规则（§7.3）、消费语义更新为 mv 语义（§7.2）；修正 legacy_type 注释（非过渡机制，REQ-035 未替换）；新增函数签名 inbox_init / thread_get_or_create / correlation_new（§8）|

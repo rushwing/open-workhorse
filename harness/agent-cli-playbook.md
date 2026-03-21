@@ -2,9 +2,9 @@
 harness_id: CLI-PB-001
 component: agent operations / CLI invocation
 owner: Engineering
-version: 0.3
+version: 0.4
 status: active
-last_reviewed: 2026-03-18
+last_reviewed: 2026-03-21
 ---
 
 # Harness Playbook — Agent CLI 调用模板
@@ -145,8 +145,10 @@ You are Pandas — the orchestrator. Do not ask clarifying questions.
 ## Orchestration Loop (one iteration)
 
 Step 0 — Check for-pandas/ inbox first:
-  Read new result packets: ls \$SHARED_RESOURCES_ROOT/inbox/for-pandas/
-  If result packets present → process them (route-result-decide_next_step) before scanning tasks.
+  Ensure lifecycle dirs exist: source scripts/pandas-heartbeat.sh 2>/dev/null && inbox_init
+  Read new result packets: ls \$SHARED_RESOURCES_ROOT/inbox/for-pandas/pending/
+  If result packets present → process them via inbox_read_pandas() (route-result-decide_next_step) before scanning tasks.
+  (inbox_read_pandas atomically mv pending→claimed before handling; do not manually process files)
 
 Step 1 — Scan for claimable tasks:
   Run: ./scripts/harness.sh status
@@ -156,11 +158,11 @@ Step 1 — Scan for claimable tasks:
 Step 2 — Notify Huahua to review (ATM inbox):
   Once a new PR is detected, use inbox_write_v2 to send an ATM request to Huahua:
   source scripts/pandas-heartbeat.sh 2>/dev/null
+  THREAD=\$(thread_get_or_create "<REQ-N>")
+  CORR=\$(correlation_new "<REQ-N>")
   PAYLOAD=\$(mktemp)
-  printf 'req_id: <REQ-N>\npr_number: <N>\nsummary: review dev PR #<N> for <REQ-N>\n' > "\$PAYLOAD"
-  inbox_write_v2 "huahua" "request" "review" \
-    "thread_<REQ-N>_\$(date +%s)" "corr_<REQ-N>_\$(date +%s)" \
-    "" "P1" "true" "\$PAYLOAD"
+  printf 'req_id: <REQ-N>\npr_number: <N>\nobjective: Review PR #<N> for <REQ-N> correctness and contract compliance\nscope: <REQ-N> implementation diff\nexpected_output: PR review comments with BLOCK/NIT classifications\ndone_criteria: All BLOCK findings addressed or PR approved\n' > "\$PAYLOAD"
+  inbox_write_v2 "huahua" "request" "review" "\$THREAD" "\$CORR" "" "P1" "true" "\$PAYLOAD"
   rm -f "\$PAYLOAD"
   DO NOT read the PR diff yourself.
 
@@ -301,3 +303,4 @@ Curate memory candidates from ~/workspace-pandas/memory/short-term/candidates/:
 | 0.1 | 2026-03-15 | 初始版本（从 hydro-om-copilot CLI-PB-001 v0.4 改写）；删去模板 E（TC 设计，Codex）、F（PR Review，Codex）、G/G-Promote（Bug 上报，Codex）、H（一致性审查，Codex）；保留 A/B/C/D/I；新增模板 J（代码/文档一致性审查，Claude Code 版）；删去 Stacked PR / Bundle 自动化 |
 | 0.2 | 2026-03-15 | 新增模板 K（Pandas 编排流程）；新增 §Runbook 节（harness/runbook/ 查询与贡献）；人工触发部分补充 watchdog/telegram 命令；注意事项表新增 Pandas / 停滞检测 / HITL 通知行 |
 | 0.3 | 2026-03-18 | 模板 K：替换 gh issue create 为 inbox file write（agent-inbox-write_review_packet）；Step 0 新增"先检查 for-pandas/ inbox"；新增 CAPABILITIES.md 引用；新增模板 L（Memory Curation）|
+| 0.4 | 2026-03-21 | 模板 K 对齐 ATM REQ-034–036：Step 0 路径改为 pending/，加 inbox_init 前置；Step 2 payload 补全 4 个 delegation 必填字段（objective/scope/expected_output/done_criteria），thread/corr 生成改用 thread_get_or_create / correlation_new |
