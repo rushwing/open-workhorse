@@ -2131,6 +2131,150 @@ test("TC-036-07: inbox_write_v2 type=request with no payload_file: emits warn an
   }
 });
 
+// ── REQ-037: _auto_worktree_clean ───────────────────────────────────────────
+
+/**
+ * Build a mock git binary in tmpDir/bin/ whose behaviour is controlled by
+ * simple env vars, and return the mock bin path.
+ *
+ * MOCK_WORKTREE_PATH — if set, `git worktree list` includes this path
+ * MOCK_BRANCH        — value returned by `git -C <path> branch --show-current`
+ * MOCK_REMOVE_FILE   — if set, `git worktree remove --force <path>` writes "removed" to this file
+ */
+async function makeMockGit(binDir: string): Promise<void> {
+  await mkdir(binDir, { recursive: true });
+  const mockGit = join(binDir, "git");
+  await writeFile(
+    mockGit,
+    `#!/usr/bin/env bash
+# minimal git mock for _auto_worktree_clean tests
+case "$*" in
+  "worktree list")
+    if [[ -n "\${MOCK_WORKTREE_PATH:-}" ]]; then
+      echo "\${MOCK_WORKTREE_PATH}  abc1234 [feat/REQ-037]"
+    fi
+    ;;
+  "-C "*" branch --show-current")
+    echo "\${MOCK_BRANCH:-}"
+    ;;
+  "worktree remove --force "*)
+    if [[ -n "\${MOCK_REMOVE_FILE:-}" ]]; then
+      echo "removed" > "\${MOCK_REMOVE_FILE}"
+    fi
+    ;;
+esac
+exit 0
+`,
+    "utf8",
+  );
+  await chmod(mockGit, 0o755);
+}
+
+test("TC-037: _auto_worktree_clean skips when no worktree is mounted", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-037-clean-skip-${Date.now()}`);
+  const binDir = join(tmpDir, "bin");
+  await makeMockGit(binDir);
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; REPO_ROOT="${tmpDir}" _auto_worktree_clean`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        MENGLAN_WORKTREE_ROOT: join(tmpDir, "worktree"),
+        PATH: `${binDir}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+        // no MOCK_WORKTREE_PATH → git worktree list returns nothing
+      },
+    );
+    assert.equal(result.code, 0, `should exit 0\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    // No "auto_worktree_clean" action log
+    assert.ok(
+      !result.stdout.includes("自动移除"),
+      `Should not attempt removal when no worktree is mounted. stdout: ${result.stdout}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("TC-037: _auto_worktree_clean removes worktree when REQ status is done", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-037-clean-done-${Date.now()}`);
+  const binDir = join(tmpDir, "bin");
+  const worktreePath = join(tmpDir, "worktree");
+  const removeMarker = join(tmpDir, "removed.flag");
+  await makeMockGit(binDir);
+
+  // Write a done REQ file in the tmp REPO_ROOT
+  const featuresDir = join(tmpDir, "tasks", "features");
+  await mkdir(featuresDir, { recursive: true });
+  await writeFile(
+    join(featuresDir, "REQ-037.md"),
+    "---\nreq_id: REQ-037\nstatus: done\nowner: claude_code\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; REPO_ROOT="${tmpDir}" _auto_worktree_clean`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        MENGLAN_WORKTREE_ROOT: worktreePath,
+        PATH: `${binDir}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+        MOCK_WORKTREE_PATH: worktreePath,
+        MOCK_BRANCH: "feat/REQ-037",
+        MOCK_REMOVE_FILE: removeMarker,
+      },
+    );
+    assert.equal(result.code, 0, `should exit 0\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(
+      existsSync(removeMarker),
+      `git worktree remove should have been called (marker file missing). stdout: ${result.stdout}`,
+    );
+    assert.ok(
+      result.stdout.includes("自动移除") || result.stdout.includes("auto_worktree_clean"),
+      `Expected removal log. stdout: ${result.stdout}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("TC-037: _auto_worktree_clean leaves worktree when REQ is still in_progress", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-037-clean-live-${Date.now()}`);
+  const binDir = join(tmpDir, "bin");
+  const worktreePath = join(tmpDir, "worktree");
+  const removeMarker = join(tmpDir, "removed.flag");
+  await makeMockGit(binDir);
+
+  const featuresDir = join(tmpDir, "tasks", "features");
+  await mkdir(featuresDir, { recursive: true });
+  await writeFile(
+    join(featuresDir, "REQ-037.md"),
+    "---\nreq_id: REQ-037\nstatus: in_progress\nowner: claude_code\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; REPO_ROOT="${tmpDir}" _auto_worktree_clean`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        MENGLAN_WORKTREE_ROOT: worktreePath,
+        PATH: `${binDir}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+        MOCK_WORKTREE_PATH: worktreePath,
+        MOCK_BRANCH: "feat/REQ-037",
+        MOCK_REMOVE_FILE: removeMarker,
+      },
+    );
+    assert.equal(result.code, 0, `should exit 0\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(
+      !existsSync(removeMarker),
+      `git worktree remove must NOT be called for an in_progress REQ. stdout: ${result.stdout}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 // TC-036-08: non-references type: field should NOT trigger references warn (false-positive regression)
 test("TC-036-08: inbox_write_v2 does not emit references warn for type: field outside references block", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-036-08-${Date.now()}`);
