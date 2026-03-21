@@ -51,7 +51,7 @@ $SHARED_RESOURCES_ROOT/inbox/
 | `to` | string | 接收方 agent 名称 |
 | `created_at` | ISO 8601 | 创建时间（UTC），格式：`YYYY-MM-DDTHH:MM:SSZ` |
 | `thread_id` | string | 同一任务链路的追踪 ID，格式：`thread_{req_id}_{epoch}` |
-| `correlation_id` | string | 单次请求-响应对的关联 ID，格式：`corr_{req_id}_{epoch}` |
+| `correlation_id` | string | 单次请求-响应对的关联 ID，格式：`corr_{req_id}_{epoch}_{rand4}` |
 | `priority` | enum | `P0` \| `P1` \| `P2` \| `P3` |
 
 ### 2.2 type=request 附加字段
@@ -248,7 +248,7 @@ legacy_type: tc_complete   # 或 dev_complete, review_blocked
   - 链路重建：`grep thread_id done/ failed/` 可还原完整协作轨迹
 
 - **correlation_id**：每次新 request 由 `correlation_new <req_id>` 生成
-  - 格式：`corr_{req_id}_{epoch}`
+  - 格式：`corr_{req_id}_{epoch}_{rand4}`（`rand4` 为随机 4 位小写字母数字，保证亚秒唯一性）
   - Response 到达时 Pandas 验证 `correlation_id` 是否与发出的 request 配对
   - 配对失败 → warn 日志 + 消息移到 `failed/`
 
@@ -264,7 +264,7 @@ inbox_init
 thread_id=$(thread_get_or_create "REQ-033")   # 格式：thread_REQ-033_{epoch}
 
 # — 生成新 correlation_id（REQ-035）
-corr_id=$(correlation_new "REQ-033")          # 格式：corr_REQ-033_{epoch}
+corr_id=$(correlation_new "REQ-033")          # 格式：corr_REQ-033_{epoch}_{rand4}
 
 # — inbox_write_v2 <target> <type> <action_or_event> <thread_id> <correlation_id>
 #                  [in_reply_to] [priority] [response_required] [payload_file]
