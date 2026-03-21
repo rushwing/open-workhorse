@@ -2,9 +2,9 @@
 harness_id: REQ-STD-001
 component: requirements / task routing
 owner: Engineering
-version: 0.4
+version: 0.5
 status: active
-last_reviewed: 2026-03-17
+last_reviewed: 2026-03-21
 ---
 
 # Harness Standard — 需求管理与任务认领规程
@@ -380,6 +380,9 @@ test_designed (Huahua 写 Menglan inbox)
 - [ ] 读对应需求项，确认验收标准
 - [ ] 读 `test_case_ref` 中所有 TC 文档，理解需要通过的测试场景
 - [ ] 先写测试（或确认 TC 已可运行），再写实现
+- [ ] **工作目录**：harness.sh 会在 prompt 中注入 worktree 路径。git 和 npm 命令必须在
+  `$MENGLAN_WORKTREE_ROOT`（默认 `~/workspace-menglan/open-workhorse/`）内执行，
+  不可在 `~/workspace-pandas/open-workhorse/` 内执行（REQ-037）
 
 ### 9.2 实现后（PR 提交时）
 

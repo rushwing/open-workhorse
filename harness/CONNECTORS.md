@@ -85,6 +85,8 @@ rg '^### `agent-' harness/CONNECTORS.md
 | `mem-longterm-write_knowledge` | `cli` | `sqlite3` | `local_write` | `task_scoped` | Persist accepted candidates into project.db (Pandas only) |
 | `notify-human-send_status_update` | `cli` | `telegram.sh tg_pr_ready` | `remote_write` | `human_required` | Send user-facing status updates |
 | `runtime-agent-read_worker_status` | `cli` | `heartbeat/status files` | `none` | `none` | Read worker idle or busy status |
+| `runtime-harness-worktree_setup` | `cli` | `cmd_worktree_setup() → git worktree add` | `local_write` | `task_scoped` | 为 Menglan 创建 git worktree |
+| `runtime-harness-worktree_clean` | `cli` | `_auto_worktree_clean() / git worktree remove` | `local_write` | `task_scoped` | 移除 Menglan worktree |
 
 ## Connector Specs
 
@@ -549,6 +551,45 @@ side_effect: none
 approval_mode: none
 notes:
   - Pandas uses this to time wakeups, not to override workflow guards
+```
+
+### `runtime-harness-worktree_setup`
+
+```yaml
+capability: runtime-harness-worktree_setup
+backend: cli
+driver: cmd_worktree_setup() → git worktree add
+entrypoint: scripts/harness.sh implement <REQ-N>
+requires:
+  - git repo with origin/main reachable
+  - MENGLAN_WORKTREE_ROOT (default ~/workspace-menglan/open-workhorse/)
+returns:
+  - git worktree at MENGLAN_WORKTREE_ROOT on branch feat/<REQ-N>
+side_effect: local_write
+approval_mode: task_scoped
+notes:
+  - triggered automatically by harness.sh implement via cmd_worktree_setup(), not called directly
+  - idempotent: path+branch match → skip; wrong branch → exit 1
+  - branch forked from origin/main, not caller HEAD
+```
+
+### `runtime-harness-worktree_clean`
+
+```yaml
+capability: runtime-harness-worktree_clean
+backend: cli
+driver: _auto_worktree_clean() / git worktree remove --force
+entrypoint: automatic (pandas-heartbeat.sh) or scripts/harness.sh worktree-clean <REQ-N>
+requires:
+  - MENGLAN_WORKTREE_ROOT (same path used during setup)
+returns:
+  - worktree removed; no-op if already absent
+side_effect: local_write
+approval_mode: task_scoped
+notes:
+  - primary: heartbeat _auto_worktree_clean fires on every tick, removes when REQ status=done
+  - manual: harness.sh worktree-clean <REQ-N> validates branch match before removing
+  - refuses to remove if mounted branch != feat/<REQ-N>
 ```
 
 ## Preferred Backend Order
