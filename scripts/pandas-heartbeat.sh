@@ -1072,9 +1072,7 @@ main() {
   inbox_read_pandas
 
   # 3. 处理 Telegram 指令（REQ-024）
-  # DISABLED: tg_poll_commands 与 openclaw-gateway 使用同一 bot token 导致 409 冲突
-  # Telegram 指令已由 openclaw-gateway 路由，pandas-heartbeat 无需直接 poll
-  # handle_telegram_commands
+  handle_telegram_commands
 
   # 3.5. claim review_ready REQs → req_review（BUG-004）
   claim_review_ready
