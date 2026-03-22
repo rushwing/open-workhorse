@@ -132,6 +132,7 @@ _process_message() {
     case "$action_val" in
       review|code_review) resolved_type="code_review" ;;
       tc_design)          resolved_type="tc_design" ;;
+      req_review)         resolved_type="req_review" ;;
       *)
         warn "ATM request action=${action_val} — 暂无专用 handler，移至 dead-letter"
         return 1
@@ -216,6 +217,37 @@ ${pr_diff}
    pr_number: ${pr_number}
    status: blocked
    blocking_reason: <summary of findings>"
+      ;;
+    req_review)
+      info "req_review → claude -p 需求评审 ${req_id}"
+      local req_file="tasks/features/${req_id}.md"
+      local req_content=""
+      [[ -f "$req_file" ]] && req_content="$(cat "$req_file")"
+      "${CLAUDE_CMD[@]}" "Read harness/harness-index.md and harness/requirement-standard.md.
+Do not ask clarifying questions — proceed with your best judgment at every step.
+
+Your task: review the requirements for ${req_id} and advance its status.
+
+## REQ content
+${req_content:-"(REQ file not found at ${req_file}. Abort and write a failure notice to inbox/for-pandas/pending/)"}
+
+## Steps
+1. Evaluate the REQ: acceptance criteria clarity, scope definition, frontmatter completeness
+2. Run: bash scripts/check-req-coverage.sh
+3. If REQ PASSES review (acceptance clear, scope well-defined, frontmatter valid):
+   a. Update tasks/features/${req_id}.md: status → ready, owner → huahua
+   b. Commit: 'req-review: ${req_id} passed → ready'
+   c. Design test cases: create TC files under tasks/test-cases/ following harness/testing-standard.md
+   d. Update ${req_id}.md: status → test_designed, test_case_ref populated
+   e. Commit: 'tc: ${req_id} test case design'
+   f. Open TC PR and capture PR number: TC_PR_NUM=\$(gh pr create --fill | grep -oE '[0-9]+\$')
+   g. Write ATM message to inbox/for-menglan/pending/ (type: request, action: tc_review, req_id: ${req_id}, pr_number: \$TC_PR_NUM)
+4. If REQ has DEFECTS (unclear acceptance, scope ambiguity, missing required fields):
+   a. Determine next BUG ID: ls tasks/bugs/ | sort | tail -1
+   b. Create tasks/bugs/BUG-NNN.md with bug_type: req_bug, related_req: [${req_id}], status: open
+   c. Update ${req_id}.md: status → blocked, blocked_reason: req_review_feedback, blocked_from_status: req_review, blocked_from_owner: huahua, owner → unassigned; add BUG-NNN to pending_bugs
+   d. Commit: 'bug-block: ${req_id} blocked by BUG-NNN'
+   e. Reply summary to inbox/for-pandas/pending/ (type: response, legacy_type: review_blocked, req_id: ${req_id}, status: blocked, blocking_reason: <one-line summary>)"
       ;;
     *)
       warn "未知消息类型: ${resolved_type} — 移至 dead-letter"
@@ -308,5 +340,8 @@ main() {
 
   info "huahua-heartbeat 完成"
 }
+
+# Guard: skip main() when script is sourced (for unit tests)
+[[ "${BASH_SOURCE[0]}" != "$0" ]] && return 0
 
 main "$@"

@@ -93,7 +93,7 @@ inbox_write() {
   # code_review 规范化为 review（Daniel 决策 2026-03-20）
   local new_type action_or_event
   case "$type" in
-    implement|tc_design|review|code_review|bugfix|fix_review|escalate|clarify)
+    implement|tc_design|review|code_review|bugfix|fix_review|escalate|clarify|req_review)
       new_type="request"
       # code_review → review（canonical action）
       [[ "$type" == "code_review" ]] && action_or_event="review" || action_or_event="$type"
@@ -770,6 +770,43 @@ _send_status_report() {
   tg_notify "$msg" || warn "tg_notify 发送失败"
 }
 
+# ── BUG-004: review_ready → req_review claim ─────────────────────────────────
+
+# claim_review_ready — 扫描 review_ready 状态 REQ，原子转换为 req_review 并写 Huahua inbox
+# 必须在 auto_claim 之前调用，防止 review_ready REQ 被误认为不可认领而永久跳过（BUG-004）
+claim_review_ready() {
+  [[ -f "$HOLD_FLAG" ]] && { info "hold 模式，跳过 claim_review_ready"; return 0; }
+
+  for f in tasks/features/REQ-*.md; do
+    [[ -f "$f" ]] || continue
+
+    local status owner
+    status="$(_get_fm_field "$f" "status")"
+    owner="$(_get_fm_field "$f" "owner")"
+
+    [[ "$status" == "review_ready" && "$owner" == "unassigned" ]] || continue
+
+    local req_id title
+    req_id="$(_get_fm_field "$f" "req_id")"
+    title="$(_get_fm_field "$f" "title")"
+
+    # 原子更新 frontmatter（state-as-lock: 防止并发心跳重复认领）
+    sed -i.bak \
+      -e "s/^status: review_ready/status: req_review/" \
+      -e "s/^owner: unassigned/owner: huahua/" \
+      "$f"
+    rm -f "${f}.bak"
+
+    ok "claim_review_ready: ${req_id} → req_review (owner=huahua)"
+
+    # 写 Huahua inbox 需求评审请求
+    local req_body=""
+    [[ -f "$f" ]] && req_body="$(cat "$f")"
+    inbox_write "huahua" "req_review" "$req_id" \
+      "需求评审请求：${title}" "" "" "" "" "$req_body"
+  done
+}
+
 # ── REQ-022: Auto-claim ───────────────────────────────────────────────────────
 
 # get_priority_rank <priority_str>
@@ -1036,6 +1073,9 @@ main() {
 
   # 3. 处理 Telegram 指令（REQ-024）
   handle_telegram_commands
+
+  # 3.5. claim review_ready REQs → req_review（BUG-004）
+  claim_review_ready
 
   # 4. Auto-claim（REQ-022）
   auto_claim
