@@ -341,4 +341,7 @@ main() {
   info "huahua-heartbeat 完成"
 }
 
+# Guard: skip main() when script is sourced (for unit tests)
+[[ "${BASH_SOURCE[0]}" != "$0" ]] && return 0
+
 main "$@"
