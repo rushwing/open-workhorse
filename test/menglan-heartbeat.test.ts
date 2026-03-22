@@ -41,9 +41,10 @@ async function runBash(
 
 /**
  * Create isolated tmpDir with inbox structure + mock scripts/harness.sh.
- * harnessOutput: what the mock harness.sh prints to stdout (default: empty)
+ * harnessOutput: what the mock prints to stdout (default: empty)
+ * harnessExit:   exit code the mock returns (default: 0)
  */
-async function setupTmpEnv(tmpDir: string, harnessOutput = ""): Promise<void> {
+async function setupTmpEnv(tmpDir: string, harnessOutput = "", harnessExit = 0): Promise<void> {
   await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-menglan", "claimed"), { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-menglan", "done"), { recursive: true });
@@ -54,7 +55,7 @@ async function setupTmpEnv(tmpDir: string, harnessOutput = ""): Promise<void> {
   const mockHarness = join(tmpDir, "scripts", "harness.sh");
   await writeFile(
     mockHarness,
-    `#!/usr/bin/env bash\necho "HARNESS_CALLED $@" >> "${tmpDir}/harness_calls.log"\necho '${harnessOutput}'\nexit 0\n`,
+    `#!/usr/bin/env bash\necho "HARNESS_CALLED $@" >> "${tmpDir}/harness_calls.log"\necho '${harnessOutput}'\nexit ${harnessExit}\n`,
     "utf8",
   );
   await chmod(mockHarness, 0o755);
@@ -159,6 +160,53 @@ test("TC-BUG004-M02: menglan action=tc_review without pr_number routes to failed
 
     const combined = result.stdout + result.stderr;
     assert.ok(combined.includes("pr_number"), `Should warn about missing pr_number. output: ${combined}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── BUG-004 regression: TC-BUG004-M03 — harness.sh non-zero exit routes to failed/ ──
+
+test("TC-BUG004-M03: menglan tc_review harness.sh non-zero exit routes to failed/, not tc_complete", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-bug004-m03-${Date.now()}`);
+  // Mock exits 7 (simulates gh auth failure / invalid PR / Claude crash)
+  await setupTmpEnv(tmpDir, "tc-review: NEEDS_CHANGES would fool you", 7);
+
+  await writeFile(
+    join(tmpDir, "inbox", "for-menglan", "pending", "2026-03-22-tc-review-fail.md"),
+    "---\ntype: request\naction: tc_review\nreq_id: REQ-905\npr_number: 99\nsummary: TC review that will fail\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" bash "${SCRIPT}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    // Message MUST land in failed/ — not silently converted to tc_complete
+    const failedFiles = (await readdir(join(tmpDir, "inbox", "for-menglan", "failed")).catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    assert.ok(
+      failedFiles.length > 0,
+      `harness.sh non-zero exit should route to failed/. stdout: ${result.stdout}\nstderr: ${result.stderr}`,
+    );
+
+    // Pandas inbox must NOT contain a tc_complete response
+    const pandasFiles = (await readdir(join(tmpDir, "inbox", "for-pandas", "pending")).catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    for (const f of pandasFiles) {
+      const content = await readFile(join(tmpDir, "inbox", "for-pandas", "pending", f), "utf8");
+      assert.ok(
+        !content.includes("legacy_type: tc_complete"),
+        `Pandas inbox must not contain tc_complete on worker failure. Found:\n${content}`,
+      );
+    }
+
+    // Log must mention worker failure, not TC feedback
+    const combined = result.stdout + result.stderr;
+    assert.ok(
+      combined.includes("worker failure") || combined.includes("exited 7") || combined.includes("exited"),
+      `Should log worker failure. output: ${combined}`,
+    );
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

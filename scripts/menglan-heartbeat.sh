@@ -172,9 +172,16 @@ _process_message() {
         return 1
       fi
       info "路由 tc_review → harness.sh tc-review ${pr_number}"
-      local review_output review_exit
-      review_output="$(bash "$REPO_ROOT/scripts/harness.sh" tc-review "$pr_number" 2>&1)" || review_exit=$?
-      # Parse Claude's conclusion line to determine pass/fail
+      local review_output review_rc
+      review_output="$(bash "$REPO_ROOT/scripts/harness.sh" tc-review "$pr_number" 2>&1)"
+      review_rc=$?
+      # Non-zero exit = infrastructure/runtime failure (bad PR#, gh auth, Claude crash).
+      # Treat as worker failure: route to failed/ so Pandas sees a proper error notice.
+      if [[ $review_rc -ne 0 ]]; then
+        warn "harness.sh tc-review exited ${review_rc} — routing to failed/ (worker failure, not TC feedback)"
+        return 1
+      fi
+      # Zero exit: parse Claude's conclusion line to determine pass/fail
       local tc_status="blocked" tc_blocking=""
       if echo "$review_output" | grep -q "tc-review: APPROVED"; then
         tc_status="success"
