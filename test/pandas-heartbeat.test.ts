@@ -2304,3 +2304,58 @@ test("TC-036-08: inbox_write_v2 does not emit references warn for type: field ou
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── BUG-004: TC-022-05 claim_review_ready transitions review_ready → req_review ──
+
+test("TC-022-05: claim_review_ready transitions review_ready REQ to req_review and writes huahua inbox", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-022-05-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+
+  // review_ready REQ — should be claimed
+  await writeFile(
+    join(featuresDir, "REQ-903.md"),
+    "---\nreq_id: REQ-903\ntitle: Review Ready Task\nstatus: review_ready\npriority: P1\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: []\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\npending_bugs: []\n---\n",
+    "utf8",
+  );
+
+  // already req_review REQ — should NOT be touched
+  await writeFile(
+    join(featuresDir, "REQ-904.md"),
+    "---\nreq_id: REQ-904\ntitle: Already Claimed\nstatus: req_review\npriority: P1\nphase: phase-2\nowner: huahua\ndepends_on: []\ntest_case_ref: []\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\npending_bugs: []\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; claim_review_ready`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // REQ-903 must be transitioned
+    const req903 = await readFile(join(featuresDir, "REQ-903.md"), "utf8");
+    assert.ok(req903.includes("status: req_review"), `REQ-903 status should be req_review. Got:\n${req903}`);
+    assert.ok(req903.includes("owner: huahua"), `REQ-903 owner should be huahua. Got:\n${req903}`);
+
+    // REQ-904 must be untouched
+    const req904 = await readFile(join(featuresDir, "REQ-904.md"), "utf8");
+    assert.ok(req904.includes("status: req_review"), "REQ-904 status should remain req_review");
+    assert.ok(req904.includes("owner: huahua"), "REQ-904 owner should remain huahua");
+
+    // Huahua inbox must have a message for REQ-903
+    const huahuaDir = join(tmpDir, "inbox", "for-huahua", "pending");
+    const files = await readdir(huahuaDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+    assert.ok(mdFiles.length > 0, "Expected at least one message in for-huahua/pending/");
+
+    const msgContent = await readFile(join(huahuaDir, mdFiles[0]!), "utf8");
+    assert.ok(msgContent.includes("req_id: REQ-903"), `Huahua inbox message should reference REQ-903. Got:\n${msgContent}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
