@@ -83,6 +83,32 @@ _rollback_task() {
   warn "rollback: ${req_id} → status=${rollback_status}, owner=unassigned"
 }
 
+# ── tc_complete 回报 Pandas ───────────────────────────────────────────────────
+# _write_tc_complete <req_id> <pr_number> <status> [blocking_reason]
+# 向 inbox/for-pandas/pending/ 写入 tc_complete response，供 Pandas _handle_tc_complete 处理
+_write_tc_complete() {
+  local req_id="$1" pr_number="$2" status="$3" blocking_reason="${4:-}"
+  local date_str filename
+  date_str="$(date +%Y-%m-%d)"
+  filename="${date_str}-menglan-tc-complete-${req_id}-$$-${RANDOM}.md"
+  mkdir -p "${INBOX_ROOT}/for-pandas/pending"
+  {
+    echo "---"
+    echo "type: response"
+    echo "from: menglan"
+    echo "to: pandas"
+    echo "created_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "priority: P1"
+    echo "---"
+    echo "legacy_type: tc_complete"
+    echo "req_id: ${req_id}"
+    echo "pr_number: ${pr_number}"
+    echo "status: ${status}"
+    [[ -n "$blocking_reason" ]] && echo "blocking_reason: ${blocking_reason}"
+  } > "${INBOX_ROOT}/for-pandas/pending/${filename}"
+  ok "tc_complete(${status}) → for-pandas/pending/${filename}"
+}
+
 # ── Failsafe: 失败通知 Pandas ─────────────────────────────────────────────────
 _notify_pandas_failure() {
   local msg_basename="$1" reason="$2" req_id="$3"
@@ -146,7 +172,16 @@ _process_message() {
         return 1
       fi
       info "路由 tc_review → harness.sh tc-review ${pr_number}"
-      bash "$REPO_ROOT/scripts/harness.sh" tc-review "$pr_number"
+      local review_output review_exit
+      review_output="$(bash "$REPO_ROOT/scripts/harness.sh" tc-review "$pr_number" 2>&1)" || review_exit=$?
+      # Parse Claude's conclusion line to determine pass/fail
+      local tc_status="blocked" tc_blocking=""
+      if echo "$review_output" | grep -q "tc-review: APPROVED"; then
+        tc_status="success"
+      else
+        tc_blocking="$(echo "$review_output" | grep -oE 'tc-review: NEEDS_CHANGES[^\n]*' | head -1 || echo 'TC changes required — see review output')"
+      fi
+      _write_tc_complete "$req_id" "$pr_number" "$tc_status" "$tc_blocking"
       ;;
     *)
       warn "未知消息类型: ${type} — 移至 dead-letter"
