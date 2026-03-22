@@ -116,8 +116,9 @@ _process_message() {
     local action
     action="$(_get_fm_field "$msg_file" "action")"
     case "$action" in
-      implement|fix_review) type="implement" ;;
-      bugfix)               type="bugfix"    ;;
+      implement|fix_review) type="implement"  ;;
+      bugfix)               type="bugfix"     ;;
+      tc_review)            type="tc_review"  ;;
       *) warn "ATM request action=${action} 未识别 — 继续按 type 路由（将触发 unknown 分支）" ;;
     esac
     info "ATM normalize: action=${action} → type=${type}"
@@ -136,6 +137,16 @@ _process_message() {
     bugfix)
       info "路由 bugfix → harness.sh bugfix ${req_id}"
       bash "$REPO_ROOT/scripts/harness.sh" bugfix "$req_id"
+      ;;
+    tc_review)
+      local pr_number
+      pr_number="$(_get_fm_field "$msg_file" "pr_number")"
+      if [[ -z "$pr_number" ]]; then
+        warn "tc_review 消息缺少 pr_number — 移至 dead-letter"
+        return 1
+      fi
+      info "路由 tc_review → harness.sh tc-review ${pr_number}"
+      bash "$REPO_ROOT/scripts/harness.sh" tc-review "$pr_number"
       ;;
     *)
       warn "未知消息类型: ${type} — 移至 dead-letter"

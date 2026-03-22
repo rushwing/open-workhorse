@@ -240,8 +240,8 @@ ${req_content:-"(REQ file not found at ${req_file}. Abort and write a failure no
    c. Design test cases: create TC files under tasks/test-cases/ following harness/testing-standard.md
    d. Update ${req_id}.md: status → test_designed, test_case_ref populated
    e. Commit: 'tc: ${req_id} test case design'
-   f. Open TC PR: gh pr create --fill
-   g. Write ATM message to inbox/for-menglan/pending/ (type: request, action: tc_design, req_id: ${req_id})
+   f. Open TC PR and capture PR number: TC_PR_NUM=\$(gh pr create --fill | grep -oE '[0-9]+\$')
+   g. Write ATM message to inbox/for-menglan/pending/ (type: request, action: tc_review, req_id: ${req_id}, pr_number: \$TC_PR_NUM)
 4. If REQ has DEFECTS (unclear acceptance, scope ambiguity, missing required fields):
    a. Determine next BUG ID: ls tasks/bugs/ | sort | tail -1
    b. Create tasks/bugs/BUG-NNN.md with bug_type: req_bug, related_req: [${req_id}], status: open
