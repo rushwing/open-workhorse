@@ -1396,7 +1396,7 @@ test("TC-035-01: first inbox_write creates thread_id with thread_REQ-035_ prefix
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-035-01-${Date.now()}`);
   await mkdir(tmpDir, { recursive: true });
 
-  const reqFile = join(PROJECT_ROOT, "tasks", "features", "REQ-035.md");
+  const reqFile = join(PROJECT_ROOT, "tasks", "archive", "done", "REQ-035.md");
   const reqContentBefore = await readFile(reqFile, "utf8");
 
   try {
