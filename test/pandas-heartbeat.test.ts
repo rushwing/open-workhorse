@@ -2360,6 +2360,97 @@ test("TC-022-05: claim_review_ready transitions review_ready REQ to req_review a
   }
 });
 
+// ── BUG-004: TC-022-06 stale lock recovery ───────────────────────────────────
+
+test("TC-022-06: claim_review_ready recovers stale lock and claims REQ", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-022-06-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+
+  const reqFile = join(featuresDir, "REQ-905.md");
+  await writeFile(
+    reqFile,
+    "---\nreq_id: REQ-905\ntitle: Stale Lock Test\nstatus: review_ready\npriority: P1\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: []\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\npending_bugs: []\n---\n",
+    "utf8",
+  );
+
+  // Simulate a crashed prior heartbeat: create a stale lock dir
+  const lockDir = `${reqFile}.lock`;
+  await mkdir(lockDir, { recursive: true });
+
+  try {
+    // _CLAIM_LOCK_STALE_S=0 forces any existing lock to be treated as stale
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; _CLAIM_LOCK_STALE_S=0 claim_review_ready`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // Stale lock must have been cleaned by the script (rmdir'd after sed)
+    assert.equal(existsSync(lockDir), false, `Stale lock dir should have been removed: ${lockDir}`);
+
+    // REQ-905 must be transitioned
+    const req905 = await readFile(reqFile, "utf8");
+    assert.ok(req905.includes("status: req_review"), `REQ-905 should be req_review after stale lock recovery. Got:\n${req905}`);
+
+    // Huahua inbox must have a message
+    const huahuaFiles = (await readdir(join(tmpDir, "inbox", "for-huahua", "pending"))).filter((f) => f.endsWith(".md"));
+    assert.ok(huahuaFiles.length > 0, "Huahua inbox should have a req_review message after stale lock recovery");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── BUG-004: TC-022-07 live lock skips REQ ───────────────────────────────────
+
+test("TC-022-07: claim_review_ready skips REQ when live lock dir exists", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-022-07-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+
+  const reqFile = join(featuresDir, "REQ-906.md");
+  await writeFile(
+    reqFile,
+    "---\nreq_id: REQ-906\ntitle: Live Lock Test\nstatus: review_ready\npriority: P1\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: []\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\npending_bugs: []\n---\n",
+    "utf8",
+  );
+
+  // Simulate a live competing heartbeat: create a fresh lock dir
+  const lockDir = `${reqFile}.lock`;
+  await mkdir(lockDir, { recursive: true });
+
+  try {
+    // High threshold (9999s) so the fresh lock is NOT treated as stale
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; _CLAIM_LOCK_STALE_S=9999 claim_review_ready`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // REQ-906 must remain at review_ready (not claimed)
+    const req906 = await readFile(reqFile, "utf8");
+    assert.ok(req906.includes("status: review_ready"), `REQ-906 should remain review_ready when live lock exists. Got:\n${req906}`);
+
+    // Huahua inbox must be empty
+    const huahuaFiles = (await readdir(join(tmpDir, "inbox", "for-huahua", "pending"))).filter((f) => f.endsWith(".md"));
+    assert.equal(huahuaFiles.length, 0, `Huahua inbox should be empty when live lock blocked claim. files: ${huahuaFiles.join(", ")}`);
+
+    // Warn must appear in stderr (warn() writes to fd 2)
+    const combined = result.stdout + result.stderr;
+    assert.ok(combined.includes("竞争失败"), `Expected 竞争失败 warning. stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 // ── REQ-031: archive_merged_reqs ─────────────────────────────────────────────
 
 /** Build a minimal REQ frontmatter string. */

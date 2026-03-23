@@ -790,12 +790,34 @@ claim_review_ready() {
     req_id="$(_get_fm_field "$f" "req_id")"
     title="$(_get_fm_field "$f" "title")"
 
-    # 原子更新 frontmatter（state-as-lock: 防止并发心跳重复认领）
+    # 原子更新 frontmatter — mkdir 作原子锁（POSIX portable，无 flock 依赖）
+    # mkdir 在本地文件系统上是原子操作：只有一个并发 heartbeat 能成功创建锁目录。
+    # Stale lock recovery: remove locks older than _CLAIM_LOCK_STALE_S seconds
+    # (default 120 — 2× heartbeat interval). Falls back to epoch (always-stale)
+    # if stat is unavailable. Set _CLAIM_LOCK_STALE_S=0 in tests to force cleanup.
+    local _lockdir="${f}.lock"
+    if [[ -d "$_lockdir" ]]; then
+      local _stale_s="${_CLAIM_LOCK_STALE_S:-120}"
+      local _lock_mtime _lock_age
+      _lock_mtime=$(stat -c %Y "$_lockdir" 2>/dev/null \
+                 || stat -f %m "$_lockdir" 2>/dev/null \
+                 || echo 0)
+      _lock_age=$(( $(date +%s) - _lock_mtime ))
+      if (( _lock_age >= _stale_s )); then
+        warn "claim_review_ready: 清理过期锁 ${_lockdir}（age=${_lock_age}s）"
+        rmdir "$_lockdir" 2>/dev/null || true
+      fi
+    fi
+    if ! mkdir "$_lockdir" 2>/dev/null; then
+      warn "claim_review_ready: 竞争失败（锁目录已存在）${f}，跳过"
+      continue
+    fi
     sed -i.bak \
       -e "s/^status: review_ready/status: req_review/" \
       -e "s/^owner: unassigned/owner: huahua/" \
       "$f"
     rm -f "${f}.bak"
+    rmdir "$_lockdir"
 
     ok "claim_review_ready: ${req_id} → req_review (owner=huahua)"
 
@@ -859,6 +881,11 @@ auto_claim() {
       for dep in "${deps[@]}"; do
         dep="$(echo "$dep" | tr -d ' ')"
         [[ -z "$dep" ]] && continue
+        if [[ ! "$dep" =~ ^(REQ|BUG)-[0-9]+$ ]]; then
+          warn "auto_claim: depends_on 中无效 ID '${dep}'（${f}），fail-closed — 跳过此任务"
+          all_done=false
+          break
+        fi
         local dep_status=""
         for search_path in \
           "tasks/features/${dep}.md" \
@@ -989,6 +1016,10 @@ _auto_worktree_clean() {
   # 仅处理 feat/REQ-N 格式的分支
   [[ "$current_branch" == feat/* ]] || return 0
   local req_id="${current_branch#feat/}"
+  if [[ ! "$req_id" =~ ^REQ-[0-9]+$ ]]; then
+    warn "auto_worktree_clean: branch '${current_branch}' req_id='${req_id}' 格式不符，跳过"
+    return 0
+  fi
 
   # 检查 REQ 是否已 done（features/ 或 archive/done/）
   local req_status=""

@@ -102,6 +102,57 @@ _notify_pandas_failure() {
   warn "已写入失败告警 → for-pandas/pending/${filename}"
 }
 
+# ── Huahua 向 Pandas 写回 ATM response ─────────────────────────────────────
+# _write_huahua_response <req_id> <pr_number> <legacy_type> <status> [summary]
+# legacy_type: review_complete | review_blocked
+# summary is always written as `summary:`; additionally written as `blocking_reason:` when status=blocked
+_write_huahua_response() {
+  local req_id="$1" pr_number="$2" legacy_type="$3" status="$4" summary="${5:-}"
+  local date_str filename
+  date_str="$(date +%Y-%m-%d)"
+  filename="${date_str}-huahua-${legacy_type}-${req_id}-$$-${RANDOM}.md"
+  mkdir -p "${INBOX_ROOT}/for-pandas/pending"
+  {
+    echo "---"
+    echo "type: response"
+    echo "from: huahua"
+    echo "to: pandas"
+    echo "created_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "priority: P1"
+    echo "---"
+    echo "legacy_type: ${legacy_type}"
+    echo "req_id: ${req_id}"
+    echo "pr_number: ${pr_number}"
+    echo "status: ${status}"
+    [[ -n "$summary" ]] && echo "summary: ${summary}"
+    [[ "$status" == "blocked" && -n "$summary" ]] && echo "blocking_reason: ${summary}"
+  } > "${INBOX_ROOT}/for-pandas/pending/${filename}"
+  ok "${legacy_type}(${status}) → for-pandas/pending/${filename}"
+}
+
+# ── Huahua 向 Menglan 写 tc_review 请求 ────────────────────────────────────
+# _write_tc_review_to_menglan <req_id> <tc_pr_number>
+_write_tc_review_to_menglan() {
+  local req_id="$1" tc_pr_number="$2"
+  local date_str filename
+  date_str="$(date +%Y-%m-%d)"
+  filename="${date_str}-huahua-tc-review-${req_id}-$$-${RANDOM}.md"
+  mkdir -p "${INBOX_ROOT}/for-menglan/pending"
+  {
+    echo "---"
+    echo "type: request"
+    echo "from: huahua"
+    echo "to: menglan"
+    echo "created_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "action: tc_review"
+    echo "priority: P2"
+    echo "---"
+    echo "req_id: ${req_id}"
+    echo "pr_number: ${tc_pr_number}"
+  } > "${INBOX_ROOT}/for-menglan/pending/${filename}"
+  ok "tc_review → for-menglan/pending/${filename}"
+}
+
 # ── 单条消息处理（在 if 内调用，不触发 set -e 退出）──────────────────────────
 _process_message() {
   local msg_file="$1"
@@ -176,11 +227,15 @@ ${req_content:-"(REQ file not found at ${req_file}. Use the req_id to locate it.
         warn "code_review 消息缺少 pr_number — 移至 dead-letter"
         return 1
       fi
-      info "code_review → claude -p review PR #${pr_number} for ${req_id}"
+      info "code_review → claude review PR #${pr_number} for ${req_id}"
       local pr_diff=""
       pr_diff="$(gh pr diff "$pr_number" 2>/dev/null || echo "(unable to fetch diff)")"
-      "${CLAUDE_CMD[@]}" "Read harness/harness-index.md.
-Do not ask clarifying questions — proceed with your best judgment at every step.
+
+      local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["APPROVED","NEEDS_CHANGES"]},"summary":{"type":"string"}},"required":["verdict","summary"]}'
+      local raw_result; local claude_rc
+      raw_result=$("${CLAUDE_CMD[@]}" --output-format json --json-schema "$_schema" \
+        "Read harness/harness-index.md.
+Do not ask clarifying questions — proceed with your best judgment.
 
 Your task: review dev PR #${pr_number} for ${req_id}.
 
@@ -188,66 +243,80 @@ Your task: review dev PR #${pr_number} for ${req_id}.
 ${pr_diff}
 
 ## Steps
-1. Read the diff above and any referenced files
+1. Read the diff and any referenced files
 2. Check for: bugs, regressions, unsafe assumptions, missing tests, data integrity risks
-3. Post review using: gh pr review ${pr_number} --request-changes -b '<findings>' OR gh pr review ${pr_number} --approve -b 'LGTM'
-4. If approved, write ATM response to for-pandas/ inbox. File content:
-   ---
-   type: response
-   from: huahua
-   to: pandas
-   created_at: <ISO8601 UTC>
-   priority: P1
-   ---
-   legacy_type: review_complete
-   req_id: ${req_id}
-   pr_number: ${pr_number}
-   status: completed
-   summary: code review approved for ${req_id}
-5. If changes requested, write ATM response to for-pandas/ inbox. File content:
-   ---
-   type: response
-   from: huahua
-   to: pandas
-   created_at: <ISO8601 UTC>
-   priority: P1
-   ---
-   legacy_type: review_blocked
-   req_id: ${req_id}
-   pr_number: ${pr_number}
-   status: blocked
-   blocking_reason: <summary of findings>"
+3. Post review using: gh pr review ${pr_number} --request-changes -b '<findings>'
+   OR: gh pr review ${pr_number} --approve -b 'LGTM'
+4. Return ONLY your structured verdict (do NOT write any inbox files — the harness handles that)." \
+      2>&1); claude_rc=$?
+
+      if [[ $claude_rc -ne 0 ]]; then
+        warn "code_review: claude exited ${claude_rc}"
+        return 1
+      fi
+      local verdict; verdict=$(echo "$raw_result" | jq -r '.structured_output.verdict // empty' 2>/dev/null)
+      local summary; summary=$(echo "$raw_result" | jq -r '.structured_output.summary // empty' 2>/dev/null)
+      if [[ -z "$verdict" ]]; then
+        warn "code_review: 无法提取 verdict（jq 失败或输出格式异常）"
+        return 1
+      fi
+      if [[ "$verdict" == "APPROVED" ]]; then
+        _write_huahua_response "$req_id" "$pr_number" "review_complete" "completed" "${summary}"
+      else
+        _write_huahua_response "$req_id" "$pr_number" "review_blocked" "blocked" "${summary}"
+      fi
       ;;
     req_review)
-      info "req_review → claude -p 需求评审 ${req_id}"
+      info "req_review → claude 需求评审 ${req_id}"
       local req_file="tasks/features/${req_id}.md"
       local req_content=""
       [[ -f "$req_file" ]] && req_content="$(cat "$req_file")"
-      "${CLAUDE_CMD[@]}" "Read harness/harness-index.md and harness/requirement-standard.md.
-Do not ask clarifying questions — proceed with your best judgment at every step.
 
-Your task: review the requirements for ${req_id} and advance its status.
+      local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["PASSED","DEFECTS"]},"summary":{"type":"string"},"tc_pr_number":{"type":"string"}},"required":["verdict","summary"]}'
+      local raw_result; local claude_rc
+      raw_result=$("${CLAUDE_CMD[@]}" --output-format json --json-schema "$_schema" \
+        "Read harness/harness-index.md and harness/requirement-standard.md.
+Do not ask clarifying questions — proceed with your best judgment.
+
+Your task: review requirements for ${req_id} and advance its status.
 
 ## REQ content
-${req_content:-"(REQ file not found at ${req_file}. Abort and write a failure notice to inbox/for-pandas/pending/)"}
+${req_content:-"(REQ file not found. Abort — return DEFECTS with summary explaining missing file.)"}
 
 ## Steps
 1. Evaluate the REQ: acceptance criteria clarity, scope definition, frontmatter completeness
 2. Run: bash scripts/check-req-coverage.sh
-3. If REQ PASSES review (acceptance clear, scope well-defined, frontmatter valid):
-   a. Update tasks/features/${req_id}.md: status → ready, owner → huahua
-   b. Commit: 'req-review: ${req_id} passed → ready'
-   c. Design test cases: create TC files under tasks/test-cases/ following harness/testing-standard.md
-   d. Update ${req_id}.md: status → test_designed, test_case_ref populated
-   e. Commit: 'tc: ${req_id} test case design'
-   f. Open TC PR and capture PR number: TC_PR_NUM=\$(gh pr create --fill | grep -oE '[0-9]+\$')
-   g. Write ATM message to inbox/for-menglan/pending/ (type: request, action: tc_review, req_id: ${req_id}, pr_number: \$TC_PR_NUM)
-4. If REQ has DEFECTS (unclear acceptance, scope ambiguity, missing required fields):
-   a. Determine next BUG ID: ls tasks/bugs/ | sort | tail -1
-   b. Create tasks/bugs/BUG-NNN.md with bug_type: req_bug, related_req: [${req_id}], status: open
-   c. Update ${req_id}.md: status → blocked, blocked_reason: req_review_feedback, blocked_from_status: req_review, blocked_from_owner: huahua, owner → unassigned; add BUG-NNN to pending_bugs
-   d. Commit: 'bug-block: ${req_id} blocked by BUG-NNN'
-   e. Reply summary to inbox/for-pandas/pending/ (type: response, legacy_type: review_blocked, req_id: ${req_id}, status: blocked, blocking_reason: <one-line summary>)"
+3. If REQ PASSES:
+   a. Update tasks/features/${req_id}.md: status → ready, owner → huahua; commit
+   b. Design TCs under tasks/test-cases/; update ${req_id}.md: status → test_designed, test_case_ref populated; commit
+   c. Open TC PR: gh pr create --fill; capture PR number as tc_pr_number
+   d. Return {\"verdict\":\"PASSED\",\"summary\":\"...\",\"tc_pr_number\":\"<N>\"}
+4. If REQ has DEFECTS:
+   a. Create tasks/bugs/BUG-NNN.md (bug_type: req_bug, related_req: [${req_id}])
+   b. Block REQ: status → blocked, blocked_reason/blocked_from_status set; commit
+   c. Return {\"verdict\":\"DEFECTS\",\"summary\":\"<one-line reason>\"}" \
+      2>&1); claude_rc=$?
+
+      if [[ $claude_rc -ne 0 ]]; then
+        warn "req_review: claude exited ${claude_rc}"
+        return 1
+      fi
+      local verdict; verdict=$(echo "$raw_result" | jq -r '.structured_output.verdict // empty' 2>/dev/null)
+      local summary; summary=$(echo "$raw_result" | jq -r '.structured_output.summary // empty' 2>/dev/null)
+      local tc_pr; tc_pr=$(echo "$raw_result" | jq -r '.structured_output.tc_pr_number // empty' 2>/dev/null)
+      if [[ -z "$verdict" ]]; then
+        warn "req_review: 无法提取 verdict"
+        return 1
+      fi
+      if [[ "$verdict" == "PASSED" ]]; then
+        if [[ -z "$tc_pr" ]]; then
+          warn "req_review PASSED 但 tc_pr_number 为空 — 无法路由到 Menglan"
+          return 1
+        fi
+        _write_tc_review_to_menglan "$req_id" "$tc_pr"
+      else
+        _write_huahua_response "$req_id" "" "review_blocked" "blocked" "${summary}"
+      fi
       ;;
     *)
       warn "未知消息类型: ${resolved_type} — 移至 dead-letter"

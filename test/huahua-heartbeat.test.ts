@@ -8,7 +8,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
@@ -70,27 +70,27 @@ test("TC-BUG004-H01: huahua action=req_review calls claude with REQ context and 
   try {
     // Mock `claude` as a bash function — set before AND after source so the
     // function survives _process_message's internal CLAUDE_CMD reset.
+    const claudeMarker = join(tmpDir, "claude_was_called");
     const result = await runBash(
-      `claude_called=0
-       claude() { claude_called=1; echo "MOCK_CLAUDE_CALLED"; return 0; }
+      // Mock claude writes a marker file (subshell-safe) and returns valid structured JSON
+      `claude() { touch "${claudeMarker}"; echo '{"structured_output":{"verdict":"DEFECTS","summary":"mock test defect"}}'; return 0; }
        export -f claude
        SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
          source "${SCRIPT}" 2>/dev/null
-       claude() { claude_called=1; echo "MOCK_CLAUDE_CALLED"; return 0; }
+       claude() { touch "${claudeMarker}"; echo '{"structured_output":{"verdict":"DEFECTS","summary":"mock test defect"}}'; return 0; }
        export -f claude
        INBOX_ROOT="${tmpDir}/inbox"
-       _process_message "${msgFile}"
-       echo "claude_called=\$claude_called"`,
+       _process_message "${msgFile}"`,
       { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
     );
 
     assert.equal(result.code, 0,
       `_process_message should succeed. stdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
-    // claude must have been invoked
-    assert.ok(
-      result.stdout.includes("claude_called=1") || result.stdout.includes("MOCK_CLAUDE_CALLED"),
-      `claude mock should have been called. stdout: ${result.stdout}`,
+    // claude must have been invoked (marker file written by mock)
+    const markerExists = await access(claudeMarker).then(() => true).catch(() => false);
+    assert.ok(markerExists,
+      `claude mock should have been called (marker file missing). stdout: ${result.stdout}`,
     );
 
     // Must NOT dead-letter
