@@ -104,6 +104,7 @@ rg '^### `agent-' harness/CAPABILITIES.md
 | `mem-longterm-write_knowledge` | `mem-*` | no | `local_write` | Write accepted candidates into project.db (Pandas only) |
 | `notify-human-send_status_update` | `notify-*` | no | `remote_write` | Send a user-facing status update or merge-ready notice |
 | `runtime-agent-read_worker_status` | `runtime-*` | yes | `none` | Read worker idle/busy state and runtime heartbeat data |
+| `runtime-agent-send_keepalive` | `runtime-*` | no | `local_write` | 向停滞 agent inbox 发送 keep-alive implement 消息以触发恢复 |
 | `runtime-harness-worktree_setup` | `runtime-*` | no | `local_write` | 为 Menglan 创建 git worktree（harness.sh implement 自动调用） |
 | `runtime-harness-worktree_clean` | `runtime-*` | no | `local_write` | 移除 Menglan worktree（heartbeat 自动 或 手动 worktree-clean 调用） |
 
@@ -640,10 +641,39 @@ outputs:
   - idle or busy status plus runtime health hints
 use_when:
   - Pandas must decide whether to wake a worker now or leave work queued
+  - keep-alive watchdog evaluates whether an in_progress agent has stalled
 avoid_when:
   - the next step does not depend on worker availability
 notes:
   - worker availability informs dispatch timing, not task legality
+  - timestamp files: runtime/menglan_alive.ts and runtime/huahua_alive.ts (written by each agent's heartbeat script)
+  - stall threshold: AGENT_STALL_TIMEOUT_MINUTES env var (default 60 minutes)
+  - if a timestamp file is absent or older than the threshold, the agent is considered stalled
+```
+
+### `runtime-agent-send_keepalive`
+
+```yaml
+capability: runtime-agent-send_keepalive
+family: runtime-*
+default_enabled: false
+side_effect: local_write
+inputs:
+  - stalled agent id (menglan or huahua)
+  - req_id of the in_progress task
+  - optional branch_name (for single-PR rule path)
+outputs:
+  - keep-alive implement inbox message written to the agent's inbox
+use_when:
+  - _check_stall_and_keepalive() detects that an in_progress agent's alive timestamp has exceeded AGENT_STALL_TIMEOUT_MINUTES
+avoid_when:
+  - the agent's timestamp is fresh (stall not confirmed)
+  - the REQ is not in in_progress status
+notes:
+  - called automatically by pandas-heartbeat.sh _check_stall_and_keepalive() on each tick
+  - keep-alive message carries action=implement and, if a single-PR branch exists, branch_name=feat/<REQ-N>
+  - does not change REQ state; recovery is the agent's responsibility on receiving the message
+  - configurable via AGENT_STALL_TIMEOUT_MINUTES in .env (default 60)
 ```
 
 ### `runtime-harness-worktree_setup`

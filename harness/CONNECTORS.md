@@ -85,6 +85,7 @@ rg '^### `agent-' harness/CONNECTORS.md
 | `mem-longterm-write_knowledge` | `cli` | `sqlite3` | `local_write` | `task_scoped` | Persist accepted candidates into project.db (Pandas only) |
 | `notify-human-send_status_update` | `cli` | `telegram.sh tg_pr_ready` | `remote_write` | `human_required` | Send user-facing status updates |
 | `runtime-agent-read_worker_status` | `cli` | `heartbeat/status files` | `none` | `none` | Read worker idle or busy status |
+| `runtime-agent-send_keepalive` | `cli` | `_check_stall_and_keepalive() → inbox_write_v2` | `local_write` | `task_scoped` | 向停滞 agent 发 keep-alive implement 消息 |
 | `runtime-harness-worktree_setup` | `cli` | `cmd_worktree_setup() → git worktree add` | `local_write` | `task_scoped` | 为 Menglan 创建 git worktree |
 | `runtime-harness-worktree_clean` | `cli` | `_auto_worktree_clean() / git worktree remove` | `local_write` | `task_scoped` | 移除 Menglan worktree |
 
@@ -551,6 +552,28 @@ side_effect: none
 approval_mode: none
 notes:
   - Pandas uses this to time wakeups, not to override workflow guards
+  - alive timestamp files: runtime/menglan_alive.ts (written by menglan-heartbeat.sh), runtime/huahua_alive.ts (written by huahua-heartbeat.sh)
+  - stall detection uses AGENT_STALL_TIMEOUT_MINUTES (default 60) from .env
+```
+
+### `runtime-agent-send_keepalive`
+
+```yaml
+capability: runtime-agent-send_keepalive
+backend: cli
+driver: _check_stall_and_keepalive() → inbox_write_v2
+entrypoint: automatic (pandas-heartbeat.sh every tick)
+requires:
+  - SHARED_RESOURCES_ROOT env var set in .env
+  - stalled agent id and req_id confirmed from runtime-agent-read_worker_status
+returns:
+  - keep-alive implement inbox message in $SHARED_RESOURCES_ROOT/inbox/for-{agent}/pending/
+side_effect: local_write
+approval_mode: task_scoped
+notes:
+  - fires automatically in each pandas-heartbeat.sh tick via _check_stall_and_keepalive()
+  - message carries action=implement; if single-PR branch exists, also carries branch_name=feat/<REQ-N>
+  - configurable threshold: AGENT_STALL_TIMEOUT_MINUTES in .env (default 60 min); see .env.example
 ```
 
 ### `runtime-harness-worktree_setup`
