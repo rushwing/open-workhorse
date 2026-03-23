@@ -792,7 +792,22 @@ claim_review_ready() {
 
     # 原子更新 frontmatter — mkdir 作原子锁（POSIX portable，无 flock 依赖）
     # mkdir 在本地文件系统上是原子操作：只有一个并发 heartbeat 能成功创建锁目录。
+    # Stale lock recovery: remove locks older than _CLAIM_LOCK_STALE_S seconds
+    # (default 120 — 2× heartbeat interval). Falls back to epoch (always-stale)
+    # if stat is unavailable. Set _CLAIM_LOCK_STALE_S=0 in tests to force cleanup.
     local _lockdir="${f}.lock"
+    if [[ -d "$_lockdir" ]]; then
+      local _stale_s="${_CLAIM_LOCK_STALE_S:-120}"
+      local _lock_mtime _lock_age
+      _lock_mtime=$(stat -c %Y "$_lockdir" 2>/dev/null \
+                 || stat -f %m "$_lockdir" 2>/dev/null \
+                 || echo 0)
+      _lock_age=$(( $(date +%s) - _lock_mtime ))
+      if (( _lock_age >= _stale_s )); then
+        warn "claim_review_ready: 清理过期锁 ${_lockdir}（age=${_lock_age}s）"
+        rmdir "$_lockdir" 2>/dev/null || true
+      fi
+    fi
     if ! mkdir "$_lockdir" 2>/dev/null; then
       warn "claim_review_ready: 竞争失败（锁目录已存在）${f}，跳过"
       continue
