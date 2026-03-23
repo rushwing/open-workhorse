@@ -131,9 +131,9 @@ _write_huahua_response() {
 }
 
 # ── Huahua 向 Menglan 写 tc_review 请求 ────────────────────────────────────
-# _write_tc_review_to_menglan <req_id> <tc_pr_number>
+# _write_tc_review_to_menglan <req_id> <tc_pr_number> [branch_name]
 _write_tc_review_to_menglan() {
-  local req_id="$1" tc_pr_number="$2"
+  local req_id="$1" tc_pr_number="$2" branch_name="${3:-}"
   local date_str filename
   date_str="$(date +%Y-%m-%d)"
   filename="${date_str}-huahua-tc-review-${req_id}-$$-${RANDOM}.md"
@@ -149,6 +149,7 @@ _write_tc_review_to_menglan() {
     echo "---"
     echo "req_id: ${req_id}"
     echo "pr_number: ${tc_pr_number}"
+    [[ -n "$branch_name" ]] && echo "branch_name: ${branch_name}"
   } > "${INBOX_ROOT}/for-menglan/pending/${filename}"
   ok "tc_review → for-menglan/pending/${filename}"
 }
@@ -213,7 +214,7 @@ Your task: design test cases for ${req_id} and open a TC PR.
 ${req_content:-"(REQ file not found at ${req_file}. Use the req_id to locate it.)"}
 
 ## Steps
-1. Create branch: tc/${req_id}-<short-slug>
+1. Create branch: feat/${req_id}  (single-PR rule, REQ-039 — Menglan will add impl commits to this same branch)
 2. Read the REQ acceptance criteria carefully
 3. For each acceptance criterion, write at least one test case file under tasks/test-cases/
 4. Commit TC files with message: 'tc: ${req_id} test case design'
@@ -272,7 +273,8 @@ ${pr_diff}
       local req_content=""
       [[ -f "$req_file" ]] && req_content="$(cat "$req_file")"
 
-      local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["PASSED","DEFECTS"]},"summary":{"type":"string"},"tc_pr_number":{"type":"string"}},"required":["verdict","summary"]}'
+      # REQ-039: branch_name 字段 — Huahua 在 feat/${req_id} 分支建 TC PR，与 Meng Lan 实现共用同一 PR
+      local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["PASSED","DEFECTS"]},"summary":{"type":"string"},"tc_pr_number":{"type":"string"},"branch_name":{"type":"string"}},"required":["verdict","summary"]}'
       local raw_result; local claude_rc
       raw_result=$("${CLAUDE_CMD[@]}" --output-format json --json-schema "$_schema" \
         "Read harness/harness-index.md and harness/requirement-standard.md.
@@ -288,9 +290,10 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
 2. Run: bash scripts/check-req-coverage.sh
 3. If REQ PASSES:
    a. Update tasks/features/${req_id}.md: status → ready, owner → huahua; commit
-   b. Design TCs under tasks/test-cases/; update ${req_id}.md: status → test_designed, test_case_ref populated; commit
-   c. Open TC PR: gh pr create --fill; capture PR number as tc_pr_number
-   d. Return {\"verdict\":\"PASSED\",\"summary\":\"...\",\"tc_pr_number\":\"<N>\"}
+   b. Create branch feat/${req_id} (single-PR rule, REQ-039 — Menglan will add impl commits to this same branch)
+   c. Design TCs under tasks/test-cases/; update ${req_id}.md: status → test_designed, test_case_ref populated; commit
+   d. Open TC PR on branch feat/${req_id}: gh pr create --fill; capture PR number as tc_pr_number
+   e. Return {\"verdict\":\"PASSED\",\"summary\":\"...\",\"tc_pr_number\":\"<N>\",\"branch_name\":\"feat/${req_id}\"}
 4. If REQ has DEFECTS:
    a. Create tasks/bugs/BUG-NNN.md (bug_type: req_bug, related_req: [${req_id}])
    b. Block REQ: status → blocked, blocked_reason/blocked_from_status set; commit
@@ -304,6 +307,7 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
       local verdict; verdict=$(echo "$raw_result" | jq -r '.structured_output.verdict // empty' 2>/dev/null)
       local summary; summary=$(echo "$raw_result" | jq -r '.structured_output.summary // empty' 2>/dev/null)
       local tc_pr; tc_pr=$(echo "$raw_result" | jq -r '.structured_output.tc_pr_number // empty' 2>/dev/null)
+      local branch_name; branch_name=$(echo "$raw_result" | jq -r '.structured_output.branch_name // empty' 2>/dev/null)
       if [[ -z "$verdict" ]]; then
         warn "req_review: 无法提取 verdict"
         return 1
@@ -313,7 +317,7 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
           warn "req_review PASSED 但 tc_pr_number 为空 — 无法路由到 Menglan"
           return 1
         fi
-        _write_tc_review_to_menglan "$req_id" "$tc_pr"
+        _write_tc_review_to_menglan "$req_id" "$tc_pr" "$branch_name"
       else
         _write_huahua_response "$req_id" "" "review_blocked" "blocked" "${summary}"
       fi
@@ -333,6 +337,10 @@ main() {
   [[ -z "$msg" ]] && exit 0
 
   info "huahua-heartbeat 开始（$(date -u +%Y-%m-%dT%H:%M:%SZ)）"
+
+  # REQ-039: 写存活时间戳（供 Pandas keep-alive watchdog 检测）
+  mkdir -p "${REPO_ROOT}/runtime"
+  date +%s > "${REPO_ROOT}/runtime/huahua_alive.ts" 2>/dev/null || true
 
   # 同步远端 main（仅 fetch，不 merge，确保本地缓存最新）
   git -C "$REPO_ROOT" fetch origin main --quiet 2>/dev/null \

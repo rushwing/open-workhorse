@@ -79,7 +79,7 @@ echo ""
 
 REQUIRED_FIELDS=("req_id" "title" "status" "priority" "phase" "owner" "depends_on" "test_case_ref" "scope" "acceptance")
 STATUS_ENUM="draft review_ready req_review ready test_designed in_progress blocked review done"
-SCOPE_ENUM="runtime ui tests scripts docs"
+SCOPE_ENUM="runtime ui tests scripts docs harness"
 PRIORITY_ENUM="P0 P1 P2 P3"
 # OWNER_ENUM 由 .env 中的 AGENT_* 变量动态组成；claude_code 保留作 legacy 兼容
 OWNER_ENUM="unassigned ${AGENT_ORCHESTRATOR} ${AGENT_CODER} ${AGENT_REVIEWER} claude_code human"

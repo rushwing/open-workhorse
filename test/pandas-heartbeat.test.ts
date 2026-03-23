@@ -3358,3 +3358,252 @@ test("TC-031-06: archive_merged_reqs — idempotent when no status:review REQs p
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── REQ-039: TC-039-* 单 PR 规则 + Keep-Alive Watchdog ───────────────────────
+
+// TC-039-01: inbox_write 第 10 参数 branch_name 写入 payload
+test("TC-039-01: inbox_write with branch_name param writes branch_name to payload", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-01-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; inbox_write "menglan" "implement" "REQ-039" "test summary" "" "success" "" "" "" "feat/REQ-039"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = (await readdir(pendingDir)).filter((f) => f.endsWith(".md"));
+    assert.ok(files.length > 0, "Expected .md file in for-menglan/pending/");
+    const content = await readFile(join(pendingDir, files[0]!), "utf8");
+    assert.ok(content.includes("branch_name: feat/REQ-039"), `Expected branch_name in payload. Got:\n${content}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-039-01b: inbox_write without branch_name does NOT write branch_name field (backward compat)
+test("TC-039-01b: inbox_write without branch_name omits branch_name field (backward compat)", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-01b-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; inbox_write "menglan" "implement" "REQ-039" "test summary"`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = (await readdir(pendingDir)).filter((f) => f.endsWith(".md"));
+    assert.ok(files.length > 0, "Expected .md file");
+    const content = await readFile(join(pendingDir, files[0]!), "utf8");
+    assert.ok(!content.includes("branch_name:"), `Expected no branch_name. Got:\n${content}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-039-02: _handle_tc_complete forwards branch_name into implement message
+test("TC-039-02: _handle_tc_complete(success) with branch_name writes branch_name to implement message", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-02-${Date.now()}`);
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+  await writeFile(
+    join(tmpDir, "tasks", "features", "REQ-039.md"),
+    "---\nreq_id: REQ-039\nstatus: in_progress\nowner: claude_code\n---\n",
+  );
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; _handle_tc_complete "REQ-039" "10" "success" "" "0" "feat/REQ-039"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = (await readdir(pendingDir)).filter((f) => f.endsWith(".md"));
+    assert.ok(files.length > 0, "Expected implement message in for-menglan/pending/");
+    const content = await readFile(join(pendingDir, files[0]!), "utf8");
+    assert.ok(content.includes("branch_name: feat/REQ-039"), `Expected branch_name in implement message. Got:\n${content}`);
+    assert.ok(content.includes("legacy_type: implement"), `Expected legacy_type: implement. Got:\n${content}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-039-03: tc_complete dispatch extracts branch_name from message and passes to _handle_tc_complete
+test("TC-039-03: inbox_read_pandas extracts branch_name from tc_complete and forwards to implement message", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-03-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+  await writeFile(
+    join(tmpDir, "tasks", "features", "REQ-039.md"),
+    "---\nreq_id: REQ-039\nstatus: in_progress\nowner: claude_code\n---\n",
+  );
+  // tc_complete message with branch_name in payload
+  await writeFile(
+    join(tmpDir, "inbox", "for-pandas", "pending", "tc_complete_msg.md"),
+    "---\ntype: response\nfrom: menglan\nto: pandas\ncreated_at: 2026-03-23T00:00:00Z\npriority: P1\n---\nlegacy_type: tc_complete\nreq_id: REQ-039\npr_number: 10\nstatus: success\nbranch_name: feat/REQ-039\n",
+  );
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = (await readdir(pendingDir)).filter((f) => f.endsWith(".md"));
+    assert.ok(files.length > 0, "Expected implement message in for-menglan/pending/");
+    const content = await readFile(join(pendingDir, files[0]!), "utf8");
+    assert.ok(content.includes("branch_name: feat/REQ-039"), `Expected branch_name forwarded. Got:\n${content}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-039-05: harness.sh cmd_worktree_setup contains remote-fetch logic for existing branches
+test("TC-039-05: harness.sh cmd_worktree_setup script contains git ls-remote fetch logic for existing remote branches", async () => {
+  // Verify the script contains the remote-branch detection logic (REQ-039 single-PR rule).
+  // Full integration requires a live git remote; this test validates the code path exists.
+  const harnessPath = join(PROJECT_ROOT, "scripts", "harness.sh");
+  const content = await readFile(harnessPath, "utf8");
+  assert.ok(
+    content.includes("git ls-remote --exit-code origin"),
+    "Expected git ls-remote --exit-code origin in cmd_worktree_setup",
+  );
+  assert.ok(
+    content.includes("远端拉取"),
+    "Expected '远端拉取' info message in cmd_worktree_setup",
+  );
+  assert.ok(
+    content.includes(`git fetch origin`),
+    "Expected git fetch origin branch in cmd_worktree_setup",
+  );
+});
+
+// TC-039-06: menglan-heartbeat writes runtime/menglan_alive.ts on every run
+test("TC-039-08: menglan-heartbeat writes runtime/menglan_alive.ts on every run (including empty inbox)", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-08-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "failed"), { recursive: true });
+  try {
+    const MENGLAN_SCRIPT = join(PROJECT_ROOT, "scripts/menglan-heartbeat.sh");
+    const result = await runBash(
+      `bash "${MENGLAN_SCRIPT}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    // exits 0 (empty inbox → early exit)
+    assert.equal(result.code, 0, `menglan-heartbeat failed: ${result.stderr}`);
+    const tsFile = join(tmpDir, "runtime", "menglan_alive.ts");
+    assert.ok(existsSync(tsFile), "Expected runtime/menglan_alive.ts to exist");
+    const content = (await readFile(tsFile, "utf8")).trim();
+    assert.match(content, /^\d{10,}$/, `Expected epoch integer. Got: ${content}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-039-07: _check_stall_and_keepalive sends keep-alive for stale in_progress REQ
+test("TC-039-09: _check_stall_and_keepalive sends keep-alive when menglan_alive.ts is stale", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-09-${Date.now()}`);
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+  await mkdir(join(tmpDir, "runtime"), { recursive: true });
+  // REQ in progress owned by menglan
+  await writeFile(
+    join(tmpDir, "tasks", "features", "REQ-039-stale.md"),
+    "---\nreq_id: REQ-039-stale\nstatus: in_progress\nowner: menglan\npriority: P1\n---\n",
+  );
+  // alive timestamp 90 minutes ago
+  const staleTs = Math.floor(Date.now() / 1000) - 90 * 60;
+  await writeFile(join(tmpDir, "runtime", "menglan_alive.ts"), String(staleTs));
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; AGENT_STALL_TIMEOUT_MINUTES=60 _check_stall_and_keepalive`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = (await readdir(pendingDir)).filter((f) => f.endsWith(".md"));
+    assert.ok(files.length > 0, "Expected keep-alive message in for-menglan/pending/");
+    const content = await readFile(join(pendingDir, files[0]!), "utf8");
+    assert.ok(content.includes("REQ-039-stale"), `Expected req_id in keep-alive. Got:\n${content}`);
+    assert.ok(content.includes("keep-alive"), `Expected keep-alive summary. Got:\n${content}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-039-08: _check_stall_and_keepalive does NOT send keep-alive for fresh timestamp
+test("TC-039-10: _check_stall_and_keepalive does NOT send keep-alive when menglan_alive.ts is fresh", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-10-${Date.now()}`);
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+  await mkdir(join(tmpDir, "runtime"), { recursive: true });
+  await writeFile(
+    join(tmpDir, "tasks", "features", "REQ-039-fresh.md"),
+    "---\nreq_id: REQ-039-fresh\nstatus: in_progress\nowner: menglan\npriority: P1\n---\n",
+  );
+  // alive timestamp 5 minutes ago (fresh)
+  const freshTs = Math.floor(Date.now() / 1000) - 5 * 60;
+  await writeFile(join(tmpDir, "runtime", "menglan_alive.ts"), String(freshTs));
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; AGENT_STALL_TIMEOUT_MINUTES=60 _check_stall_and_keepalive`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = existsSync(pendingDir) ? (await readdir(pendingDir)).filter((f) => f.endsWith(".md")) : [];
+    assert.equal(files.length, 0, `Expected NO keep-alive message. Found: ${files.join(", ")}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-039-11: AGENT_STALL_TIMEOUT_MINUTES is configurable (30min threshold)
+test("TC-039-11: AGENT_STALL_TIMEOUT_MINUTES=30 triggers keep-alive for 45min stale timestamp", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-11-${Date.now()}`);
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+  await mkdir(join(tmpDir, "runtime"), { recursive: true });
+  await writeFile(
+    join(tmpDir, "tasks", "features", "REQ-039-cfg.md"),
+    "---\nreq_id: REQ-039-cfg\nstatus: in_progress\nowner: menglan\npriority: P1\n---\n",
+  );
+  // alive timestamp 45 minutes ago
+  const ts45 = Math.floor(Date.now() / 1000) - 45 * 60;
+  await writeFile(join(tmpDir, "runtime", "menglan_alive.ts"), String(ts45));
+  try {
+    // With 30min threshold → stale → keep-alive sent
+    const resultStale = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; AGENT_STALL_TIMEOUT_MINUTES=30 _check_stall_and_keepalive`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(resultStale.code, 0);
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const staleFiles = (await readdir(pendingDir)).filter((f) => f.endsWith(".md"));
+    assert.ok(staleFiles.length > 0, "Expected keep-alive with 30min threshold");
+
+    // Clean up pending dir for next sub-test
+    for (const f of staleFiles) {
+      await rm(join(pendingDir, f), { force: true });
+    }
+
+    // With default 60min threshold → fresh → no keep-alive
+    const resultFresh = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; AGENT_STALL_TIMEOUT_MINUTES=60 _check_stall_and_keepalive`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(resultFresh.code, 0);
+    const freshFiles = (await readdir(pendingDir)).filter((f) => f.endsWith(".md"));
+    assert.equal(freshFiles.length, 0, "Expected NO keep-alive with 60min threshold for 45min stale");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});

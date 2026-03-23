@@ -84,6 +84,7 @@ inbox_write() {
   local blocking_reason="${7:-}"
   local iteration="${8:-}"
   local body="${9:-}"
+  local branch_name="${10:-}"
 
   # 生成兼容 thread_id / correlation_id（REQ-035：thread 复用，corr 唯一）
   local thread_id; thread_id="$(thread_get_or_create "$req_id")"
@@ -117,6 +118,7 @@ inbox_write() {
     [[ -n "$pr_number" ]]       && echo "pr_number: ${pr_number}"
     [[ -n "$blocking_reason" ]] && echo "blocking_reason: ${blocking_reason}"
     [[ -n "$iteration" ]]       && echo "iteration: ${iteration}"
+    [[ -n "$branch_name" ]]     && echo "branch_name: ${branch_name}"
     [[ -n "$body" ]] && echo "" && echo "$body"
   } > "$tmpfile"
 
@@ -406,12 +408,13 @@ _dispatch_msg() {
       local status; status="$(_get_fm_field "$msg_file" "status")"
       local blocking_reason; blocking_reason="$(_get_fm_field "$msg_file" "blocking_reason")"
       local iteration; iteration="$(_get_fm_field "$msg_file" "iteration")"
+      local branch_name; branch_name="$(_get_fm_field "$msg_file" "branch_name")"
       # legacy_type: 由 inbox_write() wrapper 写入 payload，区分 tc_complete / dev_complete
       local legacy_type; legacy_type="$(_get_fm_field "$msg_file" "legacy_type")"
       info "ATM response: req_id=${req_id} status=${status} legacy_type=${legacy_type}"
       case "$legacy_type" in
         tc_complete)
-          _handle_tc_complete "$req_id" "$pr_number" "${status:-success}" "$blocking_reason" "$iteration"
+          _handle_tc_complete "$req_id" "$pr_number" "${status:-success}" "$blocking_reason" "$iteration" "$branch_name"
           ;;
         review_complete)
           # 阶段 5（Code Review）完成信号 — 与 dev_complete（阶段 2）语义独立
@@ -603,19 +606,19 @@ _handle_review_complete() {
 }
 
 _handle_tc_complete() {
-  local req_id="$1" pr_number="$2" status="$3" blocking_reason="$4" iteration="${5:-0}"
+  local req_id="$1" pr_number="$2" status="$3" blocking_reason="$4" iteration="${5:-0}" branch_name="${6:-}"
   local iter_num
   iter_num="$(echo "$iteration" | grep -oE '[0-9]+' || echo "0")"
   iter_num="${iter_num:-0}"
 
   # ATM protocol uses "completed"; legacy uses "success" — accept both
   if [[ "$status" == "success" || "$status" == "completed" ]]; then
-    info "tc_complete(success): ${req_id} — 路由 implement 到 Menglan"
+    info "tc_complete(success): ${req_id} — 路由 implement 到 Menglan${branch_name:+（共用分支 ${branch_name}）}"
     local req_body=""
     local _req_f="tasks/features/${req_id}.md"
     [[ -f "$_req_f" ]] && req_body="$(cat "$_req_f")"
     inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（TC 已通过 review）" \
-      "" "success" "" "" "$req_body"
+      "" "success" "" "" "$req_body" "$branch_name"
   elif [[ $iter_num -lt 2 ]]; then
     local next_iter=$(( iter_num + 1 ))
     info "tc_complete(blocked) iter=${next_iter}: ${req_id} — 路由修复请求到 Huahua"
@@ -1176,6 +1179,47 @@ stall_detection() {
   done
 }
 
+# ── Keep-Alive Watchdog（REQ-039）─────────────────────────────────────────────
+#
+# 扫描 status=in_progress 的 REQ；若对应 agent 的存活时间戳超过
+# AGENT_STALL_TIMEOUT_MINUTES（默认 60）分钟则发送 keep-alive implement 请求。
+#
+# Agent 存活时间戳：由各 agent heartbeat 在每次运行时写入
+#   runtime/menglan_alive.ts  — epoch 整数（秒）
+#   runtime/huahua_alive.ts   — epoch 整数（秒）
+_check_stall_and_keepalive() {
+  local timeout_min="${AGENT_STALL_TIMEOUT_MINUTES:-60}"
+  local timeout_sec=$(( timeout_min * 60 ))
+  local now; now="$(date +%s)"
+
+  for f in tasks/features/REQ-*.md; do
+    [[ -f "$f" ]] || continue
+    local status owner req_id
+    status="$(_get_fm_field "$f" "status")"
+    owner="$(_get_fm_field "$f" "owner")"
+    req_id="$(_get_fm_field "$f" "req_id")"
+
+    # 只监控 in_progress 且由 menglan 或 huahua 执行的任务
+    [[ "$status" == "in_progress" ]] || continue
+    [[ "$owner" == "menglan" || "$owner" == "huahua" ]] || continue
+
+    local ts_file="${REPO_ROOT}/runtime/${owner}_alive.ts"
+    local last_alive=0
+    if [[ -f "$ts_file" ]]; then
+      last_alive="$(cat "$ts_file" 2>/dev/null | tr -dc '0-9' || echo 0)"
+    fi
+
+    local elapsed=$(( now - last_alive ))
+    if [[ $elapsed -ge $timeout_sec ]]; then
+      warn "keep-alive: ${req_id} owner=${owner} stale ${elapsed}s (threshold ${timeout_sec}s) — 发送 keep-alive"
+      inbox_write "$owner" "implement" "$req_id" \
+        "keep-alive: resume ${req_id}（stale ${elapsed}s ≥ ${timeout_sec}s）"
+    else
+      info "keep-alive: ${req_id} owner=${owner} alive ${elapsed}s < ${timeout_sec}s — 跳过"
+    fi
+  done
+}
+
 # ── 主入口 ────────────────────────────────────────────────────────────────────
 
 main() {
@@ -1205,6 +1249,9 @@ main() {
 
   # 5. 停滞检测（REQ-022）
   stall_detection
+
+  # 5.5. Keep-Alive Watchdog（REQ-039）
+  _check_stall_and_keepalive
 
   # 6. Worktree 自动清理（REQ-037）
   _auto_worktree_clean

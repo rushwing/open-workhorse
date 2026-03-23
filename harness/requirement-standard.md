@@ -130,7 +130,7 @@ tasks/                  # 所有待执行工作项的根目录
 | `priority` | `P0` / `P1` / `P2` / `P3` |
 | `phase` | 所属 Phase，例如 `phase-1` |
 | `owner` | `unassigned` / `pandas` / `huahua` / `menglan` / `claude_code` / `human`（具名 agent 值由 .env `AGENT_*` 变量配置，此处为默认值）|
-| `blocked_reason` | 仅 `status=blocked` 时填写；枚举见 §6.5 |
+| `blocked_reason` | 仅 `status=blocked` 时填写；枚举见 §6.6 |
 | `blocked_from_status` | 仅 `status=blocked` 时填写；记录进入 blocked 前的状态，供 unblock 时恢复用 |
 | `blocked_from_owner` | 仅 `blocked_reason=bug_linked` 时填写；记录 block 前的 owner，供 unblock 时恢复用（见 bug-standard.md §2.2/§2.3）|
 | `review_round` | （可选）当前打回轮次，整数；超过 2 轮时升级 Daniel |
@@ -236,7 +236,7 @@ draft → review_ready → req_review → ready → in_progress → review → d
 - `test_designed → in_progress`：Agent 认领（单 commit 改 owner + status）
 - `ready → in_progress`：仅当 `tc_policy=optional` 或 `tc_policy=exempt`
 - `in_progress → review`：实现完成，PR 已提
-- `X → blocked`：任意状态进入 blocked 时，必须同时写入 `blocked_reason`（枚举见 §6.5）和 `blocked_from_status: X`；若 `blocked_reason=bug_linked`，还须写入 `blocked_from_owner: <当前 owner>` 并将 `owner` 清空为 `unassigned`（见 bug-standard.md §2.2）；`review` 打回时额外在 Agent Notes 追加打回原因及关联 Bug 外链（若有）
+- `X → blocked`：任意状态进入 blocked 时，必须同时写入 `blocked_reason`（枚举见 §6.6）和 `blocked_from_status: X`；若 `blocked_reason=bug_linked`，还须写入 `blocked_from_owner: <当前 owner>` 并将 `owner` 清空为 `unassigned`（见 bug-standard.md §2.2）；`review` 打回时额外在 Agent Notes 追加打回原因及关联 Bug 外链（若有）
 - `blocked → X`：unblock 时将 `status` 恢复为 `blocked_from_status`；若 `blocked_from_owner` 非空，同时将 `owner` 恢复为 `blocked_from_owner`；清空 `blocked_reason`、`blocked_from_status`、`blocked_from_owner`；`review_round` 递增（若因 review 打回导致的 block）
 - `review → done`：PR 合并；`pending_bugs` 必须为空数组（即所有关联 Bug `status=closed`）——Bug clean 门控；`pending_bugs` 非空则不允许 merge
 
@@ -272,7 +272,21 @@ bash scripts/check-req-coverage.sh
 - [ ] `status == blocked` 时 `blocked_from_status` 字段存在且非空（脚本自动验证）
 - [ ] `status == blocked` かつ `blocked_reason == bug_linked` 时 `blocked_from_owner` 字段存在且非空（脚本自动验证）
 
-### 6.5 `blocked_reason` 枚举
+### 6.5 单 PR 规则（REQ-039）
+
+所有 `tc_policy`（含 `mandatory`）遵循**单 PR 规则**：
+
+1. **Hua Hua** 在 `feat/${req_id}` 分支（而非 `tc/...`）提交 TC 文件并开 PR
+2. **Meng Lan** 在同一 `feat/${req_id}` 分支追加实现提交——不新建分支，不新建 PR
+3. **Daniel** 只需 merge 一次（归档 PR 单独走，不受此规则影响）
+
+`feat/${req_id}` 分支名是唯一标准。Hua Hua 在 `tc_review` 消息中携带 `branch_name` 字段，
+该字段沿消息链传递（`tc_review → tc_complete → implement`），
+Meng Lan 收到后通过 `EXISTING_BRANCH` 环境变量告知 `harness.sh implement` 复用该分支。
+
+`tc_policy=exempt/optional` 路径（Pandas auto-claim）不经过 Hua Hua，Meng Lan 正常新建分支和 PR。
+
+### 6.6 `blocked_reason` 枚举
 
 | 值 | 含义 |
 |---|---|
@@ -367,7 +381,23 @@ test_designed (Huahua 写 Menglan inbox)
   → Menglan 发现 tc_bug → Huahua 修 TC → Menglan 二次确认
 ```
 
-### 8.5 review_round 管理
+### 8.5 Keep-Alive Watchdog 协议（REQ-039）
+
+当 Pandas 检测到某 agent（menglan/huahua）正在处理某任务（`status=in_progress`），
+但对应存活时间戳（`runtime/{agent}_alive.ts`）超过 `AGENT_STALL_TIMEOUT_MINUTES`（默认 60 分钟）时：
+
+1. 判断为 **stale**：agent cron 已死亡或 session 已崩溃
+2. 向该 agent inbox 写 `implement` keep-alive 消息（`summary` 含 "keep-alive: resume ${req_id}"）
+3. Agent 收到 keep-alive 后，以 `FORCE=true` 重新运行 `harness.sh implement`（幂等：worktree 已存在时直接进入）
+
+存活时间戳更新时机：
+- `menglan-heartbeat.sh` 每次运行（含无消息早退）前写 `runtime/menglan_alive.ts`
+- `huahua-heartbeat.sh` 每次运行（有消息时）后写 `runtime/huahua_alive.ts`
+
+**限制**：当前机制检测的是 cron 进程死亡，不能直接检测 Claude Code session 内部崩溃。
+如需检测 session 内部崩溃，需在 harness prompt 中指示 Claude 定期更新时间戳文件（待 REQ-039 后续迭代）。
+
+### 8.6 review_round 管理
 
 - `review_round` 初始值为 `0`（不填写或省略）；首次打回时写入 `1`
 - 每次 `review → blocked → in_progress` 循环后，`review_round` 递增
