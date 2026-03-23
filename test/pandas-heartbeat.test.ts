@@ -3604,6 +3604,35 @@ test("TC-039-05: harness.sh cmd_worktree_setup syncs origin commits when resumin
   }
 });
 
+// TC-039-05b: harness.sh cmd_worktree_setup fails closed when git ls-remote errors (P1 fix)
+test("TC-039-05b: harness.sh cmd_worktree_setup exits non-zero when git ls-remote fails (not branch absent)", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-05b-${Date.now()}`);
+  const worktreeDir = join(tmpDir, "worktree");
+  try {
+    // Minimal git repo with an unreachable origin — ls-remote will fail with exit 1 (not 2)
+    await runBash(
+      `git -c user.email=t@t.com -c user.name=T init "${tmpDir}" && ` +
+      `git -C "${tmpDir}" -c user.email=t@t.com -c user.name=T commit --allow-empty -m "init" && ` +
+      `git -C "${tmpDir}" remote add origin /nonexistent/path`,
+    );
+    const result = await runBash(
+      `REPO_ROOT="${tmpDir}" MENGLAN_WORKTREE_ROOT="${worktreeDir}" bash "${PROJECT_ROOT}/scripts/harness.sh" worktree-setup REQ-039-ls-fail`,
+    );
+    // Must fail closed — not silently create a branch from main
+    assert.notEqual(result.code, 0,
+      `Expected non-zero exit when ls-remote fails. Got 0.\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(
+      result.stderr.includes("ls-remote") || result.stderr.includes("失败") || result.stderr.includes("abort"),
+      `Expected error message about ls-remote failure. Got:\n${result.stderr}`,
+    );
+    // Must NOT have created a local branch
+    const branchCheck = await runBash(`git -C "${tmpDir}" show-ref refs/heads/feat/REQ-039-ls-fail 2>&1`);
+    assert.notEqual(branchCheck.code, 0, "Expected feat/REQ-039-ls-fail branch NOT to be created on ls-remote failure");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 // TC-039-06: menglan-heartbeat writes runtime/menglan_alive.ts on every run
 test("TC-039-08: menglan-heartbeat writes runtime/menglan_alive.ts on every run (including empty inbox)", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-08-${Date.now()}`);

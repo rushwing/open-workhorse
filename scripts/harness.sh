@@ -126,14 +126,20 @@ cmd_worktree_setup() {
 
   # 分支不存在则创建：优先从远端拉取（Huahua 已建 TC PR 时），否则基于 main 新建
   if ! git show-ref --verify --quiet "refs/heads/${branch}"; then
-    if git ls-remote --exit-code origin "refs/heads/${branch}" &>/dev/null; then
+    local ls_rc=0
+    git ls-remote --exit-code origin "refs/heads/${branch}" &>/dev/null || ls_rc=$?
+    # --exit-code semantics: 0=found, 2=absent, anything else=error (network/auth)
+    if [[ $ls_rc -eq 0 ]]; then
       git fetch origin "${branch}:${branch}"
       info "分支已从远端拉取：${branch}（Huahua TC PR 已存在）"
-    else
+    elif [[ $ls_rc -eq 2 ]]; then
       local base_ref
       base_ref="$(git show-ref --verify --quiet refs/remotes/origin/main && echo origin/main || echo main)"
       git branch "$branch" "$base_ref"
       info "分支已创建：${branch}（基于 ${base_ref}）"
+    else
+      err "git ls-remote origin 失败（exit ${ls_rc}）— 无法安全判断远端 ${branch} 是否存在，中止"
+      exit 1
     fi
   fi
 

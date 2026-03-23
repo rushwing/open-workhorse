@@ -27,11 +27,14 @@ cd "$REPO_ROOT"
 if [[ -f "$REPO_ROOT/.env" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
-    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT|TELEGRAM_|DEV_WATCHDOG_|AGENT_STALL_TIMEOUT_MINUTES|GITHUB_REPO|http_proxy|https_proxy|HTTP_PROXY|HTTPS_PROXY) ]] || continue
+    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT|TELEGRAM_|DEV_WATCHDOG_|AGENT_STALL_TIMEOUT_MINUTES|AGENT_CODER|AGENT_REVIEWER|GITHUB_REPO|http_proxy|https_proxy|HTTP_PROXY|HTTPS_PROXY) ]] || continue
     local_var="${line%%=*}"
     # Skip if already set in environment (env wins over .env file)
     [[ "${!local_var+X}" == "X" ]] && continue
-    export "$line" 2>/dev/null || true
+    # Strip inline comment (e.g. "pandas  # 编排") before exporting
+    local_val="${line#*=}"
+    [[ "$local_val" =~ ^(.*[^[:space:]])[[:space:]]+# ]] && local_val="${BASH_REMATCH[1]}"
+    export "${local_var}=${local_val}" 2>/dev/null || true
   done < "$REPO_ROOT/.env"
 fi
 
@@ -40,6 +43,10 @@ fi
 if [[ -f "$REPO_ROOT/scripts/telegram.sh" ]]; then
   source "$REPO_ROOT/scripts/telegram.sh" 2>/dev/null || true
 fi
+
+# Agent 名称（.env 中的 AGENT_CODER / AGENT_REVIEWER 可覆盖，环境变量优先）
+AGENT_CODER="${AGENT_CODER:-menglan}"
+AGENT_REVIEWER="${AGENT_REVIEWER:-huahua}"
 
 # ── 颜色（仅 TTY 输出时启用）────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -1199,9 +1206,9 @@ _check_stall_and_keepalive() {
     owner="$(_get_fm_field "$f" "owner")"
     req_id="$(_get_fm_field "$f" "req_id")"
 
-    # 只监控 in_progress 且由 menglan 或 huahua 执行的任务
+    # 只监控 in_progress 且由已知 coder/reviewer agent 执行的任务
     [[ "$status" == "in_progress" ]] || continue
-    [[ "$owner" == "menglan" || "$owner" == "huahua" ]] || continue
+    [[ "$owner" == "$AGENT_CODER" || "$owner" == "$AGENT_REVIEWER" ]] || continue
 
     local ts_file="${REPO_ROOT}/runtime/${owner}_alive.ts"
     local last_alive=0
