@@ -148,6 +148,7 @@ set offset variables in `.env` before running the installer:
 
 ```bash
 # .env — stagger heartbeats: Pandas :00/:05/..., Menglan :02/:07/..., Huahua :04/:09/...
+# Constraint: OFFSET must be 0 ≤ offset < INTERVAL (e.g. offset 0–4 for interval=5)
 PANDAS_HEARTBEAT_INTERVAL_MINUTES=5
 PANDAS_HEARTBEAT_OFFSET_MINUTES=0
 

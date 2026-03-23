@@ -33,6 +33,12 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
 fi
 OFFSET_MINUTES="${PANDAS_HEARTBEAT_OFFSET_MINUTES:-$OFFSET_MINUTES}"
 
+# ── 校验参数 ──────────────────────────────────────────────────────────────────
+if [[ "$OFFSET_MINUTES" -lt 0 || "$OFFSET_MINUTES" -ge "$INTERVAL_MINUTES" ]]; then
+  echo "ERROR: PANDAS_HEARTBEAT_OFFSET_MINUTES must be 0–$((INTERVAL_MINUTES - 1)), got: ${OFFSET_MINUTES}" >&2
+  exit 1
+fi
+
 # ── 构造 cron 表达式 ──────────────────────────────────────────────────────────
 if [[ "$INTERVAL_MINUTES" -eq 60 && "$OFFSET_MINUTES" -eq 0 ]]; then
   CRON_EXPR="0 * * * *"
@@ -93,6 +99,7 @@ case "$CMD" in
 esac
 
 # ── 安装（幂等：先移除旧条目，再写入新条目）──────────────────────────────────
+mkdir -p "$REPO_ROOT/runtime"
 # crontab -l exits non-zero when no crontab exists; capture with || true so
 # set -e does not abort on a clean first-run machine.
 existing_crontab="$(crontab -l 2>/dev/null || true)"
