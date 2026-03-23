@@ -3777,3 +3777,116 @@ test("TC-039-13: _check_stall_and_keepalive does NOT send duplicate keep-alive w
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── TC-039-06 / TC-039-07: harness.sh implement prompt — shared git setup helper ──────
+
+/**
+ * Set up a minimal git repo + pre-created worktree + REQ file + mock claude.
+ * Returns { tmpDir, worktreeDir, promptCapture }.
+ * The mock claude writes its last positional arg (the prompt string) to promptCapture.
+ */
+async function setupHarnessPromptTest(reqId: string): Promise<{ tmpDir: string; worktreeDir: string; promptCapture: string }> {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-hpt-${reqId}-${Date.now()}`);
+  const worktreeDir = join(tmpDir, "worktree");
+  const promptCapture = join(tmpDir, "captured_prompt.txt");
+
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+  await mkdir(join(tmpDir, "bin"), { recursive: true });
+
+  // Minimal git repo so cmd_worktree_setup succeeds
+  const branch = `feat/${reqId}`;
+  await runBash(
+    `git -c user.email=t@t.com -c user.name=T init "${tmpDir}" && ` +
+    `git -C "${tmpDir}" -c user.email=t@t.com -c user.name=T commit --allow-empty -m "init" && ` +
+    `git -C "${tmpDir}" checkout -b "${branch}" && ` +
+    `git -C "${tmpDir}" -c user.email=t@t.com -c user.name=T commit --allow-empty -m "branch init" && ` +
+    `git -C "${tmpDir}" checkout - && ` +
+    `git -C "${tmpDir}" worktree add "${worktreeDir}" "${branch}"`,
+  );
+
+  // REQ file (FORCE=true bypasses claimable/depends checks)
+  await writeFile(
+    join(tmpDir, "tasks", "features", `${reqId}.md`),
+    `---\nreq_id: ${reqId}\nstatus: test_designed\nowner: unassigned\ntc_policy: required\ndepends_on: []\n---\n`,
+  );
+
+  // Mock claude: capture last argument (the prompt) to a file and exit 0
+  await writeFile(
+    join(tmpDir, "bin", "claude"),
+    `#!/usr/bin/env bash\nprintf '%s' "\${@: -1}" > "${promptCapture}"\nexit 0\n`,
+  );
+  await makeExecutable(join(tmpDir, "bin", "claude"));
+
+  return { tmpDir, worktreeDir, promptCapture };
+}
+
+// TC-039-06: harness.sh cmd_implement with EXISTING_BRANCH → prompt contains PR-check note
+test("TC-039-06: harness.sh implement with EXISTING_BRANCH — prompt contains gh pr list and gh pr edit", async () => {
+  const reqId = "REQ-039-eb6";
+  const { tmpDir, worktreeDir, promptCapture } = await setupHarnessPromptTest(reqId);
+  try {
+    const result = await runBash(
+      `bash "${PROJECT_ROOT}/scripts/harness.sh" implement "${reqId}"`,
+      {
+        REPO_ROOT: tmpDir,
+        MENGLAN_WORKTREE_ROOT: worktreeDir,
+        FORCE: "true",
+        EXISTING_BRANCH: `feat/${reqId}`,
+        PATH: `${join(tmpDir, "bin")}:${process.env["PATH"] ?? ""}`,
+      },
+    );
+    assert.equal(result.code, 0, `harness.sh failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    const prompt = await readFile(promptCapture, "utf8");
+    assert.ok(
+      prompt.includes(`gh pr list --head feat/${reqId}`),
+      `Expected 'gh pr list --head feat/${reqId}' in prompt. Got:\n${prompt}`,
+    );
+    assert.ok(
+      prompt.includes("gh pr edit"),
+      `Expected 'gh pr edit' in prompt. Got:\n${prompt}`,
+    );
+    assert.ok(
+      !prompt.includes("gh pr create --fill") || prompt.includes("If not found"),
+      `Expected no unconditional 'gh pr create --fill' when EXISTING_BRANCH is set. Got:\n${prompt}`,
+    );
+  } finally {
+    await runBash(`git -C "${tmpDir}" worktree remove --force "${worktreeDir}" 2>/dev/null || true`);
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-039-07: harness.sh cmd_implement WITHOUT EXISTING_BRANCH → prompt uses gh pr create --fill (exempt/optional regression)
+test("TC-039-07: harness.sh implement without EXISTING_BRANCH — prompt uses gh pr create --fill (tc_policy exempt/optional path)", async () => {
+  const reqId = "REQ-039-ex7";
+  const { tmpDir, worktreeDir, promptCapture } = await setupHarnessPromptTest(reqId);
+  try {
+    const result = await runBash(
+      `bash "${PROJECT_ROOT}/scripts/harness.sh" implement "${reqId}"`,
+      {
+        REPO_ROOT: tmpDir,
+        MENGLAN_WORKTREE_ROOT: worktreeDir,
+        FORCE: "true",
+        // EXISTING_BRANCH intentionally absent
+        PATH: `${join(tmpDir, "bin")}:${process.env["PATH"] ?? ""}`,
+      },
+    );
+    assert.equal(result.code, 0, `harness.sh failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    const prompt = await readFile(promptCapture, "utf8");
+    // Without EXISTING_BRANCH the PR-exists note is absent, so Claude follows standard PR create flow
+    assert.ok(
+      !prompt.includes("gh pr list --head"),
+      `Expected no 'gh pr list --head' in prompt when EXISTING_BRANCH absent. Got:\n${prompt}`,
+    );
+    assert.ok(
+      !prompt.includes("gh pr edit"),
+      `Expected no 'gh pr edit' instruction in prompt when EXISTING_BRANCH absent. Got:\n${prompt}`,
+    );
+    assert.ok(
+      !prompt.includes("A TC PR already exists"),
+      `Expected no 'A TC PR already exists' note in prompt when EXISTING_BRANCH absent. Got:\n${prompt}`,
+    );
+  } finally {
+    await runBash(`git -C "${tmpDir}" worktree remove --force "${worktreeDir}" 2>/dev/null || true`);
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
