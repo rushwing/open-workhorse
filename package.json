@@ -14,7 +14,7 @@
     "command:import-validate": "APP_COMMAND=import-validate node --env-file-if-exists=.env --import tsx src/index.ts",
     "command:acks-prune": "APP_COMMAND=acks-prune node --env-file-if-exists=.env --import tsx src/index.ts",
     "command:task-heartbeat": "APP_COMMAND=task-heartbeat node --env-file-if-exists=.env --import tsx src/index.ts",
-    "test": "node --import tsx --test test/**/*.test.ts",
+    "test": "node --import tsx --test --test-concurrency=4 test/**/*.test.ts",
     "build": "tsc -p tsconfig.json",
     "release:audit": "bash scripts/release-audit.sh",
     "validate:task-store": "node --import tsx scripts/validate-task-store.ts",

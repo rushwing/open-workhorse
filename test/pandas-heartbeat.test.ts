@@ -339,12 +339,19 @@ test("TC-023-04: tc_complete blocked iteration=1 routes fix to for-huahua with i
 // ── REQ-024: TC-024-01 tg_poll_commands is silent when TOKEN unset ────────────
 
 test("TC-024-01: tg_poll_commands silently returns when TELEGRAM_BOT_TOKEN unset", async () => {
-  const result = await runBash(
-    `source "${join(PROJECT_ROOT, "scripts/telegram.sh")}" 2>/dev/null; tg_poll_commands`,
-    { TELEGRAM_BOT_TOKEN: "", TELEGRAM_CHAT_ID: "" },
-  );
-  assert.equal(result.code, 0, "Expected exit 0 (silent return)");
-  assert.ok(!result.stderr.includes("ERROR"), "No ERROR in stderr");
+  // Use an isolated REPO_ROOT with no .env so telegram.sh cannot load real credentials
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-024-01-${Date.now()}`);
+  await mkdir(tmpDir, { recursive: true });
+  try {
+    const result = await runBash(
+      `source "${join(PROJECT_ROOT, "scripts/telegram.sh")}" 2>/dev/null; tg_poll_commands`,
+      { TELEGRAM_BOT_TOKEN: "", TELEGRAM_CHAT_ID: "", REPO_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, "Expected exit 0 (silent return)");
+    assert.ok(!result.stderr.includes("ERROR"), "No ERROR in stderr");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
 });
 
 // ── REQ-024: TC-024-03 hold command creates .pandas_hold ─────────────────────
@@ -758,6 +765,7 @@ exit 0
         TELEGRAM_BOT_TOKEN: "mock_token",
         TELEGRAM_CHAT_ID: "12345",
         TG_DECISION_TIMEOUT: "1",
+        TG_DECISION_POLL_INTERVAL: "1",
       },
     );
     // Should time out (non-zero exit) and mention "decision timed out"
