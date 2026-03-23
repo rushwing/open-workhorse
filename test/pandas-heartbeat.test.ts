@@ -1087,6 +1087,54 @@ test("TC-033-09: inbox_read_pandas routes legacy type=tc_complete via _inbox_rea
   }
 });
 
+// ── merge-ready-queue fallback regression ─────────────────────────────────────
+// Regression: _handle_review_complete must write merge-ready-queue.txt when
+// Telegram fails, even when runtime/ does not yet exist (mkdir -p guard).
+
+test("_handle_review_complete: Telegram failure writes merge-ready-queue.txt without aborting", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-mrq-fallback-${Date.now()}`);
+  const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
+  // Intentionally do NOT create runtime/ — test that mkdir -p creates it
+  await mkdir(inboxPandasDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  await writeFile(
+    join(inboxPandasDir, "2026-03-24-review-complete.md"),
+    "---\nmessage_id: msg_rc_001\ntype: response\nfrom: huahua\nto: pandas\ncreated_at: 2026-03-24T00:00:00Z\nthread_id: thread_rc\ncorrelation_id: corr_rc\npriority: P1\n---\nreq_id: REQ-099\npr_number: 99\nstatus: completed\nsummary: LGTM\nlegacy_type: review_complete\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      // Override tg_pr_ready to always fail — simulates missing Telegram config
+      `tg_pr_ready() { return 1; }
+       source "${SCRIPT}" 2>/dev/null
+       tg_pr_ready() { return 1; }
+       inbox_init; inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    // Script must not abort — exit 0
+    assert.equal(result.code, 0, `Expected exit 0 after Telegram failure. stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // merge-ready-queue.txt must be created (even though runtime/ didn't exist before)
+    const queuePath = join(tmpDir, "runtime", "merge-ready-queue.txt");
+    let queueContent: string;
+    try {
+      const { readFile: rf } = await import("node:fs/promises");
+      queueContent = await rf(queuePath, "utf8");
+    } catch {
+      assert.fail(`merge-ready-queue.txt was not created at ${queuePath}`);
+    }
+
+    assert.ok(queueContent!.includes("REQ-099"), `Expected REQ-099 in queue. Content: ${queueContent}`);
+    assert.ok(queueContent!.includes("99"), `Expected PR #99 in queue. Content: ${queueContent}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 // ── REQ-034: TC-034-* Claim 原子性 + 生命周期目录 ────────────────────────────
 
 // TC-034-01: 正常 claim → done/

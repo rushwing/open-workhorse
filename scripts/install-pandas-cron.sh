@@ -8,6 +8,7 @@
 #
 # .env 配置项:
 #   PANDAS_HEARTBEAT_INTERVAL_MINUTES  — 心跳间隔（分钟，默认 5）
+#   PANDAS_HEARTBEAT_OFFSET_MINUTES    — cron 触发偏移（0–N，默认 0；用于错峰，如 0/2/4）
 
 set -euo pipefail
 
@@ -23,11 +24,32 @@ fi
 # 环境变量优先
 INTERVAL_MINUTES="${PANDAS_HEARTBEAT_INTERVAL_MINUTES:-$INTERVAL_MINUTES}"
 
+# ── 读取触发偏移配置 ──────────────────────────────────────────────────────────
+OFFSET_MINUTES=0
+if [[ -f "$REPO_ROOT/.env" ]]; then
+  val="$(grep '^PANDAS_HEARTBEAT_OFFSET_MINUTES=' "$REPO_ROOT/.env" 2>/dev/null \
+        | cut -d= -f2 | tr -d ' \r' || true)"
+  [[ -n "$val" ]] && OFFSET_MINUTES="$val"
+fi
+OFFSET_MINUTES="${PANDAS_HEARTBEAT_OFFSET_MINUTES:-$OFFSET_MINUTES}"
+
 # ── 构造 cron 表达式 ──────────────────────────────────────────────────────────
-if [[ "$INTERVAL_MINUTES" -eq 60 ]]; then
+if [[ "$INTERVAL_MINUTES" -eq 60 && "$OFFSET_MINUTES" -eq 0 ]]; then
   CRON_EXPR="0 * * * *"
 elif [[ "$INTERVAL_MINUTES" -ge 1 && "$INTERVAL_MINUTES" -lt 60 ]]; then
-  CRON_EXPR="*/${INTERVAL_MINUTES} * * * *"
+  if [[ "$OFFSET_MINUTES" -eq 0 ]]; then
+    CRON_EXPR="*/${INTERVAL_MINUTES} * * * *"
+  else
+    # 生成带偏移的分钟列表，例如 offset=2 interval=5 → "2,7,12,17,22,27,32,37,42,47,52,57"
+    minutes=""
+    m="$OFFSET_MINUTES"
+    while [[ $m -lt 60 ]]; do
+      [[ -n "$minutes" ]] && minutes="${minutes},"
+      minutes="${minutes}${m}"
+      m=$(( m + INTERVAL_MINUTES ))
+    done
+    CRON_EXPR="${minutes} * * * *"
+  fi
 else
   echo "ERROR: PANDAS_HEARTBEAT_INTERVAL_MINUTES must be 1–60, got: ${INTERVAL_MINUTES}" >&2
   exit 1
@@ -78,7 +100,7 @@ existing_crontab="$(crontab -l 2>/dev/null || true)"
  echo "${CRON_EXPR} ${CRON_CMD} ${CRON_MARKER}") | crontab -
 
 echo "pandas-heartbeat cron installed"
-echo "  interval : ${INTERVAL_MINUTES} min  (${CRON_EXPR})"
+echo "  interval : ${INTERVAL_MINUTES} min, offset: ${OFFSET_MINUTES}  (${CRON_EXPR})"
 echo "  log      : ${REPO_ROOT}/runtime/pandas-heartbeat.log"
 echo ""
 echo "验证: bash scripts/install-pandas-cron.sh --status"

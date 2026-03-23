@@ -144,21 +144,22 @@ Default heartbeat intervals (configurable via `.env`):
 | Huahua (reviewer)     | `HUAHUA_HEARTBEAT_INTERVAL_MINUTES` | 5 |
 
 To stagger the cron triggers so they don't all fire at the same minute,
-add offset settings to `.env`:
+set offset variables in `.env` before running the installer:
 
 ```bash
-# .env — stagger heartbeats across the 5-minute window
+# .env — stagger heartbeats: Pandas :00/:05/..., Menglan :02/:07/..., Huahua :04/:09/...
 PANDAS_HEARTBEAT_INTERVAL_MINUTES=5
+PANDAS_HEARTBEAT_OFFSET_MINUTES=0
+
 MENGLAN_HEARTBEAT_INTERVAL_MINUTES=5
+MENGLAN_HEARTBEAT_OFFSET_MINUTES=2
+
 HUAHUA_HEARTBEAT_INTERVAL_MINUTES=5
+HUAHUA_HEARTBEAT_OFFSET_MINUTES=4
 ```
 
-Then install individual crons with custom offset expressions if needed:
-
-```bash
-# Pandas at :00,:05,:10...  Menglan at :02,:07,:12...  Huahua at :04,:09,:14...
-(crontab -l 2>/dev/null; echo "*/5 * * * * cd ~/workspace-pandas/open-workhorse && ...") | crontab -
-```
+Then re-run `bash scripts/install-agent-suite.sh` to apply the offsets.
+The installer generates the correct minute-list cron expression automatically.
 
 Verify after installation:
 

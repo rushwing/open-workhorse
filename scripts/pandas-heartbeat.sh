@@ -592,7 +592,9 @@ _handle_review_complete() {
     if ! tg_pr_ready "${pr_url}" "${summary}"; then
       warn "tg_pr_ready 调用失败（Telegram 未配置？）— 写入 merge-ready-queue"
       local queue="${REPO_ROOT}/runtime/merge-ready-queue.txt"
-      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${req_id} PR #${pr_number} ${pr_url}" >> "$queue"
+      mkdir -p "$(dirname "$queue")" 2>/dev/null || true
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${req_id} PR #${pr_number} ${pr_url}" >> "$queue" \
+        || warn "merge-ready-queue 写入失败（${queue}）"
     fi
   else
     warn "review_complete(rejected): ${req_id}: ${blocking_reason}"
