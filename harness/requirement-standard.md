@@ -250,6 +250,8 @@ draft → review_ready → req_review → ready → in_progress → review → d
 - 不允许 `test_case_ref` 为空时迁移到 `test_designed`
 - 不允许 frontmatter 检查未通过时迁移到 `ready`
 - 不允许 `review → done` 时 Agent Notes 中存在未关闭（`status != done`）的 Bug 外链
+- 禁止将 `review`（PR 已提，等待 merge）与 `req_review`（需求评审阶段）互换使用；
+  `review` 状态**必须**有对应 `pr_number` 字段；`req_review` 状态**不涉及** PR，Huahua 只做需求范围确认
 
 ### 6.4 `req_review → ready` 前置检查清单
 

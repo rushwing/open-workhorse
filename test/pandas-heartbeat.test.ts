@@ -169,23 +169,26 @@ test("TC-022-02: empty inbox/for-pandas exits with code 0 and no errors", async 
 
 // ── REQ-022: TC-022-03 auto-claim selects P1 over P2 ────────────────────────
 
+// Updated: test_designed REQs are no longer claimed by Pandas auto_claim (§8.4).
+// Priority selection is tested with ready+tc_policy=optional instead.
 test("TC-022-03: auto_claim selects P1 task over P2", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-022-03-${Date.now()}`);
   const featuresDir = join(tmpDir, "tasks", "features");
   await mkdir(featuresDir, { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-pandas"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
 
-  // P2 task
+  // P2 task — ready + tc_policy=optional (claimable by Pandas)
   await writeFile(
     join(featuresDir, "REQ-901.md"),
-    "---\nreq_id: REQ-901\ntitle: P2 Task\nstatus: test_designed\npriority: P2\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: [TC-901-01]\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\n---\n",
+    "---\nreq_id: REQ-901\ntitle: P2 Task\nstatus: ready\npriority: P2\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: []\ntc_policy: optional\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\n---\n",
     "utf8",
   );
-  // P1 task
+  // P1 task — ready + tc_policy=optional (claimable by Pandas)
   await writeFile(
     join(featuresDir, "REQ-902.md"),
-    "---\nreq_id: REQ-902\ntitle: P1 Task\nstatus: test_designed\npriority: P1\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: [TC-902-01]\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\n---\n",
+    "---\nreq_id: REQ-902\ntitle: P1 Task\nstatus: ready\npriority: P1\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: []\ntc_policy: optional\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\n---\n",
     "utf8",
   );
 
@@ -218,14 +221,15 @@ test("TC-023-01: harness.sh tc-review without arg exits non-zero with usage mess
   );
 });
 
-// ── REQ-023: TC-023-03 tc_complete success routes implement to for-menglan ───
+// ── REQ-023: TC-023-03 tc_complete success — Pandas does NOT route implement ──
+// Updated per §8.4: Menglan self-claims after tc_review; Pandas only logs info.
 
-test("TC-023-03: tc_complete status=success writes implement message to for-menglan", async () => {
+test("TC-023-03: tc_complete status=success does not write implement message to for-menglan", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-023-03-${Date.now()}`);
   const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
   await mkdir(inboxPandasDir, { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
-  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
 
   await writeFile(
     join(inboxPandasDir, "2026-03-16-huahua-tc-done-req-021.md"),
@@ -240,15 +244,19 @@ test("TC-023-03: tc_complete status=success writes implement message to for-meng
     );
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
-    const menglanDir = join(tmpDir, "inbox", "for-menglan");
-    const files = await readdir(join(menglanDir, "pending"));
+    // Pandas must NOT route implement — Menglan self-claims (§8.4)
+    const menglanPending = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = await readdir(menglanPending);
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    assert.ok(mdFiles.length > 0, "Expected implement message in for-menglan/pending/");
-
-    const content = await readFile(join(menglanDir, "pending", mdFiles[0]!), "utf8");
-    // inbox_write() is now a @deprecated wrapper → ATM Envelope format: type: request + action: implement
-    assert.ok(content.includes("type: request") || content.includes("type: implement"), "Missing type: request/implement");
-    assert.ok(content.includes("action: implement") || content.includes("req_id: REQ-021"), "Missing action/req_id");
+    assert.equal(
+      mdFiles.length,
+      0,
+      `Expected NO implement message in for-menglan/pending/ (Menglan self-claims). Found: ${mdFiles.join(", ")}`,
+    );
+    assert.ok(
+      result.stdout.includes("tc_complete(success)") || result.stdout.includes("自行进入 in_progress"),
+      `Expected info log about tc_complete success. stdout: ${result.stdout}`,
+    );
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
@@ -898,13 +906,13 @@ test("TC-033-05: inbox_write() @deprecated wrapper calls inbox_write_v2 and prod
 // ── REQ-033: TC-033-06 inbox_read_pandas ATM response (tc_complete) routing ───
 // NOTE: ATM direction for "implement" is Pandas→Menglan ONLY.
 // Menglan→Pandas completion signals must be type=response (not request).
-// This test verifies the correct ATM pattern: type=response + legacy_type=tc_complete.
+// Updated per §8.4: _handle_tc_complete(success) logs info only; no implement routed.
 
 test("TC-033-06: inbox_read_pandas routes ATM response (legacy_type=tc_complete, status=completed) to _handle_tc_complete", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-06-${Date.now()}`);
   const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
   await mkdir(inboxPandasDir, { recursive: true });
-  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
 
   await writeFile(
@@ -921,12 +929,16 @@ test("TC-033-06: inbox_read_pandas routes ATM response (legacy_type=tc_complete,
     );
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
-    // tc_complete + status=completed → _handle_tc_complete → route implement to menglan
-    const menglanDir = join(tmpDir, "inbox", "for-menglan");
-    const files = await readdir(join(menglanDir, "pending"));
+    // tc_complete + status=completed → _handle_tc_complete → Pandas logs, does NOT route implement
+    const menglanPending = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = await readdir(menglanPending);
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    assert.ok(mdFiles.length > 0, "Expected implement message routed to for-menglan/pending/ via _handle_tc_complete");
-    // Verify direction: response stdout should mention tc_complete routing path
+    assert.equal(
+      mdFiles.length,
+      0,
+      `Expected NO implement in for-menglan/pending/ (Menglan self-claims per §8.4). Found: ${mdFiles.join(", ")}`,
+    );
+    // Verify _handle_tc_complete was entered (log should mention tc_complete or self-claim)
     assert.ok(
       result.stdout.includes("tc_complete") || result.stdout.includes("ATM response"),
       `Expected tc_complete routing path. stdout: ${result.stdout.slice(0, 300)}`,
@@ -1010,12 +1022,14 @@ test("TC-033-08: inbox_read_pandas notification severity=action-required trigger
 });
 
 // ── REQ-033: TC-033-09 inbox_read_pandas legacy type=tc_complete ──────────────
+// Updated per §8.4: Pandas no longer routes implement on tc_complete(success).
+// Menglan self-claims after tc_review passes; Pandas only logs info.
 
-test("TC-033-09: inbox_read_pandas routes legacy type=tc_complete via _inbox_read_legacy", async () => {
+test("TC-033-09: inbox_read_pandas handles legacy type=tc_complete without routing implement to Menglan", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-033-09-${Date.now()}`);
   const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
   await mkdir(inboxPandasDir, { recursive: true });
-  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
 
   await writeFile(
@@ -1031,10 +1045,21 @@ test("TC-033-09: inbox_read_pandas routes legacy type=tc_complete via _inbox_rea
     );
     assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
-    const menglanDir = join(tmpDir, "inbox", "for-menglan");
-    const files = await readdir(join(menglanDir, "pending"));
+    // Pandas must NOT route implement to Menglan — Menglan self-claims (§8.4)
+    const menglanPending = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = await readdir(menglanPending);
     const mdFiles = files.filter((f) => f.endsWith(".md"));
-    assert.ok(mdFiles.length > 0, "Expected implement message routed to for-menglan/pending/ via legacy handler");
+    assert.equal(
+      mdFiles.length,
+      0,
+      `Expected NO implement message in for-menglan/pending/ (Menglan self-claims per §8.4). Found: ${mdFiles.join(", ")}`,
+    );
+
+    // Pandas should log that Menglan will self-claim
+    assert.ok(
+      result.stdout.includes("自行进入 in_progress") || result.stdout.includes("tc_complete(success)"),
+      `Expected info log about tc_complete success. stdout: ${result.stdout}`,
+    );
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

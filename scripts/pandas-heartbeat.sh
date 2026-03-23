@@ -589,8 +589,11 @@ _handle_review_complete() {
     else
       pr_url="${pr_number:-unknown}"
     fi
-    tg_pr_ready "${pr_url}" "${summary}" || \
-      warn "tg_pr_ready 调用失败（Telegram 未配置？）"
+    if ! tg_pr_ready "${pr_url}" "${summary}"; then
+      warn "tg_pr_ready 调用失败（Telegram 未配置？）— 写入 merge-ready-queue"
+      local queue="${REPO_ROOT}/runtime/merge-ready-queue.txt"
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${req_id} PR #${pr_number} ${pr_url}" >> "$queue"
+    fi
   else
     warn "review_complete(rejected): ${req_id}: ${blocking_reason}"
     tg_notify "⚠️ [${req_id}] review rejected/blocked: ${blocking_reason}" || true
@@ -605,12 +608,9 @@ _handle_tc_complete() {
 
   # ATM protocol uses "completed"; legacy uses "success" — accept both
   if [[ "$status" == "success" || "$status" == "completed" ]]; then
-    info "tc_complete(success): ${req_id} — 路由 implement 到 Menglan"
-    local req_body=""
-    local _req_f="tasks/features/${req_id}.md"
-    [[ -f "$_req_f" ]] && req_body="$(cat "$_req_f")"
-    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（TC 已通过 review）" \
-      "" "success" "" "" "$req_body"
+    # Menglan 在 tc_review 通过后自行认领实现；Pandas 不再发 implement 消息（防止重复路由）
+    # 规程 §8.4：Huahua 直写 Menglan inbox，中间路径不经 Pandas
+    info "tc_complete(success): ${req_id} — TC review 通过，Menglan 将自行进入 in_progress"
   elif [[ $iter_num -lt 2 ]]; then
     local next_iter=$(( iter_num + 1 ))
     info "tc_complete(blocked) iter=${next_iter}: ${req_id} — 路由修复请求到 Huahua"
@@ -927,26 +927,24 @@ auto_claim() {
   title="$(_get_fm_field "$best_file" "title")"
   info "auto-claim: ${req_id}（priority rank: ${best_rank}）"
 
-  # 认领：更新 owner 和 status
+  if [[ $best_status_tier -eq 0 ]]; then
+    # status=test_designed: 规程 §8.4 — Huahua 直写 Menglan inbox，Menglan 自行认领；Pandas 不干预
+    info "auto_claim: ${req_id} 状态为 test_designed，由 Huahua→Menglan 路径处理，跳过 Pandas 路由"
+    return 0
+  fi
+
+  # 认领：更新 owner 和 status（仅适用于 ready+tc_policy=exempt/optional）
   sed -i.bak "s/^owner: unassigned/owner: claude_code/" "$best_file"
-  sed -i.bak "s/^status: test_designed/status: in_progress/" "$best_file"
   sed -i.bak "s/^status: ready/status: in_progress/" "$best_file"
   rm -f "${best_file}.bak"
 
   ok "已认领 ${req_id}"
 
-  # 路由：test_designed (tier=0) 或 ready+optional/exempt (tier=1) 均跳过 TC 设计，直接 implement
+  # 路由：ready+optional/exempt: 跳过 TC 设计，直接 implement
   local req_body=""
   [[ -f "$best_file" ]] && req_body="$(cat "$best_file")"
-  if [[ $best_status_tier -eq 0 ]]; then
-    # status=test_designed: TC 已完成，直接路由到 Menglan 实现
-    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（TC 已完成 / test_designed）" \
-      "" "success" "" "" "$req_body"
-  else
-    # status=ready, tc_policy=optional/exempt: 跳过 TC，直接路由到 Menglan 实现
-    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（tc_policy=exempt/optional，跳过 TC 设计）" \
-      "" "success" "" "" "$req_body"
-  fi
+  inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（tc_policy=exempt/optional，跳过 TC 设计）" \
+    "" "success" "" "" "$req_body"
 }
 
 # auto_claim_specific <req_id> — 认领特定 REQ（Telegram start 指令）
@@ -1184,6 +1182,10 @@ stall_detection() {
 
 main() {
   info "pandas-heartbeat 开始（$(date -u +%Y-%m-%dT%H:%M:%SZ)）"
+
+  # 0. 同步远端 main（仅 fetch，不 merge，确保本地缓存最新）
+  git -C "$REPO_ROOT" fetch origin main --quiet 2>/dev/null \
+    || warn "git fetch origin main 失败，继续使用本地缓存"
 
   # 1. 初始化 inbox 目录
   inbox_init

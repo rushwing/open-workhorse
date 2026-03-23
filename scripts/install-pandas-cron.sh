@@ -7,14 +7,14 @@
 #   bash scripts/install-pandas-cron.sh --status  # 查看当前配置
 #
 # .env 配置项:
-#   PANDAS_HEARTBEAT_INTERVAL_MINUTES  — 心跳间隔（分钟，默认 30）
+#   PANDAS_HEARTBEAT_INTERVAL_MINUTES  — 心跳间隔（分钟，默认 5）
 
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 # ── 读取 .env 中的间隔配置 ────────────────────────────────────────────────────
-INTERVAL_MINUTES=30
+INTERVAL_MINUTES=5
 if [[ -f "$REPO_ROOT/.env" ]]; then
   val="$(grep '^PANDAS_HEARTBEAT_INTERVAL_MINUTES=' "$REPO_ROOT/.env" 2>/dev/null \
         | cut -d= -f2 | tr -d ' \r' || true)"

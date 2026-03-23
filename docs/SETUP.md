@@ -124,7 +124,49 @@ npm run runbook:render
 # Output: ~/workspace-pandas/RUNBOOK.md
 ```
 
-## 6. Shared GitHub KB (optional)
+## 6. Install Pandas AI Agent Teams (Heartbeat Cron)
+
+The three agents (Pandas, Menglan, Huahua) each run a cron-based heartbeat.
+Use the one-command installer:
+
+```bash
+bash scripts/install-agent-suite.sh          # install all three
+bash scripts/install-agent-suite.sh --status  # verify installed crons
+bash scripts/install-agent-suite.sh --remove  # remove all three
+```
+
+Default heartbeat intervals (configurable via `.env`):
+
+| Agent | Variable | Default |
+|-------|----------|---------|
+| Pandas (orchestrator) | `PANDAS_HEARTBEAT_INTERVAL_MINUTES` | 5 |
+| Menglan (implementer) | `MENGLAN_HEARTBEAT_INTERVAL_MINUTES` | 5 |
+| Huahua (reviewer)     | `HUAHUA_HEARTBEAT_INTERVAL_MINUTES` | 5 |
+
+To stagger the cron triggers so they don't all fire at the same minute,
+add offset settings to `.env`:
+
+```bash
+# .env — stagger heartbeats across the 5-minute window
+PANDAS_HEARTBEAT_INTERVAL_MINUTES=5
+MENGLAN_HEARTBEAT_INTERVAL_MINUTES=5
+HUAHUA_HEARTBEAT_INTERVAL_MINUTES=5
+```
+
+Then install individual crons with custom offset expressions if needed:
+
+```bash
+# Pandas at :00,:05,:10...  Menglan at :02,:07,:12...  Huahua at :04,:09,:14...
+(crontab -l 2>/dev/null; echo "*/5 * * * * cd ~/workspace-pandas/open-workhorse && ...") | crontab -
+```
+
+Verify after installation:
+
+```bash
+crontab -l | grep heartbeat
+```
+
+## 8. Shared GitHub KB (optional)
 
 Create a shared repository cache accessible by all agents:
 
@@ -148,7 +190,7 @@ gh repo clone <owner>/<repo> ~/github-kb/<repo> -- --depth 1
 git clone --depth 1 https://github.com/<owner>/<repo>.git ~/github-kb/<repo>
 ```
 
-## 7. Switch Default Workspace (optional)
+## 9. Switch Default Workspace (optional)
 
 To change the default agent workspace (e.g. to `workspace-lion`):
 
