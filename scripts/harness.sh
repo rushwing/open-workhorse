@@ -14,7 +14,7 @@ set -euo pipefail
 export CI=true
 export GH_NO_UPDATE_NOTIFIER=1
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$REPO_ROOT"
 
 # source .env（如存在），使 AGENT_* 等变量可用
@@ -110,7 +110,12 @@ cmd_worktree_setup() {
     local current_branch
     current_branch="$(git -C "$worktree_path" branch --show-current 2>/dev/null || true)"
     if [[ "$current_branch" == "$branch" ]]; then
-      info "worktree 已存在且分支正确：${worktree_path} → ${branch}（幂等，跳过）"
+      info "worktree 已存在且分支正确：${worktree_path} → ${branch} — 同步远端最新提交"
+      # Always pull Huahua's latest TC commits before Menglan resumes work
+      git fetch origin "${branch}" 2>/dev/null \
+        && git -C "$worktree_path" merge --ff-only "origin/${branch}" 2>/dev/null \
+        && info "远端同步完成：${branch}" \
+        || warn "远端同步失败（离线或分支未推送），继续使用本地状态"
       return 0
     else
       err "worktree 路径 ${worktree_path} 已被 ${current_branch:-unknown} 占用，期望 ${branch}"
@@ -119,12 +124,23 @@ cmd_worktree_setup() {
     fi
   fi
 
-  # 分支不存在则基于 main 创建（避免继承调用方的 HEAD 提交）
+  # 分支不存在则创建：优先从远端拉取（Huahua 已建 TC PR 时），否则基于 main 新建
   if ! git show-ref --verify --quiet "refs/heads/${branch}"; then
-    local base_ref
-    base_ref="$(git show-ref --verify --quiet refs/remotes/origin/main && echo origin/main || echo main)"
-    git branch "$branch" "$base_ref"
-    info "分支已创建：${branch}（基于 ${base_ref}）"
+    local ls_rc=0
+    git ls-remote --exit-code origin "refs/heads/${branch}" &>/dev/null || ls_rc=$?
+    # --exit-code semantics: 0=found, 2=absent, anything else=error (network/auth)
+    if [[ $ls_rc -eq 0 ]]; then
+      git fetch origin "${branch}:${branch}"
+      info "分支已从远端拉取：${branch}（Huahua TC PR 已存在）"
+    elif [[ $ls_rc -eq 2 ]]; then
+      local base_ref
+      base_ref="$(git show-ref --verify --quiet refs/remotes/origin/main && echo origin/main || echo main)"
+      git branch "$branch" "$base_ref"
+      info "分支已创建：${branch}（基于 ${base_ref}）"
+    else
+      err "git ls-remote origin 失败（exit ${ls_rc}）— 无法安全判断远端 ${branch} 是否存在，中止"
+      exit 1
+    fi
   fi
 
   git worktree add "$worktree_path" "$branch"
@@ -310,6 +326,19 @@ cmd_implement() {
   info "触发 Claude Code 实现 ${req_id}..."
   log_session "implement" "$req_id"
 
+  # Detect whether a TC PR was already opened by Huahua on this branch (single-PR rule, REQ-039).
+  # EXISTING_BRANCH is set by menglan-heartbeat.sh when forwarding a tc_complete branch_name.
+  local existing_branch_note=""
+  if [[ -n "${EXISTING_BRANCH:-}" ]]; then
+    existing_branch_note="
+NOTE: A TC PR already exists for this branch (single-PR rule, REQ-039).
+Do NOT run 'gh pr create'. Instead, after updating ${req_file} to status=review:
+  existing_pr=\$(gh pr list --head feat/${req_id} --json number,url --jq '.[0]' 2>/dev/null || echo '')
+  If found: gh pr edit <number> --body '<implementation summary with TC and impl notes>'
+  If not found (unexpected): gh pr create --fill
+"
+  fi
+
   local prompt
   prompt="Read CLAUDE.md and harness/harness-index.md.
 Your task: implement ${req_id}.
@@ -318,7 +347,7 @@ Do not ask clarifying questions — proceed with your best judgment at every ste
 Working directory for all git and npm operations: ${MENGLAN_WORKTREE_ROOT}
 You are working in a git worktree (feat/${req_id}), not the main checkout.
 Do NOT run git or npm commands from ~/workspace-pandas/open-workhorse/.
-
+${existing_branch_note}
 Steps:
 1. Read ${req_file} and all test_case_ref TC files before writing any code
 2. Read the current Phase doc in tasks/phases/ to confirm iteration boundary
@@ -326,7 +355,7 @@ Steps:
 4. Write tests first (or confirm TC is runnable), then implement
 5. Before opening PR: npm run release:audit && npm run build && npm test
 6. Update ${req_file}: status=review, fill Agent Notes with implementation notes
-7. Open PR using: gh pr create --fill
+7. Open or update PR (see NOTE above if TC PR already exists)
 "
 
   "${CLAUDE_CMD[@]}" "$prompt"
@@ -610,6 +639,10 @@ case "$COMMAND" in
     shift
     cmd_runbook "${1:-}"
     ;;
+  worktree-setup)
+    shift
+    cmd_worktree_setup "${1:-}"
+    ;;
   worktree-clean)
     shift
     cmd_worktree_clean "${1:-}"
@@ -620,7 +653,8 @@ case "$COMMAND" in
     echo "命令："
     echo "  status                  列出当前可认领任务"
     echo "  implement <REQ-N>       Claude Code 认领并实现需求（自动创建 Menglan worktree）"
-    echo "  worktree-clean <REQ-N>  移除 Menglan worktree（PR merge 后调用）"
+    echo "  worktree-setup <REQ-N>  创建 Menglan worktree（优先从远端拉取分支，REQ-039）"
+  echo "  worktree-clean <REQ-N>  移除 Menglan worktree（PR merge 后调用）"
     echo "  bugfix <BUG-N>          Claude Code 认领并修复 Bug"
     echo "  fix-review <PR#>        Claude Code 修复 PR review comments"
     echo "  tc-review <PR#>         Menglan 评审 TC PR（adequate/missing-branch/redundant）"

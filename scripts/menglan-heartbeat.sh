@@ -84,10 +84,11 @@ _rollback_task() {
 }
 
 # ── tc_complete 回报 Pandas ───────────────────────────────────────────────────
-# _write_tc_complete <req_id> <pr_number> <status> [blocking_reason]
+# _write_tc_complete <req_id> <pr_number> <status> [blocking_reason] [branch_name]
 # 向 inbox/for-pandas/pending/ 写入 tc_complete response，供 Pandas _handle_tc_complete 处理
+# branch_name: 非空时携带共用 PR 分支名（REQ-039 单 PR 规则）
 _write_tc_complete() {
-  local req_id="$1" pr_number="$2" status="$3" blocking_reason="${4:-}"
+  local req_id="$1" pr_number="$2" status="$3" blocking_reason="${4:-}" branch_name="${5:-}"
   local date_str filename
   date_str="$(date +%Y-%m-%d)"
   filename="${date_str}-menglan-tc-complete-${req_id}-$$-${RANDOM}.md"
@@ -105,6 +106,7 @@ _write_tc_complete() {
     echo "pr_number: ${pr_number}"
     echo "status: ${status}"
     [[ -n "$blocking_reason" ]] && echo "blocking_reason: ${blocking_reason}"
+    [[ -n "$branch_name" ]]     && echo "branch_name: ${branch_name}"
   } > "${INBOX_ROOT}/for-pandas/pending/${filename}"
   ok "tc_complete(${status}) → for-pandas/pending/${filename}"
 }
@@ -157,8 +159,11 @@ _process_message() {
     implement)
       # Pandas already claimed the task (owner=claude_code, status=in_progress).
       # FORCE=true bypasses the claim gate. (PANDAS-ORCHESTRATION §2 DEV_ACTIVE)
-      info "路由 implement → FORCE=true harness.sh implement ${req_id}"
-      FORCE=true bash "$REPO_ROOT/scripts/harness.sh" implement "$req_id"
+      # REQ-039: if branch_name is set, pass as EXISTING_BRANCH so harness.sh reuses Huahua's TC branch
+      local impl_branch_name
+      impl_branch_name="$(_get_fm_field "$msg_file" "branch_name")"
+      info "路由 implement → FORCE=true harness.sh implement ${req_id}${impl_branch_name:+ (EXISTING_BRANCH=${impl_branch_name})}"
+      FORCE=true EXISTING_BRANCH="$impl_branch_name" bash "$REPO_ROOT/scripts/harness.sh" implement "$req_id"
       ;;
     bugfix)
       info "路由 bugfix → harness.sh bugfix ${req_id}"
@@ -171,6 +176,9 @@ _process_message() {
         warn "tc_review 消息缺少 pr_number — 移至 dead-letter"
         return 1
       fi
+      # REQ-039: preserve branch_name from tc_review message → forward to Pandas via tc_complete
+      local tc_branch_name
+      tc_branch_name="$(_get_fm_field "$msg_file" "branch_name")"
       info "路由 tc_review → harness.sh tc-review ${pr_number}"
       local review_output review_rc
       review_output="$(bash "$REPO_ROOT/scripts/harness.sh" tc-review "$pr_number" 2>&1)"
@@ -188,7 +196,7 @@ _process_message() {
       else
         tc_blocking="$(echo "$review_output" | grep -oE 'tc-review: NEEDS_CHANGES[^\n]*' | head -1 || echo 'TC changes required — see review output')"
       fi
-      _write_tc_complete "$req_id" "$pr_number" "$tc_status" "$tc_blocking"
+      _write_tc_complete "$req_id" "$pr_number" "$tc_status" "$tc_blocking" "$tc_branch_name"
       ;;
     *)
       warn "未知消息类型: ${type} — 移至 dead-letter"
@@ -199,6 +207,10 @@ _process_message() {
 
 # ── 主逻辑 ────────────────────────────────────────────────────────────────────
 main() {
+  # REQ-039: 写存活时间戳（供 Pandas keep-alive watchdog 检测，在早退前写入）
+  mkdir -p "${REPO_ROOT}/runtime"
+  date +%s > "${REPO_ROOT}/runtime/menglan_alive.ts" 2>/dev/null || true
+
   # 空则秒退（零 token）— 检查 pending/ 和扁平目录
   local msg
   msg=$(ls "${INBOX}/pending"/*.md "${INBOX}"/*.md 2>/dev/null | head -1 || true)

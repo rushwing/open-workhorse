@@ -192,6 +192,19 @@ legacy_type: tc_complete   # 或 dev_complete, review_blocked
 
 > **重要**：`legacy_type` 是 response 路由主判据（子类型路由），`status` 字段仅用于同一子类型内的成功/失败分支判定。两者协同，缺一不可。REQ-035 引入了 Thread/Correlation 追踪，但未替换 `legacy_type` 路由机制——后者仍为 Pandas reader 的 response 分派依据。
 
+### branch_name 字段（REQ-039 单 PR 规则）
+
+`tc_review`、`tc_complete`、`implement` 消息可携带可选字段 `branch_name`，值为 Hua Hua 已开 TC PR 的分支名（如 `feat/REQ-039`）。
+非空时表示 Meng Lan 应复用该分支提交实现，而非新建分支和 PR。
+
+| 消息路径 | 字段 | 含义 |
+|---------|------|------|
+| `tc_review`（Hua Hua → Meng Lan） | `branch_name: feat/REQ-N` | 通知 Meng Lan TC PR 所在分支 |
+| `tc_complete`（Meng Lan → Pandas） | `branch_name: feat/REQ-N` | 原样转发，供 Pandas 路由 |
+| `implement`（Pandas → Meng Lan） | `branch_name: feat/REQ-N` | 告知 Meng Lan 使用已有分支 |
+
+`tc_policy=exempt/optional` 路径不携带 `branch_name`（Meng Lan 自建分支）。
+
 ---
 
 ## 6. 旧格式映射表（§9.1 — 向后兼容）
