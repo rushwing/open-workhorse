@@ -27,7 +27,7 @@ cd "$REPO_ROOT"
 if [[ -f "$REPO_ROOT/.env" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
-    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT|TELEGRAM_|DEV_WATCHDOG_|GITHUB_REPO|http_proxy|https_proxy|HTTP_PROXY|HTTPS_PROXY) ]] || continue
+    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT|TELEGRAM_|DEV_WATCHDOG_|AGENT_STALL_TIMEOUT_MINUTES|GITHUB_REPO|http_proxy|https_proxy|HTTP_PROXY|HTTPS_PROXY) ]] || continue
     local_var="${line%%=*}"
     # Skip if already set in environment (env wins over .env file)
     [[ "${!local_var+X}" == "X" ]] && continue
@@ -632,6 +632,34 @@ _handle_tc_complete() {
   fi
 }
 
+_req_uses_shared_pr() {
+  local req_file="$1"
+  local tc_policy
+  tc_policy="$(_get_fm_field "$req_file" "tc_policy")"
+  [[ "$tc_policy" == "optional" || "$tc_policy" == "exempt" ]] && return 1
+  return 0
+}
+
+_keepalive_exists() {
+  local target="$1" req_id="$2"
+  local dir msg_file
+  for dir in "${INBOX_ROOT}/for-${target}/pending" "${INBOX_ROOT}/for-${target}/claimed"; do
+    [[ -d "$dir" ]] || continue
+    for msg_file in "${dir}"/*.md; do
+      [[ -f "$msg_file" ]] || continue
+      [[ "$(_get_fm_field "$msg_file" "req_id")" == "$req_id" ]] || continue
+      local type action summary
+      type="$(_get_fm_field "$msg_file" "type")"
+      action="$(_get_fm_field "$msg_file" "action")"
+      summary="$(_get_fm_field "$msg_file" "summary")"
+      if [[ "$type" == "request" && "$action" == "implement" && "$summary" == keep-alive* ]]; then
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
 _handle_major_decision() {
   local req_id="$1" blocking_reason="$2"
   warn "major_decision_needed: ${req_id}: ${blocking_reason}"
@@ -1138,23 +1166,11 @@ stall_detection() {
   local stale_seconds=$(( stale_hours * 3600 ))
   local now
   now="$(date +%s)"
-  local session_log="${REPO_ROOT}/.harness_sessions"
+  local session_log="${HARNESS_SESSION_LOG_OVERRIDE:-${REPO_ROOT}/.harness_sessions}"
   [[ -f "$session_log" ]] || return 0
 
-  declare -A last_seen
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    local ts cmd target
-    ts="$(echo "$line" | awk '{print $1}')"
-    cmd="$(echo "$line" | awk '{print $2}')"
-    target="$(echo "$line" | awk '{print $3}')"
-    [[ "$cmd" == "implement" || "$cmd" == "bugfix" ]] || continue
-    [[ -z "$target" ]] && continue
-    last_seen["$target"]="$ts"
-  done < "$session_log"
-
-  for target in "${!last_seen[@]}"; do
-    local ts="${last_seen[$target]}"
+  while IFS=$'\t' read -r target ts; do
+    [[ -z "$target" || -z "$ts" ]] && continue
     local ts_seconds
     ts_seconds="$(date -d "$ts" +%s 2>/dev/null || \
                   date -j -f '%Y-%m-%dT%H:%M:%SZ' "$ts" +%s 2>/dev/null || echo 0)"
@@ -1176,17 +1192,26 @@ stall_detection() {
     local age_hours=$(( age / 3600 ))
     warn "${target} 停滞 ${age_hours}h（last activity: ${ts}）"
     tg_notify "⚠️ [open-workhorse] ${target} 停滞 ${age_hours}h（status=in_progress，最后活动 ${ts}）" || true
-  done
+  done < <(
+    awk '
+      $2 == "implement" || $2 == "bugfix" {
+        if ($3 != "") last[$3] = $1
+      }
+      END {
+        for (target in last) printf "%s\t%s\n", target, last[target]
+      }
+    ' "$session_log"
+  )
 }
 
 # ── Keep-Alive Watchdog（REQ-039）─────────────────────────────────────────────
 #
-# 扫描 status=in_progress 的 REQ；若对应 agent 的存活时间戳超过
+# 扫描 status=in_progress 的 REQ；若 Menglan 的存活时间戳超过
 # AGENT_STALL_TIMEOUT_MINUTES（默认 60）分钟则发送 keep-alive implement 请求。
 #
 # Agent 存活时间戳：由各 agent heartbeat 在每次运行时写入
 #   runtime/menglan_alive.ts  — epoch 整数（秒）
-#   runtime/huahua_alive.ts   — epoch 整数（秒）
+#   runtime/huahua_alive.ts   — epoch 整数（秒，当前仅写入，未参与恢复路由）
 _check_stall_and_keepalive() {
   local timeout_min="${AGENT_STALL_TIMEOUT_MINUTES:-60}"
   local timeout_sec=$(( timeout_min * 60 ))
@@ -1199,9 +1224,9 @@ _check_stall_and_keepalive() {
     owner="$(_get_fm_field "$f" "owner")"
     req_id="$(_get_fm_field "$f" "req_id")"
 
-    # 只监控 in_progress 且由 menglan 或 huahua 执行的任务
+    # 当前仅恢复 Menglan 的实现会话；Huahua 不走 in_progress 实现路径。
     [[ "$status" == "in_progress" ]] || continue
-    [[ "$owner" == "menglan" || "$owner" == "huahua" ]] || continue
+    [[ "$owner" == "menglan" ]] || continue
 
     local ts_file="${REPO_ROOT}/runtime/${owner}_alive.ts"
     local last_alive=0
@@ -1211,9 +1236,20 @@ _check_stall_and_keepalive() {
 
     local elapsed=$(( now - last_alive ))
     if [[ $elapsed -ge $timeout_sec ]]; then
+      if _keepalive_exists "$owner" "$req_id"; then
+        info "keep-alive: ${req_id} owner=${owner} 已有待处理 keep-alive — 跳过重复发送"
+        continue
+      fi
+
+      local branch_name=""
+      if _req_uses_shared_pr "$f"; then
+        branch_name="feat/${req_id}"
+      fi
+
       warn "keep-alive: ${req_id} owner=${owner} stale ${elapsed}s (threshold ${timeout_sec}s) — 发送 keep-alive"
       inbox_write "$owner" "implement" "$req_id" \
-        "keep-alive: resume ${req_id}（stale ${elapsed}s ≥ ${timeout_sec}s）"
+        "keep-alive: resume ${req_id}（stale ${elapsed}s ≥ ${timeout_sec}s）" \
+        "" "success" "" "" "" "$branch_name"
     else
       info "keep-alive: ${req_id} owner=${owner} alive ${elapsed}s < ${timeout_sec}s — 跳过"
     fi

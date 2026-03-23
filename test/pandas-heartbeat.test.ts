@@ -3511,6 +3511,28 @@ test("TC-039-08: menglan-heartbeat writes runtime/menglan_alive.ts on every run 
   }
 });
 
+test("TC-039-08b: huahua-heartbeat writes runtime/huahua_alive.ts even when inbox is empty", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-08b-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "failed"), { recursive: true });
+  try {
+    const HUAHUA_SCRIPT = join(PROJECT_ROOT, "scripts/huahua-heartbeat.sh");
+    const result = await runBash(
+      `bash "${HUAHUA_SCRIPT}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `huahua-heartbeat failed: ${result.stderr}`);
+    const tsFile = join(tmpDir, "runtime", "huahua_alive.ts");
+    assert.ok(existsSync(tsFile), "Expected runtime/huahua_alive.ts to exist");
+    const content = (await readFile(tsFile, "utf8")).trim();
+    assert.match(content, /^\d{10,}$/, `Expected epoch integer. Got: ${content}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 // TC-039-07: _check_stall_and_keepalive sends keep-alive for stale in_progress REQ
 test("TC-039-09: _check_stall_and_keepalive sends keep-alive when menglan_alive.ts is stale", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-09-${Date.now()}`);
@@ -3519,7 +3541,7 @@ test("TC-039-09: _check_stall_and_keepalive sends keep-alive when menglan_alive.
   // REQ in progress owned by menglan
   await writeFile(
     join(tmpDir, "tasks", "features", "REQ-039-stale.md"),
-    "---\nreq_id: REQ-039-stale\nstatus: in_progress\nowner: menglan\npriority: P1\n---\n",
+    "---\nreq_id: REQ-039-stale\nstatus: in_progress\nowner: menglan\npriority: P1\ntc_policy: required\n---\n",
   );
   // alive timestamp 90 minutes ago
   const staleTs = Math.floor(Date.now() / 1000) - 90 * 60;
@@ -3536,6 +3558,7 @@ test("TC-039-09: _check_stall_and_keepalive sends keep-alive when menglan_alive.
     const content = await readFile(join(pendingDir, files[0]!), "utf8");
     assert.ok(content.includes("REQ-039-stale"), `Expected req_id in keep-alive. Got:\n${content}`);
     assert.ok(content.includes("keep-alive"), `Expected keep-alive summary. Got:\n${content}`);
+    assert.ok(content.includes("branch_name: feat/REQ-039-stale"), `Expected branch_name in keep-alive. Got:\n${content}`);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
@@ -3603,6 +3626,46 @@ test("TC-039-11: AGENT_STALL_TIMEOUT_MINUTES=30 triggers keep-alive for 45min st
     assert.equal(resultFresh.code, 0);
     const freshFiles = (await readdir(pendingDir)).filter((f) => f.endsWith(".md"));
     assert.equal(freshFiles.length, 0, "Expected NO keep-alive with 60min threshold for 45min stale");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("TC-039-11b: AGENT_STALL_TIMEOUT_MINUTES from .env triggers keep-alive once and dedupes retries", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-11b-${Date.now()}`);
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+  await mkdir(join(tmpDir, "runtime"), { recursive: true });
+  await writeFile(
+    join(tmpDir, ".env"),
+    "AGENT_STALL_TIMEOUT_MINUTES=30\n",
+  );
+  await writeFile(
+    join(tmpDir, "tasks", "features", "REQ-039-env.md"),
+    "---\nreq_id: REQ-039-env\nstatus: in_progress\nowner: menglan\npriority: P1\ntc_policy: required\n---\n",
+  );
+  const ts45 = Math.floor(Date.now() / 1000) - 45 * 60;
+  await writeFile(join(tmpDir, "runtime", "menglan_alive.ts"), String(ts45));
+  try {
+    const resultFirst = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; _check_stall_and_keepalive`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(resultFirst.code, 0, `first keep-alive run failed: ${resultFirst.stderr}`);
+
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const firstFiles = (await readdir(pendingDir)).filter((f) => f.endsWith(".md"));
+    assert.equal(firstFiles.length, 1, `Expected exactly one keep-alive message. Found: ${firstFiles.join(", ")}`);
+    const firstContent = await readFile(join(pendingDir, firstFiles[0]!), "utf8");
+    assert.ok(firstContent.includes("branch_name: feat/REQ-039-env"), `Expected shared-PR branch_name. Got:\n${firstContent}`);
+
+    const resultSecond = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; _check_stall_and_keepalive`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(resultSecond.code, 0, `second keep-alive run failed: ${resultSecond.stderr}`);
+
+    const secondFiles = (await readdir(pendingDir)).filter((f) => f.endsWith(".md"));
+    assert.equal(secondFiles.length, 1, `Expected deduped keep-alive count to stay at 1. Found: ${secondFiles.join(", ")}`);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

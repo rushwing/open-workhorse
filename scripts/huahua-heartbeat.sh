@@ -331,16 +331,16 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
 
 # ── 主逻辑 ────────────────────────────────────────────────────────────────────
 main() {
+  # REQ-039: 写存活时间戳（供 Pandas keep-alive watchdog 观测；空 inbox 也要更新）
+  mkdir -p "${REPO_ROOT}/runtime"
+  date +%s > "${REPO_ROOT}/runtime/huahua_alive.ts" 2>/dev/null || true
+
   # 空则秒退（零 token）— 检查 pending/ 和扁平目录
   local msg
   msg=$(ls "${INBOX}/pending"/*.md "${INBOX}"/*.md 2>/dev/null | head -1 || true)
   [[ -z "$msg" ]] && exit 0
 
   info "huahua-heartbeat 开始（$(date -u +%Y-%m-%dT%H:%M:%SZ)）"
-
-  # REQ-039: 写存活时间戳（供 Pandas keep-alive watchdog 检测）
-  mkdir -p "${REPO_ROOT}/runtime"
-  date +%s > "${REPO_ROOT}/runtime/huahua_alive.ts" 2>/dev/null || true
 
   # 同步远端 main（仅 fetch，不 merge，确保本地缓存最新）
   git -C "$REPO_ROOT" fetch origin main --quiet 2>/dev/null \

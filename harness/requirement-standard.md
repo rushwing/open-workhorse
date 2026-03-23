@@ -383,16 +383,17 @@ test_designed (Huahua 写 Menglan inbox)
 
 ### 8.5 Keep-Alive Watchdog 协议（REQ-039）
 
-当 Pandas 检测到某 agent（menglan/huahua）正在处理某任务（`status=in_progress`），
-但对应存活时间戳（`runtime/{agent}_alive.ts`）超过 `AGENT_STALL_TIMEOUT_MINUTES`（默认 60 分钟）时：
+当 Pandas 检测到 Menglan 正在处理某任务（`status=in_progress`），
+且 `runtime/menglan_alive.ts` 超过 `AGENT_STALL_TIMEOUT_MINUTES`（默认 60 分钟）未更新时：
 
 1. 判断为 **stale**：agent cron 已死亡或 session 已崩溃
-2. 向该 agent inbox 写 `implement` keep-alive 消息（`summary` 含 "keep-alive: resume ${req_id}"）
-3. Agent 收到 keep-alive 后，以 `FORCE=true` 重新运行 `harness.sh implement`（幂等：worktree 已存在时直接进入）
+2. 若 inbox 中尚无该 `req_id` 的待处理 keep-alive，则向 Menglan inbox 写 `implement` keep-alive 消息（`summary` 含 "keep-alive: resume ${req_id}"）
+3. 若该 REQ 走单 PR 路径（`tc_policy` 非 `optional/exempt`），keep-alive 消息额外携带 `branch_name: feat/${req_id}`
+4. Agent 收到 keep-alive 后，以 `FORCE=true` 重新运行 `harness.sh implement`（幂等：worktree 已存在时直接进入）
 
 存活时间戳更新时机：
 - `menglan-heartbeat.sh` 每次运行（含无消息早退）前写 `runtime/menglan_alive.ts`
-- `huahua-heartbeat.sh` 每次运行（有消息时）后写 `runtime/huahua_alive.ts`
+- `huahua-heartbeat.sh` 每次运行（含无消息早退）前写 `runtime/huahua_alive.ts`
 
 **限制**：当前机制检测的是 cron 进程死亡，不能直接检测 Claude Code session 内部崩溃。
 如需检测 session 内部崩溃，需在 harness prompt 中指示 Claude 定期更新时间戳文件（待 REQ-039 后续迭代）。

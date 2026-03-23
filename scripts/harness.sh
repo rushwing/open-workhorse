@@ -125,6 +125,12 @@ cmd_worktree_setup() {
       git fetch origin "${branch}:${branch}"
       info "分支已从远端拉取：${branch}（Huahua TC PR 已存在）"
     else
+      local ls_remote_rc=$?
+      if [[ $ls_remote_rc -ne 2 ]]; then
+        err "无法查询远端分支 ${branch}（git ls-remote exited ${ls_remote_rc}）"
+        err "为避免误从 main 创建重复分支，已停止。请确认 origin 可达后重试。"
+        exit 1
+      fi
       local base_ref
       base_ref="$(git show-ref --verify --quiet refs/remotes/origin/main && echo origin/main || echo main)"
       git branch "$branch" "$base_ref"
