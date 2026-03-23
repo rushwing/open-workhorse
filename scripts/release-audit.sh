@@ -6,8 +6,9 @@ cd "$ROOT"
 
 # Scan only git-tracked files to match the CI environment exactly.
 # This prevents local-only files (.env, .claude/, etc.) from causing false failures.
+# Use git ls-files when inside any git context (repo or worktree); fall back to find otherwise.
 FILES=()
-if [ -d ".git" ]; then
+if git rev-parse --git-dir >/dev/null 2>&1; then
   while IFS= read -r file; do
     # Exclude this script itself from the scan
     [[ "$file" == "scripts/release-audit.sh" ]] && continue
@@ -70,7 +71,7 @@ check_no_match "hard-coded bearer tokens" 'Authorization: Bearer (?!<)[^[:space:
 check_no_match "hard-coded local API tokens" 'LOCAL_API_TOKEN=(?!<)[^[:space:]]+'
 check_no_match "hard-coded x-local-token header values" 'x-local-token:[[:space:]]*(?!<)[^[:space:]]+'
 
-if [ -d ".git" ]; then
+if git rev-parse --git-dir >/dev/null 2>&1; then
   if git ls-files | grep -E '^(runtime|dist|node_modules|coverage|plans|workflows)/' >/tmp/release-audit-match.txt 2>/dev/null; then
     echo "release-audit: failed: ignored build/runtime/internal-only paths are tracked" >&2
     cat /tmp/release-audit-match.txt >&2

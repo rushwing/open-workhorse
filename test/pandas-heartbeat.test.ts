@@ -2359,3 +2359,816 @@ test("TC-022-05: claim_review_ready transitions review_ready REQ to req_review a
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── REQ-031: archive_merged_reqs ─────────────────────────────────────────────
+
+/** Build a minimal REQ frontmatter string. */
+function makeReqFrontmatter(opts: {
+  reqId: string;
+  status: string;
+  prNumber?: string;
+  tcRefs?: string[];
+}): string {
+  const tcRef = opts.tcRefs ? `[${opts.tcRefs.join(", ")}]` : "[]";
+  const prLine = opts.prNumber ? `\npr_number: ${opts.prNumber}` : "";
+  return (
+    `---\nreq_id: ${opts.reqId}\ntitle: Test REQ\nstatus: ${opts.status}\n` +
+    `priority: P2\nphase: phase-2\nowner: menglan\ndepends_on: []\n` +
+    `test_case_ref: ${tcRef}\ntc_policy: required\ntc_exempt_reason: ""\n` +
+    `scope: scripts\nacceptance: test${prLine}\npending_bugs: []\n---\n`
+  );
+}
+
+/** Build a minimal TC frontmatter string. */
+function makeTcFrontmatter(tcId: string, status = "ready"): string {
+  return `---\ntc_id: ${tcId}\ntitle: Test TC\nreq_ref: REQ-099\nlayer: L1\ntype: functional\nstatus: ${status}\n---\n`;
+}
+
+/** Create a mock gh binary that returns a JSON state for given PR numbers. */
+async function createMockGh(
+  mockBin: string,
+  prResponses: Record<string, { state?: string; exitCode?: number }>,
+  callLog?: string,
+): Promise<void> {
+  const cases = Object.entries(prResponses)
+    .map(([num, resp]) => {
+      if (resp.exitCode && resp.exitCode !== 0) {
+        return `    "${num}") echo "GraphQL: Not Found" >&2; exit ${resp.exitCode} ;;`;
+      }
+      return `    "${num}") echo '{"state":"${resp.state ?? "OPEN"}"}' ;;`;
+    })
+    .join("\n");
+  const logLine = callLog ? `echo "$*" >> "${callLog}"\n` : "";
+  const script = `#!/usr/bin/env bash
+${logLine}# Extract PR number from args: gh pr view <number> --json state
+pr_num=""
+for arg in "$@"; do
+  case "$arg" in
+    [0-9]*) pr_num="$arg" ;;
+  esac
+done
+case "$pr_num" in
+${cases}
+    *) echo '{"state":"OPEN"}' ;;
+esac
+exit 0
+`;
+  await writeFile(join(mockBin, "gh"), script, "utf8");
+  await makeExecutable(join(mockBin, "gh"));
+}
+
+/** Create a mock git binary that records commit -m messages. */
+async function createMockGit(mockBin: string, callLog: string): Promise<void> {
+  const script = `#!/usr/bin/env bash
+echo "GIT_CALLED $*" >> "${callLog}"
+exit 0
+`;
+  await writeFile(join(mockBin, "git"), script, "utf8");
+  await makeExecutable(join(mockBin, "git"));
+}
+
+// TC-031-01: PR merged → REQ + TC archived, status done, git commit called
+test("TC-031-01: archive_merged_reqs archives REQ and TC when PR is MERGED", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-01-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const tcDir = join(tmpDir, "tasks", "test-cases");
+  const archiveDir = join(tmpDir, "tasks", "archive", "done");
+  const mockBin = join(tmpDir, "bin");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(tcDir, { recursive: true });
+  await mkdir(archiveDir, { recursive: true });
+  await mkdir(mockBin, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+
+  await writeFile(
+    join(featuresDir, "REQ-099.md"),
+    makeReqFrontmatter({ reqId: "REQ-099", status: "review", prNumber: "42", tcRefs: ["TC-099-01"] }),
+    "utf8",
+  );
+  await writeFile(join(tcDir, "TC-099-01.md"), makeTcFrontmatter("TC-099-01"), "utf8");
+
+  const callLog = join(tmpDir, "calls.log");
+  await createMockGh(mockBin, { "42": { state: "MERGED" } }, callLog);
+  await createMockGit(mockBin, callLog);
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: join(tmpDir, "shared"),
+        REPO_ROOT: tmpDir,
+        PATH: `${mockBin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+      },
+    );
+
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // REQ moved and status updated to done
+    assert.ok(existsSync(join(archiveDir, "REQ-099.md")), "REQ-099.md should be in archive/done/");
+    assert.ok(!existsSync(join(featuresDir, "REQ-099.md")), "REQ-099.md should be removed from features/");
+    const reqContent = await readFile(join(archiveDir, "REQ-099.md"), "utf8");
+    assert.ok(reqContent.includes("status: done"), `REQ status should be done. Got:\n${reqContent}`);
+
+    // TC moved and status updated to done
+    assert.ok(existsSync(join(archiveDir, "TC-099-01.md")), "TC-099-01.md should be in archive/done/");
+    assert.ok(!existsSync(join(tcDir, "TC-099-01.md")), "TC-099-01.md should be removed from test-cases/");
+    const tcContent = await readFile(join(archiveDir, "TC-099-01.md"), "utf8");
+    assert.ok(tcContent.includes("status: done"), `TC status should be done. Got:\n${tcContent}`);
+
+    // git commit called with correct message
+    const log = await readFile(callLog, "utf8");
+    assert.ok(log.includes("archive(REQ-099): move to tasks/archive/done/"),
+      `Expected archive commit message. calls.log:\n${log}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-031-02: PR is OPEN → no archiving
+test("TC-031-02: archive_merged_reqs skips REQ when PR is OPEN", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-02-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const tcDir = join(tmpDir, "tasks", "test-cases");
+  const archiveDir = join(tmpDir, "tasks", "archive", "done");
+  const mockBin = join(tmpDir, "bin");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(tcDir, { recursive: true });
+  await mkdir(archiveDir, { recursive: true });
+  await mkdir(mockBin, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+
+  await writeFile(
+    join(featuresDir, "REQ-099.md"),
+    makeReqFrontmatter({ reqId: "REQ-099", status: "review", prNumber: "42", tcRefs: ["TC-099-01"] }),
+    "utf8",
+  );
+  await writeFile(join(tcDir, "TC-099-01.md"), makeTcFrontmatter("TC-099-01"), "utf8");
+
+  const callLog = join(tmpDir, "calls.log");
+  await createMockGh(mockBin, { "42": { state: "OPEN" } }, callLog);
+  await createMockGit(mockBin, callLog);
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: join(tmpDir, "shared"),
+        REPO_ROOT: tmpDir,
+        PATH: `${mockBin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+      },
+    );
+
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // REQ and TC must remain untouched
+    assert.ok(existsSync(join(featuresDir, "REQ-099.md")), "REQ-099.md should still exist in features/");
+    assert.ok(existsSync(join(tcDir, "TC-099-01.md")), "TC-099-01.md should still exist in test-cases/");
+    assert.ok(!existsSync(join(archiveDir, "REQ-099.md")), "REQ-099.md should NOT be in archive/done/");
+
+    // No git commit
+    const logExists = existsSync(callLog);
+    if (logExists) {
+      const log = await readFile(callLog, "utf8");
+      assert.ok(!log.includes("commit"), `git commit should not have been called. calls.log:\n${log}`);
+    }
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-031-03: PR is CLOSED (not merged) → no archiving
+test("TC-031-03: archive_merged_reqs skips REQ when PR is CLOSED", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-03-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const archiveDir = join(tmpDir, "tasks", "archive", "done");
+  const mockBin = join(tmpDir, "bin");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(archiveDir, { recursive: true });
+  await mkdir(mockBin, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+
+  await writeFile(
+    join(featuresDir, "REQ-099.md"),
+    makeReqFrontmatter({ reqId: "REQ-099", status: "review", prNumber: "42" }),
+    "utf8",
+  );
+
+  const callLog = join(tmpDir, "calls.log");
+  await createMockGh(mockBin, { "42": { state: "CLOSED" } }, callLog);
+  await createMockGit(mockBin, callLog);
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: join(tmpDir, "shared"),
+        REPO_ROOT: tmpDir,
+        PATH: `${mockBin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+      },
+    );
+
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(existsSync(join(featuresDir, "REQ-099.md")), "REQ-099.md should remain in features/");
+    assert.ok(!existsSync(join(archiveDir, "REQ-099.md")), "REQ-099.md should NOT be archived");
+
+    const logExists = existsSync(callLog);
+    if (logExists) {
+      const log = await readFile(callLog, "utf8");
+      assert.ok(!log.includes("commit"), `git commit should not have been called. calls.log:\n${log}`);
+    }
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-031-04: Multiple TCs — all archived with status done
+test("TC-031-04: archive_merged_reqs archives all associated TCs with status done", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-04-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const tcDir = join(tmpDir, "tasks", "test-cases");
+  const archiveDir = join(tmpDir, "tasks", "archive", "done");
+  const mockBin = join(tmpDir, "bin");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(tcDir, { recursive: true });
+  await mkdir(archiveDir, { recursive: true });
+  await mkdir(mockBin, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+
+  await writeFile(
+    join(featuresDir, "REQ-099.md"),
+    makeReqFrontmatter({
+      reqId: "REQ-099",
+      status: "review",
+      prNumber: "42",
+      tcRefs: ["TC-099-01", "TC-099-02", "TC-099-03"],
+    }),
+    "utf8",
+  );
+  for (const tcId of ["TC-099-01", "TC-099-02", "TC-099-03"]) {
+    await writeFile(join(tcDir, `${tcId}.md`), makeTcFrontmatter(tcId), "utf8");
+  }
+
+  const callLog = join(tmpDir, "calls.log");
+  await createMockGh(mockBin, { "42": { state: "MERGED" } }, callLog);
+  await createMockGit(mockBin, callLog);
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: join(tmpDir, "shared"),
+        REPO_ROOT: tmpDir,
+        PATH: `${mockBin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+      },
+    );
+
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // All TCs archived with status done
+    for (const tcId of ["TC-099-01", "TC-099-02", "TC-099-03"]) {
+      assert.ok(existsSync(join(archiveDir, `${tcId}.md`)), `${tcId}.md should be in archive/done/`);
+      assert.ok(!existsSync(join(tcDir, `${tcId}.md`)), `${tcId}.md should be removed from test-cases/`);
+      const content = await readFile(join(archiveDir, `${tcId}.md`), "utf8");
+      assert.ok(content.includes("status: done"), `${tcId} status should be done. Got:\n${content}`);
+    }
+
+    // REQ archived
+    assert.ok(existsSync(join(archiveDir, "REQ-099.md")), "REQ-099.md should be in archive/done/");
+    const reqContent = await readFile(join(archiveDir, "REQ-099.md"), "utf8");
+    assert.ok(reqContent.includes("status: done"), `REQ-099 status should be done. Got:\n${reqContent}`);
+
+    // Single commit (one per REQ)
+    const log = await readFile(callLog, "utf8");
+    const commitLines = log.split("\n").filter((l) => l.includes("commit") && l.includes("archive(REQ-099)"));
+    assert.equal(commitLines.length, 1, `Expected exactly one archive commit. calls.log:\n${log}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-031-05: gh fails for one REQ → skip it, continue and archive the other
+test("TC-031-05: archive_merged_reqs skips REQ when gh fails and continues with others", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-05-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const tcDir = join(tmpDir, "tasks", "test-cases");
+  const archiveDir = join(tmpDir, "tasks", "archive", "done");
+  const mockBin = join(tmpDir, "bin");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(tcDir, { recursive: true });
+  await mkdir(archiveDir, { recursive: true });
+  await mkdir(mockBin, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+
+  // REQ-098: gh will fail
+  await writeFile(
+    join(featuresDir, "REQ-098.md"),
+    makeReqFrontmatter({ reqId: "REQ-098", status: "review", prNumber: "41" }),
+    "utf8",
+  );
+  // REQ-099: gh will succeed (MERGED)
+  await writeFile(
+    join(featuresDir, "REQ-099.md"),
+    makeReqFrontmatter({ reqId: "REQ-099", status: "review", prNumber: "42", tcRefs: ["TC-099-01"] }),
+    "utf8",
+  );
+  await writeFile(join(tcDir, "TC-099-01.md"), makeTcFrontmatter("TC-099-01"), "utf8");
+
+  const callLog = join(tmpDir, "calls.log");
+  // gh: 41 exits with error, 42 returns MERGED
+  const ghScript = `#!/usr/bin/env bash
+echo "$*" >> "${callLog}"
+pr_num=""
+for arg in "$@"; do
+  case "$arg" in [0-9]*) pr_num="$arg" ;; esac
+done
+case "$pr_num" in
+  41) echo "GraphQL: Not Found" >&2; exit 1 ;;
+  42) echo '{"state":"MERGED"}' ;;
+  *) echo '{"state":"OPEN"}' ;;
+esac
+exit 0
+`;
+  await writeFile(join(mockBin, "gh"), ghScript, "utf8");
+  await makeExecutable(join(mockBin, "gh"));
+  await createMockGit(mockBin, callLog);
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: join(tmpDir, "shared"),
+        REPO_ROOT: tmpDir,
+        PATH: `${mockBin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+      },
+    );
+
+    // Exit code must be 0 (heartbeat must not abort)
+    assert.equal(result.code, 0, `bash should exit 0\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // REQ-098 skipped (still in features/)
+    assert.ok(existsSync(join(featuresDir, "REQ-098.md")), "REQ-098.md should still exist (skipped)");
+    assert.ok(!existsSync(join(archiveDir, "REQ-098.md")), "REQ-098.md should NOT be archived");
+
+    // WARN message about REQ-098
+    assert.ok(
+      result.stderr.includes("REQ-098") || result.stdout.includes("REQ-098"),
+      `Expected WARN referencing REQ-098. stderr: ${result.stderr}\nstdout: ${result.stdout}`,
+    );
+
+    // REQ-099 archived successfully
+    assert.ok(existsSync(join(archiveDir, "REQ-099.md")), "REQ-099.md should be archived");
+    const reqContent = await readFile(join(archiveDir, "REQ-099.md"), "utf8");
+    assert.ok(reqContent.includes("status: done"), `REQ-099 status should be done. Got:\n${reqContent}`);
+    assert.ok(existsSync(join(archiveDir, "TC-099-01.md")), "TC-099-01.md should be archived");
+    const tcContent = await readFile(join(archiveDir, "TC-099-01.md"), "utf8");
+    assert.ok(tcContent.includes("status: done"), `TC-099-01 status should be done. Got:\n${tcContent}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-031-06: Idempotent — no review REQs → no action, no error
+test("TC-031-06: archive_merged_reqs is idempotent when no review REQs exist", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-06-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const archiveDir = join(tmpDir, "tasks", "archive", "done");
+  const mockBin = join(tmpDir, "bin");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(archiveDir, { recursive: true });
+  await mkdir(mockBin, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+
+  // Only a done REQ in archive (already archived) — nothing in features/
+  await writeFile(
+    join(archiveDir, "REQ-099.md"),
+    makeReqFrontmatter({ reqId: "REQ-099", status: "done", prNumber: "42" }),
+    "utf8",
+  );
+
+  const callLog = join(tmpDir, "calls.log");
+  const ghScript = `#!/usr/bin/env bash
+echo "GH_CALLED $*" >> "${callLog}"
+echo '{"state":"MERGED"}'
+exit 0
+`;
+  await writeFile(join(mockBin, "gh"), ghScript, "utf8");
+  await makeExecutable(join(mockBin, "gh"));
+  await createMockGit(mockBin, callLog);
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: join(tmpDir, "shared"),
+        REPO_ROOT: tmpDir,
+        PATH: `${mockBin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+      },
+    );
+
+    assert.equal(result.code, 0, `bash should exit 0\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // Already-archived file must not be modified
+    assert.ok(existsSync(join(archiveDir, "REQ-099.md")), "REQ-099.md should remain in archive/done/");
+
+    // gh and git must not be called (no review REQs in features/)
+    const logExists = existsSync(callLog);
+    if (logExists) {
+      const log = await readFile(callLog, "utf8");
+      assert.ok(!log.includes("GH_CALLED"), `gh should not be called. calls.log:\n${log}`);
+      assert.ok(!log.includes("commit"), `git commit should not be called. calls.log:\n${log}`);
+    }
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-031: TC-031-01 PR merged → triggers REQ + TC archive ──────────────────
+
+test("TC-031-01: archive_merged_reqs — PR merged triggers REQ+TC archive with status:done", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-01-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const testCasesDir = join(tmpDir, "tasks", "test-cases");
+  const archiveDoneDir = join(tmpDir, "tasks", "archive", "done");
+  const binDir = join(tmpDir, "bin");
+  const gitCallLog = join(tmpDir, "git_calls.log");
+
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(testCasesDir, { recursive: true });
+  await mkdir(archiveDoneDir, { recursive: true });
+  await mkdir(binDir, { recursive: true });
+
+  await writeFile(
+    join(featuresDir, "REQ-099.md"),
+    "---\nreq_id: REQ-099\ntitle: Test Archival\nstatus: review\npriority: P2\nphase: phase-2\nowner: menglan\npr_number: 42\nblocked_reason: \"\"\nblocked_from_status: \"\"\nblocked_from_owner: \"\"\ndepends_on: []\ntest_case_ref: [TC-099-01]\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\npending_bugs: []\n---\n",
+    "utf8",
+  );
+  await writeFile(
+    join(testCasesDir, "TC-099-01.md"),
+    "---\ntc_id: TC-099-01\ntitle: Test TC\nreq_ref: REQ-099\nlayer: L1\ntype: functional\nstatus: ready\n---\n",
+    "utf8",
+  );
+
+  // mock gh: returns MERGED
+  await writeFile(join(binDir, "gh"), "#!/usr/bin/env bash\necho '{\"state\":\"MERGED\"}'\n", "utf8");
+  await makeExecutable(join(binDir, "gh"));
+  // mock git: logs calls, always exits 0
+  await writeFile(join(binDir, "git"), `#!/usr/bin/env bash\necho "$*" >> "\${GIT_CALL_LOG:-/dev/null}"\nexit 0\n`, "utf8");
+  await makeExecutable(join(binDir, "git"));
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        REPO_ROOT: tmpDir,
+        PATH: `${binDir}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+        GIT_CALL_LOG: gitCallLog,
+      },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // REQ moved to archive, removed from features
+    assert.ok(existsSync(join(archiveDoneDir, "REQ-099.md")), "REQ-099.md should be in archive/done/");
+    assert.ok(!existsSync(join(featuresDir, "REQ-099.md")), "REQ-099.md should be gone from features/");
+
+    // TC moved to archive, removed from test-cases
+    assert.ok(existsSync(join(archiveDoneDir, "TC-099-01.md")), "TC-099-01.md should be in archive/done/");
+    assert.ok(!existsSync(join(testCasesDir, "TC-099-01.md")), "TC-099-01.md should be gone from test-cases/");
+
+    // Both files have status: done
+    const archivedReq = await readFile(join(archiveDoneDir, "REQ-099.md"), "utf8");
+    assert.ok(archivedReq.includes("status: done"), `REQ should have status:done. Got:\n${archivedReq}`);
+    const archivedTc = await readFile(join(archiveDoneDir, "TC-099-01.md"), "utf8");
+    assert.ok(archivedTc.includes("status: done"), `TC should have status:done. Got:\n${archivedTc}`);
+
+    // git commit called with correct message
+    const gitLog = await readFile(gitCallLog, "utf8");
+    assert.ok(
+      gitLog.includes("archive(REQ-099): move to tasks/archive/done/"),
+      `git commit message should match. Got:\n${gitLog}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-031: TC-031-02 PR open → no archive ──────────────────────────────────
+
+test("TC-031-02: archive_merged_reqs — PR open, no archive triggered", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-02-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const testCasesDir = join(tmpDir, "tasks", "test-cases");
+  const archiveDoneDir = join(tmpDir, "tasks", "archive", "done");
+  const binDir = join(tmpDir, "bin");
+  const gitCallLog = join(tmpDir, "git_calls.log");
+
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(testCasesDir, { recursive: true });
+  await mkdir(archiveDoneDir, { recursive: true });
+  await mkdir(binDir, { recursive: true });
+
+  await writeFile(
+    join(featuresDir, "REQ-099.md"),
+    "---\nreq_id: REQ-099\ntitle: Test\nstatus: review\npriority: P2\nphase: phase-2\nowner: menglan\npr_number: 42\nblocked_reason: \"\"\nblocked_from_status: \"\"\nblocked_from_owner: \"\"\ndepends_on: []\ntest_case_ref: [TC-099-01]\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\npending_bugs: []\n---\n",
+    "utf8",
+  );
+  await writeFile(
+    join(testCasesDir, "TC-099-01.md"),
+    "---\ntc_id: TC-099-01\ntitle: Test TC\nreq_ref: REQ-099\nlayer: L1\ntype: functional\nstatus: ready\n---\n",
+    "utf8",
+  );
+
+  // mock gh: returns OPEN
+  await writeFile(join(binDir, "gh"), "#!/usr/bin/env bash\necho '{\"state\":\"OPEN\"}'\n", "utf8");
+  await makeExecutable(join(binDir, "gh"));
+  await writeFile(join(binDir, "git"), `#!/usr/bin/env bash\necho "$*" >> "\${GIT_CALL_LOG:-/dev/null}"\nexit 0\n`, "utf8");
+  await makeExecutable(join(binDir, "git"));
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        REPO_ROOT: tmpDir,
+        PATH: `${binDir}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+        GIT_CALL_LOG: gitCallLog,
+      },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // REQ and TC must remain untouched
+    assert.ok(existsSync(join(featuresDir, "REQ-099.md")), "REQ-099.md should still be in features/");
+    assert.ok(!existsSync(join(archiveDoneDir, "REQ-099.md")), "REQ-099.md should NOT be in archive/done/");
+
+    const req = await readFile(join(featuresDir, "REQ-099.md"), "utf8");
+    assert.ok(req.includes("status: review"), `REQ status should remain review. Got:\n${req}`);
+
+    // git commit must NOT have been called
+    assert.ok(!existsSync(gitCallLog) || !(await readFile(gitCallLog, "utf8")).includes("commit"),
+      "git commit should not be called for OPEN PR",
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-031: TC-031-03 PR closed (not merged) → no archive ───────────────────
+
+test("TC-031-03: archive_merged_reqs — PR closed (not merged), no archive triggered", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-03-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const archiveDoneDir = join(tmpDir, "tasks", "archive", "done");
+  const binDir = join(tmpDir, "bin");
+  const gitCallLog = join(tmpDir, "git_calls.log");
+
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(archiveDoneDir, { recursive: true });
+  await mkdir(binDir, { recursive: true });
+
+  await writeFile(
+    join(featuresDir, "REQ-099.md"),
+    "---\nreq_id: REQ-099\ntitle: Test\nstatus: review\npriority: P2\nphase: phase-2\nowner: menglan\npr_number: 42\nblocked_reason: \"\"\nblocked_from_status: \"\"\nblocked_from_owner: \"\"\ndepends_on: []\ntest_case_ref: []\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\npending_bugs: []\n---\n",
+    "utf8",
+  );
+
+  // mock gh: returns CLOSED
+  await writeFile(join(binDir, "gh"), "#!/usr/bin/env bash\necho '{\"state\":\"CLOSED\"}'\n", "utf8");
+  await makeExecutable(join(binDir, "gh"));
+  await writeFile(join(binDir, "git"), `#!/usr/bin/env bash\necho "$*" >> "\${GIT_CALL_LOG:-/dev/null}"\nexit 0\n`, "utf8");
+  await makeExecutable(join(binDir, "git"));
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        REPO_ROOT: tmpDir,
+        PATH: `${binDir}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+        GIT_CALL_LOG: gitCallLog,
+      },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    assert.ok(existsSync(join(featuresDir, "REQ-099.md")), "REQ-099.md should still be in features/");
+    assert.ok(!existsSync(join(archiveDoneDir, "REQ-099.md")), "REQ-099.md should NOT be in archive/done/");
+
+    assert.ok(
+      !existsSync(gitCallLog) || !(await readFile(gitCallLog, "utf8")).includes("commit"),
+      "git commit should not be called for CLOSED PR",
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-031: TC-031-04 Multiple TCs → all archived with status:done ──────────
+
+test("TC-031-04: archive_merged_reqs — multiple TCs all archived with status:done (BUG-005)", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-04-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const testCasesDir = join(tmpDir, "tasks", "test-cases");
+  const archiveDoneDir = join(tmpDir, "tasks", "archive", "done");
+  const binDir = join(tmpDir, "bin");
+  const gitCallLog = join(tmpDir, "git_calls.log");
+
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(testCasesDir, { recursive: true });
+  await mkdir(archiveDoneDir, { recursive: true });
+  await mkdir(binDir, { recursive: true });
+
+  await writeFile(
+    join(featuresDir, "REQ-099.md"),
+    "---\nreq_id: REQ-099\ntitle: Multi-TC Test\nstatus: review\npriority: P2\nphase: phase-2\nowner: menglan\npr_number: 42\nblocked_reason: \"\"\nblocked_from_status: \"\"\nblocked_from_owner: \"\"\ndepends_on: []\ntest_case_ref: [TC-099-01, TC-099-02, TC-099-03]\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\npending_bugs: []\n---\n",
+    "utf8",
+  );
+  for (const tcId of ["TC-099-01", "TC-099-02", "TC-099-03"]) {
+    await writeFile(
+      join(testCasesDir, `${tcId}.md`),
+      `---\ntc_id: ${tcId}\ntitle: Test TC\nreq_ref: REQ-099\nlayer: L1\ntype: functional\nstatus: ready\n---\n`,
+      "utf8",
+    );
+  }
+
+  await writeFile(join(binDir, "gh"), "#!/usr/bin/env bash\necho '{\"state\":\"MERGED\"}'\n", "utf8");
+  await makeExecutable(join(binDir, "gh"));
+  await writeFile(join(binDir, "git"), `#!/usr/bin/env bash\necho "$*" >> "\${GIT_CALL_LOG:-/dev/null}"\nexit 0\n`, "utf8");
+  await makeExecutable(join(binDir, "git"));
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        REPO_ROOT: tmpDir,
+        PATH: `${binDir}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+        GIT_CALL_LOG: gitCallLog,
+      },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // All 3 TCs archived with status:done
+    for (const tcId of ["TC-099-01", "TC-099-02", "TC-099-03"]) {
+      assert.ok(existsSync(join(archiveDoneDir, `${tcId}.md`)), `${tcId}.md should be in archive/done/`);
+      assert.ok(!existsSync(join(testCasesDir, `${tcId}.md`)), `${tcId}.md should be gone from test-cases/`);
+      const content = await readFile(join(archiveDoneDir, `${tcId}.md`), "utf8");
+      assert.ok(content.includes("status: done"), `${tcId} should have status:done. Got:\n${content}`);
+    }
+
+    // REQ archived with status:done
+    assert.ok(existsSync(join(archiveDoneDir, "REQ-099.md")), "REQ-099.md should be in archive/done/");
+    const archivedReq = await readFile(join(archiveDoneDir, "REQ-099.md"), "utf8");
+    assert.ok(archivedReq.includes("status: done"), `REQ should have status:done. Got:\n${archivedReq}`);
+
+    // Single git commit covering all files
+    const gitLog = await readFile(gitCallLog, "utf8");
+    assert.ok(
+      gitLog.includes("archive(REQ-099): move to tasks/archive/done/"),
+      `git commit message should match. Got:\n${gitLog}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-031: TC-031-05 gh fails → skip REQ, heartbeat continues ──────────────
+
+test("TC-031-05: archive_merged_reqs — gh failure skips REQ, heartbeat does not abort", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-05-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const testCasesDir = join(tmpDir, "tasks", "test-cases");
+  const archiveDoneDir = join(tmpDir, "tasks", "archive", "done");
+  const binDir = join(tmpDir, "bin");
+  const gitCallLog = join(tmpDir, "git_calls.log");
+
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(testCasesDir, { recursive: true });
+  await mkdir(archiveDoneDir, { recursive: true });
+  await mkdir(binDir, { recursive: true });
+
+  // REQ-098: gh will fail
+  await writeFile(
+    join(featuresDir, "REQ-098.md"),
+    "---\nreq_id: REQ-098\ntitle: Fail Case\nstatus: review\npriority: P2\nphase: phase-2\nowner: menglan\npr_number: 41\nblocked_reason: \"\"\nblocked_from_status: \"\"\nblocked_from_owner: \"\"\ndepends_on: []\ntest_case_ref: []\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\npending_bugs: []\n---\n",
+    "utf8",
+  );
+  // REQ-099: gh will succeed (MERGED)
+  await writeFile(
+    join(featuresDir, "REQ-099.md"),
+    "---\nreq_id: REQ-099\ntitle: Success Case\nstatus: review\npriority: P2\nphase: phase-2\nowner: menglan\npr_number: 42\nblocked_reason: \"\"\nblocked_from_status: \"\"\nblocked_from_owner: \"\"\ndepends_on: []\ntest_case_ref: [TC-099-01]\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\npending_bugs: []\n---\n",
+    "utf8",
+  );
+  await writeFile(
+    join(testCasesDir, "TC-099-01.md"),
+    "---\ntc_id: TC-099-01\ntitle: Test TC\nreq_ref: REQ-099\nlayer: L1\ntype: functional\nstatus: ready\n---\n",
+    "utf8",
+  );
+
+  // mock gh: fail for PR 41, succeed for PR 42
+  await writeFile(
+    join(binDir, "gh"),
+    `#!/usr/bin/env bash
+if [[ "$*" == *"41"* ]]; then
+  echo "GraphQL: Not Found" >&2
+  exit 1
+fi
+echo '{"state":"MERGED"}'
+`,
+    "utf8",
+  );
+  await makeExecutable(join(binDir, "gh"));
+  await writeFile(join(binDir, "git"), `#!/usr/bin/env bash\necho "$*" >> "\${GIT_CALL_LOG:-/dev/null}"\nexit 0\n`, "utf8");
+  await makeExecutable(join(binDir, "git"));
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        REPO_ROOT: tmpDir,
+        PATH: `${binDir}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+        GIT_CALL_LOG: gitCallLog,
+      },
+    );
+    // heartbeat must not abort on gh failure
+    assert.equal(result.code, 0, `bash should exit 0 even with gh failure\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // REQ-098 must be skipped (still in features/)
+    assert.ok(existsSync(join(featuresDir, "REQ-098.md")), "REQ-098.md should still be in features/ (skipped)");
+    assert.ok(!existsSync(join(archiveDoneDir, "REQ-098.md")), "REQ-098.md should NOT be in archive/done/");
+
+    // REQ-099 must be archived successfully
+    assert.ok(existsSync(join(archiveDoneDir, "REQ-099.md")), "REQ-099.md should be in archive/done/");
+    assert.ok(!existsSync(join(featuresDir, "REQ-099.md")), "REQ-099.md should be gone from features/");
+
+    // warn logged for REQ-098
+    assert.ok(
+      result.stderr.includes("REQ-098") || result.stdout.includes("REQ-098"),
+      `Should log warning about REQ-098. stderr: ${result.stderr}\nstdout: ${result.stdout}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-031: TC-031-06 Idempotent — already archived, no error ───────────────
+
+test("TC-031-06: archive_merged_reqs — idempotent when no status:review REQs present", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-031-06-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  const archiveDoneDir = join(tmpDir, "tasks", "archive", "done");
+  const binDir = join(tmpDir, "bin");
+  const gitCallLog = join(tmpDir, "git_calls.log");
+
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(archiveDoneDir, { recursive: true });
+  await mkdir(binDir, { recursive: true });
+
+  // REQ is already in archive/done/ — not in features/
+  await writeFile(
+    join(archiveDoneDir, "REQ-099.md"),
+    "---\nreq_id: REQ-099\ntitle: Already Archived\nstatus: done\npriority: P2\nphase: phase-2\nowner: menglan\npr_number: 42\nblocked_reason: \"\"\nblocked_from_status: \"\"\nblocked_from_owner: \"\"\ndepends_on: []\ntest_case_ref: []\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\npending_bugs: []\n---\n",
+    "utf8",
+  );
+
+  // mock gh and git — must NOT be called
+  await writeFile(join(binDir, "gh"), `#!/usr/bin/env bash\necho "gh should not be called" >> "\${GIT_CALL_LOG:-/dev/null}"\nexit 1\n`, "utf8");
+  await makeExecutable(join(binDir, "gh"));
+  await writeFile(join(binDir, "git"), `#!/usr/bin/env bash\necho "$*" >> "\${GIT_CALL_LOG:-/dev/null}"\nexit 0\n`, "utf8");
+  await makeExecutable(join(binDir, "git"));
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; archive_merged_reqs`,
+      {
+        SHARED_RESOURCES_ROOT: tmpDir,
+        REPO_ROOT: tmpDir,
+        PATH: `${binDir}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+        GIT_CALL_LOG: gitCallLog,
+      },
+    );
+    assert.equal(result.code, 0, `bash should exit 0 (idempotent)\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // archived file untouched
+    assert.ok(existsSync(join(archiveDoneDir, "REQ-099.md")), "REQ-099.md should still be in archive/done/");
+
+    // gh and git must not have been called (no status:review files in features/)
+    assert.ok(
+      !existsSync(gitCallLog),
+      `Neither gh nor git should be called. gitCallLog exists with content: ${existsSync(gitCallLog) ? "yes" : "no"}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});

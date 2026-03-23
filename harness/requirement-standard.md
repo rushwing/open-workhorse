@@ -141,6 +141,7 @@ tasks/                  # 所有待执行工作项的根目录
 | `scope` | `runtime` / `ui` / `tests` / `scripts` / `docs` |
 | `acceptance` | 验收标准摘要（一句话）|
 | `pending_bugs` | （可选）关联中的未关闭 Bug 编号列表，例如 `[BUG-003]`；空数组 `[]` 为正常态；非空时为 Menglan 路由信号（见 bug-standard.md §2.5）；由 bug-standard.md §2.2 blocking 步骤写入，§2.3 unblock 步骤清除 |
+| `pr_number` | （可选）Menglan 开 PR 后写入对应 PR 编号（纯数字，如 `53`）；Pandas 心跳 `archive_merged_reqs()` 通过此字段查询 GitHub PR 状态（REQ-031） |
 
 ### 5.2 推荐文档结构
 
@@ -394,12 +395,14 @@ test_designed (Huahua 写 Menglan inbox)
 ### 9.3 合并后
 
 **责任方：Pandas**
-**触发机制：** Pandas 心跳 S2 扫描 `tasks/features/` 中 `status: done` 的文件，通知 Daniel 确认后执行归档。
+**触发机制：** Pandas 心跳检测 `status: review` 的 REQ 对应 PR 是否已 merge（`archive_merged_reqs()`，REQ-031），自动执行归档，无需 Daniel 二次确认。
 
-- [ ] （Menglan）PR 合并前在需求项写入 `status: done`，`pending_bugs` 必须为空
-- [ ] （Pandas）心跳 S2 检测到 `status: done` → 发 Telegram 归档通知 Daniel
-- [ ] （Pandas，Daniel 确认后）将 `tasks/features/REQ-xxx.md` 移到 `tasks/archive/done/`
-- [ ] （Pandas，Daniel 确认后）将关联的 `tasks/test-cases/TC-xxx.md` 同步移到 `tasks/archive/done/`
+- [ ] （Menglan）PR 开启前在需求项写入 `pr_number` frontmatter 字段（供心跳查询 PR 状态）
+- [ ] （Pandas）心跳调用 `gh pr view <pr_number> --json state` 检测 PR 是否 MERGED
+- [ ] （Pandas）PR MERGED → 更新 REQ `status → done`，移至 `tasks/archive/done/`
+- [ ] （Pandas）归档时同步将关联 `tasks/test-cases/TC-xxx.md` `status → done` 后移至 `tasks/archive/done/`（BUG-005 修复）
+- [ ] （Pandas）归档 commit message 格式：`archive({REQ_ID}): move to tasks/archive/done/`
+- [ ] （Pandas）归档完成后发送 Telegram 通知 Daniel
 - [ ] （Pandas）若影响阶段目标，更新对应 `phases/` 文档
 
 ---
@@ -440,3 +443,4 @@ test_designed (Huahua 写 Menglan inbox)
 | 0.3 | 2026-03-16 | Bug 类型重设计对齐（REQ-028 计划）：新增 `req_review` 状态（§6.1）；`draft → req_review → ready` 流转（§6.2）；`draft → ready` 列为非法流转（§6.3）；§6.4 标题更新；`blocked_reason` 新增 `req_review_feedback`（§6.5）；状态总数从 7 更新为 8（§2.4）|
 | 0.4 | 2026-03-17 | 流转效率 + Bug 历史归档（REQ-029）：新增 `review_ready` 状态，状态总数 8 → 9（§2.4、§6.1）；新增 `pending_bugs` 字段（§5.1、§5.2）；`ready` 语义更新为 Huahua 自持（§6.1）；§8.4 handoff 协议重写——Pandas 只锚定入口/出口两端，中间路径 Huahua 自持直写 Menglan inbox，消除 30 分钟心跳等待；REQ 模板新增 `## 关联 Bug 历史` 归档节（§5.2）|
 | 0.5 | 2026-03-21 | worktree 隔离（REQ-037）：§9.1 实现前检查清单新增 worktree 工作目录条约——git/npm 命令必须在 `MENGLAN_WORKTREE_ROOT`（默认 `~/workspace-menglan/open-workhorse/`）内执行，不可在 `~/workspace-pandas/open-workhorse/` 内执行 |
+| 0.6 | 2026-03-23 | Post-merge 归档自动化（REQ-031）：§9.3 重写为全自动归档（`archive_merged_reqs()`），无需 Daniel 二次确认；新增 `pr_number` frontmatter 字段（§5.1）；明确 TC `status → done` 要求（BUG-005 修复） |
