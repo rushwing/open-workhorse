@@ -169,23 +169,26 @@ test("TC-022-02: empty inbox/for-pandas exits with code 0 and no errors", async 
 
 // ── REQ-022: TC-022-03 auto-claim selects P1 over P2 ────────────────────────
 
+// Updated: test_designed REQs are no longer claimed by Pandas auto_claim (§8.4).
+// Priority selection is tested with ready+tc_policy=optional instead.
 test("TC-022-03: auto_claim selects P1 task over P2", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-022-03-${Date.now()}`);
   const featuresDir = join(tmpDir, "tasks", "features");
   await mkdir(featuresDir, { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-pandas"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
 
-  // P2 task
+  // P2 task — ready + tc_policy=optional (claimable by Pandas)
   await writeFile(
     join(featuresDir, "REQ-901.md"),
-    "---\nreq_id: REQ-901\ntitle: P2 Task\nstatus: test_designed\npriority: P2\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: [TC-901-01]\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\n---\n",
+    "---\nreq_id: REQ-901\ntitle: P2 Task\nstatus: ready\npriority: P2\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: []\ntc_policy: optional\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\n---\n",
     "utf8",
   );
-  // P1 task
+  // P1 task — ready + tc_policy=optional (claimable by Pandas)
   await writeFile(
     join(featuresDir, "REQ-902.md"),
-    "---\nreq_id: REQ-902\ntitle: P1 Task\nstatus: test_designed\npriority: P1\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: [TC-902-01]\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\n---\n",
+    "---\nreq_id: REQ-902\ntitle: P1 Task\nstatus: ready\npriority: P1\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: []\ntc_policy: optional\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\n---\n",
     "utf8",
   );
 
@@ -202,6 +205,50 @@ test("TC-022-03: auto_claim selects P1 task over P2", async () => {
     const req901 = await readFile(join(featuresDir, "REQ-901.md"), "utf8");
     assert.ok(req902.includes("owner: claude_code"), "REQ-902 (P1) should be claimed");
     assert.ok(req901.includes("owner: unassigned"), "REQ-901 (P2) should remain unclaimed");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── REQ-022: TC-022-05 test_designed does not block ready+optional claim ──────
+// Regression test: when a test_designed REQ coexists with a ready+optional REQ,
+// auto_claim must skip the test_designed one and claim the ready+optional one.
+
+test("TC-022-05: auto_claim skips test_designed and claims ready+optional when both present", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-022-05-${Date.now()}`);
+  const featuresDir = join(tmpDir, "tasks", "features");
+  await mkdir(featuresDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  // test_designed item — NOT claimable by Pandas (handled via Huahua→Menglan path)
+  await writeFile(
+    join(featuresDir, "REQ-903.md"),
+    "---\nreq_id: REQ-903\ntitle: TC Designed Task\nstatus: test_designed\npriority: P1\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: [TC-903-01]\ntc_policy: required\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\n---\n",
+    "utf8",
+  );
+  // ready+optional item — claimable by Pandas
+  await writeFile(
+    join(featuresDir, "REQ-904.md"),
+    "---\nreq_id: REQ-904\ntitle: Optional Task\nstatus: ready\npriority: P2\nphase: phase-2\nowner: unassigned\ndepends_on: []\ntest_case_ref: []\ntc_policy: optional\ntc_exempt_reason: \"\"\nscope: scripts\nacceptance: test\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; auto_claim`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    const req903 = await readFile(join(featuresDir, "REQ-903.md"), "utf8");
+    const req904 = await readFile(join(featuresDir, "REQ-904.md"), "utf8");
+    // test_designed must not be claimed by Pandas
+    assert.ok(req903.includes("owner: unassigned"), "REQ-903 (test_designed) must remain unassigned");
+    assert.ok(req903.includes("status: test_designed"), "REQ-903 status must remain test_designed");
+    // ready+optional must be claimed
+    assert.ok(req904.includes("owner: claude_code"), "REQ-904 (ready+optional) should be claimed");
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
@@ -1035,6 +1082,54 @@ test("TC-033-09: inbox_read_pandas routes legacy type=tc_complete via _inbox_rea
     const files = await readdir(join(menglanDir, "pending"));
     const mdFiles = files.filter((f) => f.endsWith(".md"));
     assert.ok(mdFiles.length > 0, "Expected implement message routed to for-menglan/pending/ via legacy handler");
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── merge-ready-queue fallback regression ─────────────────────────────────────
+// Regression: _handle_review_complete must write merge-ready-queue.txt when
+// Telegram fails, even when runtime/ does not yet exist (mkdir -p guard).
+
+test("_handle_review_complete: Telegram failure writes merge-ready-queue.txt without aborting", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-mrq-fallback-${Date.now()}`);
+  const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
+  // Intentionally do NOT create runtime/ — test that mkdir -p creates it
+  await mkdir(inboxPandasDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  await writeFile(
+    join(inboxPandasDir, "2026-03-24-review-complete.md"),
+    "---\nmessage_id: msg_rc_001\ntype: response\nfrom: huahua\nto: pandas\ncreated_at: 2026-03-24T00:00:00Z\nthread_id: thread_rc\ncorrelation_id: corr_rc\npriority: P1\n---\nreq_id: REQ-099\npr_number: 99\nstatus: completed\nsummary: LGTM\nlegacy_type: review_complete\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      // Override tg_pr_ready to always fail — simulates missing Telegram config
+      `tg_pr_ready() { return 1; }
+       source "${SCRIPT}" 2>/dev/null
+       tg_pr_ready() { return 1; }
+       inbox_init; inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    // Script must not abort — exit 0
+    assert.equal(result.code, 0, `Expected exit 0 after Telegram failure. stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // merge-ready-queue.txt must be created (even though runtime/ didn't exist before)
+    const queuePath = join(tmpDir, "runtime", "merge-ready-queue.txt");
+    let queueContent: string;
+    try {
+      const { readFile: rf } = await import("node:fs/promises");
+      queueContent = await rf(queuePath, "utf8");
+    } catch {
+      assert.fail(`merge-ready-queue.txt was not created at ${queuePath}`);
+    }
+
+    assert.ok(queueContent!.includes("REQ-099"), `Expected REQ-099 in queue. Content: ${queueContent}`);
+    assert.ok(queueContent!.includes("99"), `Expected PR #99 in queue. Content: ${queueContent}`);
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }

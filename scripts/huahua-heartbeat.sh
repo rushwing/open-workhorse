@@ -334,6 +334,10 @@ main() {
 
   info "huahua-heartbeat 开始（$(date -u +%Y-%m-%dT%H:%M:%SZ)）"
 
+  # 同步远端 main（仅 fetch，不 merge，确保本地缓存最新）
+  git -C "$REPO_ROOT" fetch origin main --quiet 2>/dev/null \
+    || warn "git fetch origin main 失败，继续使用本地缓存"
+
   local pending_dir="${INBOX}/pending"
   local claimed_dir="${INBOX}/claimed"
   local done_dir="${INBOX}/done"

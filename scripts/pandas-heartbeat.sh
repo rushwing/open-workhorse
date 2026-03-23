@@ -589,8 +589,13 @@ _handle_review_complete() {
     else
       pr_url="${pr_number:-unknown}"
     fi
-    tg_pr_ready "${pr_url}" "${summary}" || \
-      warn "tg_pr_ready 调用失败（Telegram 未配置？）"
+    if ! tg_pr_ready "${pr_url}" "${summary}"; then
+      warn "tg_pr_ready 调用失败（Telegram 未配置？）— 写入 merge-ready-queue"
+      local queue="${REPO_ROOT}/runtime/merge-ready-queue.txt"
+      mkdir -p "$(dirname "$queue")" 2>/dev/null || true
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${req_id} PR #${pr_number} ${pr_url}" >> "$queue" \
+        || warn "merge-ready-queue 写入失败（${queue}）"
+    fi
   else
     warn "review_complete(rejected): ${req_id}: ${blocking_reason}"
     tg_notify "⚠️ [${req_id}] review rejected/blocked: ${blocking_reason}" || true
@@ -863,11 +868,10 @@ auto_claim() {
     [[ "$tc_exempt_reason" == *"Umbrella"* ]] && continue
 
     # 过滤可认领状态（按 harness 标准）
+    # test_designed は Huahua→Menglan 直通路径处理（tc_complete 信号触发），Pandas 不扫描认领
     local claimable=false status_tier=99
-    if [[ "$status" == "test_designed" && "$owner" == "unassigned" ]]; then
-      claimable=true; status_tier=0
-    elif [[ "$status" == "ready" && "$owner" == "unassigned" && \
-            ( "$tc_policy" == "optional" || "$tc_policy" == "exempt" ) ]]; then
+    if [[ "$status" == "ready" && "$owner" == "unassigned" && \
+          ( "$tc_policy" == "optional" || "$tc_policy" == "exempt" ) ]]; then
       claimable=true; status_tier=1
     fi
     $claimable || continue
@@ -927,26 +931,18 @@ auto_claim() {
   title="$(_get_fm_field "$best_file" "title")"
   info "auto-claim: ${req_id}（priority rank: ${best_rank}）"
 
-  # 认领：更新 owner 和 status
+  # 认领：更新 owner 和 status（仅适用于 ready+tc_policy=exempt/optional）
   sed -i.bak "s/^owner: unassigned/owner: claude_code/" "$best_file"
-  sed -i.bak "s/^status: test_designed/status: in_progress/" "$best_file"
   sed -i.bak "s/^status: ready/status: in_progress/" "$best_file"
   rm -f "${best_file}.bak"
 
   ok "已认领 ${req_id}"
 
-  # 路由：test_designed (tier=0) 或 ready+optional/exempt (tier=1) 均跳过 TC 设计，直接 implement
+  # 路由：ready+optional/exempt: 跳过 TC 设计，直接 implement
   local req_body=""
   [[ -f "$best_file" ]] && req_body="$(cat "$best_file")"
-  if [[ $best_status_tier -eq 0 ]]; then
-    # status=test_designed: TC 已完成，直接路由到 Menglan 实现
-    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（TC 已完成 / test_designed）" \
-      "" "success" "" "" "$req_body"
-  else
-    # status=ready, tc_policy=optional/exempt: 跳过 TC，直接路由到 Menglan 实现
-    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（tc_policy=exempt/optional，跳过 TC 设计）" \
-      "" "success" "" "" "$req_body"
-  fi
+  inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（tc_policy=exempt/optional，跳过 TC 设计）" \
+    "" "success" "" "" "$req_body"
 }
 
 # auto_claim_specific <req_id> — 认领特定 REQ（Telegram start 指令）
@@ -1184,6 +1180,10 @@ stall_detection() {
 
 main() {
   info "pandas-heartbeat 开始（$(date -u +%Y-%m-%dT%H:%M:%SZ)）"
+
+  # 0. 同步远端 main（仅 fetch，不 merge，确保本地缓存最新）
+  git -C "$REPO_ROOT" fetch origin main --quiet 2>/dev/null \
+    || warn "git fetch origin main 失败，继续使用本地缓存"
 
   # 1. 初始化 inbox 目录
   inbox_init
