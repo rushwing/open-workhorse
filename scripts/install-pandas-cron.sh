@@ -9,22 +9,21 @@
 # .env 配置项:
 #   PANDAS_HEARTBEAT_INTERVAL_MINUTES  — 心跳间隔（分钟，默认 5）
 #   PANDAS_HEARTBEAT_OFFSET_MINUTES    — cron 触发偏移（0–N，默认 0；用于错峰，如 0/2/4）
+#                                        约束：0 ≤ offset < interval
 
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
-# ── 读取 .env 中的间隔配置 ────────────────────────────────────────────────────
+# ── 读取配置（--status / --remove 也会用到 CRON_MARKER，但不需要校验值）────────
 INTERVAL_MINUTES=5
 if [[ -f "$REPO_ROOT/.env" ]]; then
   val="$(grep '^PANDAS_HEARTBEAT_INTERVAL_MINUTES=' "$REPO_ROOT/.env" 2>/dev/null \
         | cut -d= -f2 | tr -d ' \r' || true)"
   [[ -n "$val" ]] && INTERVAL_MINUTES="$val"
 fi
-# 环境变量优先
 INTERVAL_MINUTES="${PANDAS_HEARTBEAT_INTERVAL_MINUTES:-$INTERVAL_MINUTES}"
 
-# ── 读取触发偏移配置 ──────────────────────────────────────────────────────────
 OFFSET_MINUTES=0
 if [[ -f "$REPO_ROOT/.env" ]]; then
   val="$(grep '^PANDAS_HEARTBEAT_OFFSET_MINUTES=' "$REPO_ROOT/.env" 2>/dev/null \
@@ -33,13 +32,43 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
 fi
 OFFSET_MINUTES="${PANDAS_HEARTBEAT_OFFSET_MINUTES:-$OFFSET_MINUTES}"
 
-# ── 校验参数 ──────────────────────────────────────────────────────────────────
+CRON_MARKER="# pandas-heartbeat managed by install-pandas-cron.sh"
+
+# ── 子命令（--status / --remove 不依赖 node 或参数校验）──────────────────────
+CMD="${1:-install}"
+
+case "$CMD" in
+  --remove)
+    crontab -l 2>/dev/null | grep -v "$CRON_MARKER" | crontab - || true
+    echo "pandas-heartbeat cron removed"
+    exit 0
+    ;;
+  --status)
+    entry="$(crontab -l 2>/dev/null | grep "$CRON_MARKER" || true)"
+    if [[ -n "$entry" ]]; then
+      echo "installed: $entry"
+    else
+      echo "not installed"
+    fi
+    exit 0
+    ;;
+  install|"")
+    ;;
+  *)
+    echo "用法: bash scripts/install-pandas-cron.sh [--remove|--status]" >&2
+    exit 1
+    ;;
+esac
+
+# ── 以下仅 install 路径执行 ────────────────────────────────────────────────────
+
+# 校验参数
 if [[ "$OFFSET_MINUTES" -lt 0 || "$OFFSET_MINUTES" -ge "$INTERVAL_MINUTES" ]]; then
   echo "ERROR: PANDAS_HEARTBEAT_OFFSET_MINUTES must be 0–$((INTERVAL_MINUTES - 1)), got: ${OFFSET_MINUTES}" >&2
   exit 1
 fi
 
-# ── 构造 cron 表达式 ──────────────────────────────────────────────────────────
+# 构造 cron 表达式
 if [[ "$INTERVAL_MINUTES" -eq 60 && "$OFFSET_MINUTES" -eq 0 ]]; then
   CRON_EXPR="0 * * * *"
 elif [[ "$INTERVAL_MINUTES" -ge 1 && "$INTERVAL_MINUTES" -lt 60 ]]; then
@@ -70,35 +99,8 @@ if [[ -z "$NODE_BIN" ]]; then
 fi
 
 CRON_CMD="cd ${REPO_ROOT} && APP_COMMAND=pandas-heartbeat ${NODE_BIN} --env-file-if-exists=.env --import tsx src/index.ts >> ${REPO_ROOT}/runtime/pandas-heartbeat.log 2>&1"
-CRON_MARKER="# pandas-heartbeat managed by install-pandas-cron.sh"
 
-# ── 子命令 ────────────────────────────────────────────────────────────────────
-CMD="${1:-install}"
-
-case "$CMD" in
-  --remove)
-    crontab -l 2>/dev/null | grep -v "$CRON_MARKER" | crontab - || true
-    echo "pandas-heartbeat cron removed"
-    exit 0
-    ;;
-  --status)
-    entry="$(crontab -l 2>/dev/null | grep "$CRON_MARKER" || true)"
-    if [[ -n "$entry" ]]; then
-      echo "installed: $entry"
-    else
-      echo "not installed"
-    fi
-    exit 0
-    ;;
-  install|"")
-    ;;
-  *)
-    echo "用法: bash scripts/install-pandas-cron.sh [--remove|--status]" >&2
-    exit 1
-    ;;
-esac
-
-# ── 安装（幂等：先移除旧条目，再写入新条目）──────────────────────────────────
+# 安装（幂等：先移除旧条目，再写入新条目）
 mkdir -p "$REPO_ROOT/runtime"
 # crontab -l exits non-zero when no crontab exists; capture with || true so
 # set -e does not abort on a clean first-run machine.
