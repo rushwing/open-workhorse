@@ -790,18 +790,19 @@ claim_review_ready() {
     req_id="$(_get_fm_field "$f" "req_id")"
     title="$(_get_fm_field "$f" "title")"
 
-    # 原子更新 frontmatter（flock 防并发心跳竞争）
-    # Note: `continue` cannot propagate out of a subshell, so we use `exit 1`
-    # inside the subshell and check the exit code in the outer shell.
-    (
-      flock -n 9 || exit 1
-      sed -i.bak \
-        -e "s/^status: review_ready/status: req_review/" \
-        -e "s/^owner: unassigned/owner: huahua/" \
-        "$f"
-      rm -f "${f}.bak"
-    ) 9>"${f}.lock" || { rm -f "${f}.lock"; warn "claim_review_ready: flock 竞争失败 ${f}，跳过"; continue; }
-    rm -f "${f}.lock"
+    # 原子更新 frontmatter — mkdir 作原子锁（POSIX portable，无 flock 依赖）
+    # mkdir 在本地文件系统上是原子操作：只有一个并发 heartbeat 能成功创建锁目录。
+    local _lockdir="${f}.lock"
+    if ! mkdir "$_lockdir" 2>/dev/null; then
+      warn "claim_review_ready: 竞争失败（锁目录已存在）${f}，跳过"
+      continue
+    fi
+    sed -i.bak \
+      -e "s/^status: review_ready/status: req_review/" \
+      -e "s/^owner: unassigned/owner: huahua/" \
+      "$f"
+    rm -f "${f}.bak"
+    rmdir "$_lockdir"
 
     ok "claim_review_ready: ${req_id} → req_review (owner=huahua)"
 
@@ -866,8 +867,9 @@ auto_claim() {
         dep="$(echo "$dep" | tr -d ' ')"
         [[ -z "$dep" ]] && continue
         if [[ ! "$dep" =~ ^(REQ|BUG)-[0-9]+$ ]]; then
-          warn "auto_claim: depends_on 中无效 ID '${dep}'（${f}），跳过此依赖"
-          continue
+          warn "auto_claim: depends_on 中无效 ID '${dep}'（${f}），fail-closed — 跳过此任务"
+          all_done=false
+          break
         fi
         local dep_status=""
         for search_path in \
