@@ -608,9 +608,12 @@ _handle_tc_complete() {
 
   # ATM protocol uses "completed"; legacy uses "success" — accept both
   if [[ "$status" == "success" || "$status" == "completed" ]]; then
-    # Menglan 在 tc_review 通过后自行认领实现；Pandas 不再发 implement 消息（防止重复路由）
-    # 规程 §8.4：Huahua 直写 Menglan inbox，中间路径不经 Pandas
-    info "tc_complete(success): ${req_id} — TC review 通过，Menglan 将自行进入 in_progress"
+    info "tc_complete(success): ${req_id} — 路由 implement 到 Menglan"
+    local req_body=""
+    local _req_f="tasks/features/${req_id}.md"
+    [[ -f "$_req_f" ]] && req_body="$(cat "$_req_f")"
+    inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（TC 已通过 review）" \
+      "" "success" "" "" "$req_body"
   elif [[ $iter_num -lt 2 ]]; then
     local next_iter=$(( iter_num + 1 ))
     info "tc_complete(blocked) iter=${next_iter}: ${req_id} — 路由修复请求到 Huahua"
@@ -863,11 +866,10 @@ auto_claim() {
     [[ "$tc_exempt_reason" == *"Umbrella"* ]] && continue
 
     # 过滤可认领状态（按 harness 标准）
+    # test_designed は Huahua→Menglan 直通路径处理（tc_complete 信号触发），Pandas 不扫描认领
     local claimable=false status_tier=99
-    if [[ "$status" == "test_designed" && "$owner" == "unassigned" ]]; then
-      claimable=true; status_tier=0
-    elif [[ "$status" == "ready" && "$owner" == "unassigned" && \
-            ( "$tc_policy" == "optional" || "$tc_policy" == "exempt" ) ]]; then
+    if [[ "$status" == "ready" && "$owner" == "unassigned" && \
+          ( "$tc_policy" == "optional" || "$tc_policy" == "exempt" ) ]]; then
       claimable=true; status_tier=1
     fi
     $claimable || continue
@@ -926,12 +928,6 @@ auto_claim() {
   req_id="$(_get_fm_field "$best_file" "req_id")"
   title="$(_get_fm_field "$best_file" "title")"
   info "auto-claim: ${req_id}（priority rank: ${best_rank}）"
-
-  if [[ $best_status_tier -eq 0 ]]; then
-    # status=test_designed: 规程 §8.4 — Huahua 直写 Menglan inbox，Menglan 自行认领；Pandas 不干预
-    info "auto_claim: ${req_id} 状态为 test_designed，由 Huahua→Menglan 路径处理，跳过 Pandas 路由"
-    return 0
-  fi
 
   # 认领：更新 owner 和 status（仅适用于 ready+tc_policy=exempt/optional）
   sed -i.bak "s/^owner: unassigned/owner: claude_code/" "$best_file"
