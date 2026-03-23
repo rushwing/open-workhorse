@@ -14,7 +14,7 @@ set -euo pipefail
 export CI=true
 export GH_NO_UPDATE_NOTIFIER=1
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$REPO_ROOT"
 
 # source .env（如存在），使 AGENT_* 等变量可用
@@ -110,7 +110,12 @@ cmd_worktree_setup() {
     local current_branch
     current_branch="$(git -C "$worktree_path" branch --show-current 2>/dev/null || true)"
     if [[ "$current_branch" == "$branch" ]]; then
-      info "worktree 已存在且分支正确：${worktree_path} → ${branch}（幂等，跳过）"
+      info "worktree 已存在且分支正确：${worktree_path} → ${branch} — 同步远端最新提交"
+      # Always pull Huahua's latest TC commits before Menglan resumes work
+      git fetch origin "${branch}" 2>/dev/null \
+        && git -C "$worktree_path" merge --ff-only "origin/${branch}" 2>/dev/null \
+        && info "远端同步完成：${branch}" \
+        || warn "远端同步失败（离线或分支未推送），继续使用本地状态"
       return 0
     else
       err "worktree 路径 ${worktree_path} 已被 ${current_branch:-unknown} 占用，期望 ${branch}"

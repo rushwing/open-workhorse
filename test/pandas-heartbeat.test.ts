@@ -3467,24 +3467,133 @@ test("TC-039-03: inbox_read_pandas extracts branch_name from tc_complete and for
   }
 });
 
-// TC-039-05: harness.sh cmd_worktree_setup contains remote-fetch logic for existing branches
-test("TC-039-05: harness.sh cmd_worktree_setup script contains git ls-remote fetch logic for existing remote branches", async () => {
-  // Verify the script contains the remote-branch detection logic (REQ-039 single-PR rule).
-  // Full integration requires a live git remote; this test validates the code path exists.
-  const harnessPath = join(PROJECT_ROOT, "scripts", "harness.sh");
-  const content = await readFile(harnessPath, "utf8");
-  assert.ok(
-    content.includes("git ls-remote --exit-code origin"),
-    "Expected git ls-remote --exit-code origin in cmd_worktree_setup",
+// TC-039-04: menglan implement handler passes EXISTING_BRANCH env var to harness.sh
+test("TC-039-04: menglan-heartbeat implement handler passes EXISTING_BRANCH=feat/REQ-N to harness.sh", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-04-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "scripts"), { recursive: true });
+  // Mock harness.sh: writes EXISTING_BRANCH value to a sentinel file
+  const sentinelFile = join(tmpDir, "harness_existing_branch.txt");
+  await writeFile(
+    join(tmpDir, "scripts", "harness.sh"),
+    `#!/usr/bin/env bash\necho "\${EXISTING_BRANCH:-UNSET}" > "${sentinelFile}"\nexit 0\n`,
   );
-  assert.ok(
-    content.includes("远端拉取"),
-    "Expected '远端拉取' info message in cmd_worktree_setup",
+  await makeExecutable(join(tmpDir, "scripts", "harness.sh"));
+  // implement message WITH branch_name
+  await writeFile(
+    join(tmpDir, "inbox", "for-menglan", "pending", "impl_msg.md"),
+    "---\ntype: request\naction: implement\nfrom: pandas\nto: menglan\ncreated_at: 2026-03-23T00:00:00Z\npriority: P1\n---\nreq_id: REQ-039-eb\nsummary: impl test\nbranch_name: feat/REQ-039-eb\n",
   );
-  assert.ok(
-    content.includes(`git fetch origin`),
-    "Expected git fetch origin branch in cmd_worktree_setup",
+  try {
+    const MENGLAN_SCRIPT = join(PROJECT_ROOT, "scripts/menglan-heartbeat.sh");
+    const result = await runBash(
+      `bash "${MENGLAN_SCRIPT}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `menglan-heartbeat failed: ${result.stderr}`);
+    const sentinel = (await readFile(sentinelFile, "utf8")).trim();
+    assert.equal(
+      sentinel,
+      "feat/REQ-039-eb",
+      `Expected EXISTING_BRANCH=feat/REQ-039-eb passed to harness.sh. Got: ${sentinel}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-039-04b: implement without branch_name → EXISTING_BRANCH is empty (regression guard)
+test("TC-039-04b: menglan-heartbeat implement without branch_name passes empty EXISTING_BRANCH", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-04b-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "scripts"), { recursive: true });
+  const sentinelFile = join(tmpDir, "harness_existing_branch.txt");
+  await writeFile(
+    join(tmpDir, "scripts", "harness.sh"),
+    `#!/usr/bin/env bash\necho "\${EXISTING_BRANCH:-UNSET}" > "${sentinelFile}"\nexit 0\n`,
   );
+  await makeExecutable(join(tmpDir, "scripts", "harness.sh"));
+  // implement message WITHOUT branch_name
+  await writeFile(
+    join(tmpDir, "inbox", "for-menglan", "pending", "impl_msg_no_branch.md"),
+    "---\ntype: request\naction: implement\nfrom: pandas\nto: menglan\ncreated_at: 2026-03-23T00:00:00Z\npriority: P1\n---\nreq_id: REQ-039-nob\nsummary: impl test no branch\n",
+  );
+  try {
+    const MENGLAN_SCRIPT = join(PROJECT_ROOT, "scripts/menglan-heartbeat.sh");
+    const result = await runBash(
+      `bash "${MENGLAN_SCRIPT}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `menglan-heartbeat failed: ${result.stderr}`);
+    const sentinel = (await readFile(sentinelFile, "utf8")).trim();
+    assert.equal(
+      sentinel,
+      "UNSET",
+      `Expected EXISTING_BRANCH to be empty/unset when branch_name absent. Got: ${sentinel}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-039-05: harness.sh cmd_worktree_setup fetches origin commits when worktree already exists
+test("TC-039-05: harness.sh cmd_worktree_setup syncs origin commits when resuming existing worktree", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-05-${Date.now()}`);
+  const originDir = join(tmpDir, "origin.git");
+  const repoDir = join(tmpDir, "repo");
+  const worktreeDir = join(tmpDir, "worktree");
+  const huahuaCloneDir = join(tmpDir, "huahua-clone");
+  try {
+    // Set up bare origin and primary repo
+    await runBash(`git init --bare "${originDir}"`);
+    await runBash(
+      `git -c user.email=test@test.com -c user.name=Test init "${repoDir}" && ` +
+      `git -C "${repoDir}" -c user.email=test@test.com -c user.name=Test commit --allow-empty -m "init" && ` +
+      `git -C "${repoDir}" remote add origin "${originDir}" && ` +
+      `git -C "${repoDir}" push origin HEAD:main`,
+    );
+    // Create and push the feature branch (simulates Huahua opening TC PR)
+    await runBash(
+      `git -C "${repoDir}" checkout -b feat/REQ-039-fs && ` +
+      `git -C "${repoDir}" -c user.email=test@test.com -c user.name=Test commit --allow-empty -m "TC design initial commit" && ` +
+      `git -C "${repoDir}" push origin feat/REQ-039-fs && ` +
+      `git -C "${repoDir}" checkout main`,
+    );
+    // Create worktree on this branch (simulates Menglan's first run)
+    await runBash(`git -C "${repoDir}" worktree add "${worktreeDir}" feat/REQ-039-fs`);
+    // Huahua pushes a new commit via a separate clone (branch is locked in worktree — must use separate clone)
+    await runBash(
+      `git clone "${originDir}" "${huahuaCloneDir}" && ` +
+      `git -C "${huahuaCloneDir}" -c user.email=test@test.com -c user.name=Test checkout feat/REQ-039-fs && ` +
+      `git -C "${huahuaCloneDir}" -c user.email=test@test.com -c user.name=Test commit --allow-empty -m "TC fix after review" && ` +
+      `git -C "${huahuaCloneDir}" push origin feat/REQ-039-fs`,
+    );
+    // Verify worktree is behind origin (origin has new commit, worktree does not)
+    const logBefore = await runBash(`git -C "${worktreeDir}" log --oneline`);
+    assert.ok(
+      !logBefore.stdout.includes("TC fix after review"),
+      `Expected worktree to be behind origin before sync. Log:\n${logBefore.stdout}`,
+    );
+    // Run cmd_worktree_setup — should fetch and ff-merge the new commit into the worktree
+    await runBash(
+      `REPO_ROOT="${repoDir}" MENGLAN_WORKTREE_ROOT="${worktreeDir}" bash "${PROJECT_ROOT}/scripts/harness.sh" worktree-setup REQ-039-fs`,
+    );
+    // Worktree should now have Huahua's latest commit
+    const logAfter = await runBash(`git -C "${worktreeDir}" log --oneline`);
+    assert.ok(
+      logAfter.stdout.includes("TC fix after review"),
+      `Expected worktree to have latest origin commit after cmd_worktree_setup. Log:\n${logAfter.stdout}`,
+    );
+  } finally {
+    await runBash(`git -C "${repoDir}" worktree remove --force "${worktreeDir}" 2>/dev/null || true`);
+    await rm(tmpDir, { recursive: true, force: true });
+  }
 });
 
 // TC-039-06: menglan-heartbeat writes runtime/menglan_alive.ts on every run
