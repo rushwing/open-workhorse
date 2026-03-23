@@ -790,12 +790,15 @@ claim_review_ready() {
     req_id="$(_get_fm_field "$f" "req_id")"
     title="$(_get_fm_field "$f" "title")"
 
-    # 原子更新 frontmatter（state-as-lock: 防止并发心跳重复认领）
-    sed -i.bak \
-      -e "s/^status: review_ready/status: req_review/" \
-      -e "s/^owner: unassigned/owner: huahua/" \
-      "$f"
-    rm -f "${f}.bak"
+    # 原子更新 frontmatter（flock 防并发心跳竞争）
+    (
+      flock -n 9 || { warn "claim_review_ready: flock 竞争失败 ${f}，跳过"; continue; }
+      sed -i \
+        -e "s/^status: review_ready/status: req_review/" \
+        -e "s/^owner: unassigned/owner: huahua/" \
+        "$f"
+    ) 9>"${f}.lock"
+    rm -f "${f}.lock"
 
     ok "claim_review_ready: ${req_id} → req_review (owner=huahua)"
 
@@ -859,6 +862,10 @@ auto_claim() {
       for dep in "${deps[@]}"; do
         dep="$(echo "$dep" | tr -d ' ')"
         [[ -z "$dep" ]] && continue
+        if [[ ! "$dep" =~ ^(REQ|BUG)-[0-9]+$ ]]; then
+          warn "auto_claim: depends_on 中无效 ID '${dep}'（${f}），跳过此依赖"
+          continue
+        fi
         local dep_status=""
         for search_path in \
           "tasks/features/${dep}.md" \
@@ -989,6 +996,10 @@ _auto_worktree_clean() {
   # 仅处理 feat/REQ-N 格式的分支
   [[ "$current_branch" == feat/* ]] || return 0
   local req_id="${current_branch#feat/}"
+  if [[ ! "$req_id" =~ ^REQ-[0-9]+$ ]]; then
+    warn "auto_worktree_clean: branch '${current_branch}' req_id='${req_id}' 格式不符，跳过"
+    return 0
+  fi
 
   # 检查 REQ 是否已 done（features/ 或 archive/done/）
   local req_status=""
