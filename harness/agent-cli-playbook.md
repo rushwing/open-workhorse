@@ -2,9 +2,9 @@
 harness_id: CLI-PB-001
 component: agent operations / CLI invocation
 owner: Engineering
-version: 0.4
+version: 0.5
 status: active
-last_reviewed: 2026-03-21
+last_reviewed: 2026-03-23
 ---
 
 # Harness Playbook — Agent CLI 调用模板
@@ -65,9 +65,19 @@ Steps:
 4. Write tests first (or confirm TC is runnable), then implement
 5. Before opening PR: npm run release:audit && npm run build && npm test
 6. Update REQ-<N>.md: status=review, fill Agent Notes
-7. Open PR
+7. PR handling — check EXISTING_BRANCH (single-PR rule, REQ-039):
+   - If harness.sh injected a 'NOTE: A TC PR already exists' message in your prompt:
+     a) Do NOT run 'gh pr create'
+     b) Find the existing PR: gh pr list --head feat/REQ-<N> --json number,url --jq '.[0]'
+     c) Update its description: gh pr edit <number> --body '<TC design + implementation summary>'
+   - Otherwise (no existing PR): gh pr create --fill
 "
 ```
+
+> **EXISTING_BRANCH（单PR规则）** — 当 `EXISTING_BRANCH` 环境变量由 menglan-heartbeat.sh 传入时，
+> harness.sh 会在 prompt 中注入提示说明已有 PR。Menglan 应使用 `gh pr edit` 更新描述，而非新建 PR。
+> 此路径仅当 Huahua 已在 `feat/REQ-N` 分支完成 TC 设计并开过 PR 时生效。
+> `tc_policy=exempt/optional` 路径不受影响（无 branch_name 字段，走正常新建 PR 流程）。
 
 ---
 
@@ -315,3 +325,4 @@ Curate memory candidates from ~/workspace-pandas/memory/short-term/candidates/:
 | 0.2 | 2026-03-15 | 新增模板 K（Pandas 编排流程）；新增 §Runbook 节（harness/runbook/ 查询与贡献）；人工触发部分补充 watchdog/telegram 命令；注意事项表新增 Pandas / 停滞检测 / HITL 通知行 |
 | 0.3 | 2026-03-18 | 模板 K：替换 gh issue create 为 inbox file write（agent-inbox-write_review_packet）；Step 0 新增"先检查 for-pandas/ inbox"；新增 CAPABILITIES.md 引用；新增模板 L（Memory Curation）|
 | 0.4 | 2026-03-21 | 模板 K 对齐 ATM REQ-034–036：Step 0 路径改为 pending/，加 inbox_init 前置；Step 2 payload 补全 4 个 delegation 必填字段（objective/scope/expected_output/done_criteria），thread/corr 生成改用 thread_get_or_create / correlation_new |
+| 0.5 | 2026-03-23 | 模板 B 更新 Step 7：新增 EXISTING_BRANCH 单PR规则处理逻辑（检查已有 TC PR → gh pr edit 更新描述而非新建；附 > 注解说明触发条件与 tc_policy exempt/optional 的豁免路径） |

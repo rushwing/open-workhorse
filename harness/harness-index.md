@@ -2,9 +2,9 @@
 harness_id: HARNESS-INDEX
 component: process / orchestration
 owner: Engineering
-version: 0.5
+version: 0.6
 status: active
-last_reviewed: 2026-03-21
+last_reviewed: 2026-03-23
 ---
 
 # Harness Engineering — 流程总索引
@@ -118,18 +118,27 @@ Pandas orchestration loop（模板 K）：
             └─▶ harness.sh status → 有可认领任务
                     └─▶ harness.sh implement <REQ-N>（触发 Menglan）
                             └─▶ worktree 创建：~/workspace-menglan/open-workhorse/ → feat/REQ-N
-                                    └─▶ Menglan 开 PR
-                                            └─▶ Pandas 写 review packet → for-huahua/ inbox
-                                                    └─▶ Huahua（CodeX）输出 review comments
-                                                            └─▶ Pandas 触发 fix-review（如有 blocking findings）
-                                                                    └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
-                                                                            └─▶ Daniel merge PR
-                                                                                    └─▶ Pandas 心跳 S2：扫到 status:done → 发 Telegram 归档通知
-                                                                                            └─▶ _auto_worktree_clean（心跳内联，status=done 时自动移除 worktree）
-                                                                                                    └─▶ Daniel 确认 → Pandas 执行归档（mv REQ + TC → tasks/archive/done/）
+                                    └─▶ 【单PR规则 REQ-039】Huahua 在同一 feat/REQ-N 分支创建 TC + 开 PR
+                                            └─▶ tc_review 消息携带 branch_name=feat/REQ-N，沿链传递至 implement
+                                                    └─▶ Menglan 以 EXISTING_BRANCH 调用 harness.sh，复用已有分支
+                                                            └─▶ Menglan 更新同一 PR 描述（不新建 PR）
+                                                                    └─▶ Pandas 写 review packet → for-huahua/ inbox
+                                                                            └─▶ Huahua（CodeX）输出 review comments
+                                                                                    └─▶ Pandas 触发 fix-review（如有 blocking findings）
+                                                                                            └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
+                                                                                                    └─▶ Daniel merge PR
+                                                                                                            └─▶ Pandas 心跳 S2：扫到 status:done → 发 Telegram 归档通知
+                                                                                                                    └─▶ _auto_worktree_clean（心跳内联，status=done 时自动移除 worktree）
+                                                                                                                            └─▶ Daniel 确认 → Pandas 执行归档（mv REQ + TC → tasks/archive/done/）
 
 dev-cycle-watchdog（每 5h cron）：
     └─▶ 检测 in_progress 任务停滞 / PR 无 review → Telegram 告警 Daniel
+
+keep-alive watchdog（Pandas 心跳内联，每 5 分钟）：
+    └─▶ _check_stall_and_keepalive()：扫描 status=in_progress 的 REQ
+            └─▶ 读取 runtime/{agent}_alive.ts 存活时间戳
+                    └─▶ 若时间戳距今 > AGENT_STALL_TIMEOUT_MINUTES（默认 60min）：
+                            └─▶ 向该 agent inbox 写 keep-alive implement 消息（含 branch_name）→ 触发恢复
 ```
 
 > Agents 每 5 分钟轮询各自 inbox。Pandas 写任务包至 `$SHARED_RESOURCES_ROOT/inbox/for-{agent}/`，读结果包自 `inbox/for-pandas/`。
@@ -181,3 +190,4 @@ Pandas 在 session 结束或批量任务完成后将候选提升至 `project.db`
 | 0.3 | 2026-03-18 | 引入 Tool Registration（CAPABILITIES.md / CONNECTORS.md）+ Memory Integration 节；inbox-based dispatch 说明；对齐 everything_openclaw agent_persona_harness_v0 ground truth |
 | 0.4 | 2026-03-21 | inbox-protocol 行更新：status partial → active，ATM REQ-033–036 全部落地；frontmatter 版本同步；playbook 模板集更新为 A–L（含 K Pandas 编排、L Memory Curation）；自动化流程函数名更新为 inbox_read_pandas() |
 | 0.5 | 2026-03-21 | REQ-037 git worktree 隔离落地：harness.sh implement 自动创建 ~/workspace-menglan/open-workhorse/ worktree；新增 worktree-clean 命令；自动化流程图补充 worktree 生命周期；playbook 模板 B/K 更新 worktree 路径说明 |
+| 0.6 | 2026-03-23 | REQ-039 单PR规则 + Keep-Alive Watchdog：自动化流程图更新为单PR链路（Huahua 在 feat/REQ-N 分支建TC+开PR，branch_name 沿消息链传递至 Menglan 的 EXISTING_BRANCH）；新增 keep-alive watchdog 说明（_check_stall_and_keepalive，AGENT_STALL_TIMEOUT_MINUTES，runtime/{agent}_alive.ts 时间戳） |
