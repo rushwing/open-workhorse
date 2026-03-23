@@ -791,13 +791,16 @@ claim_review_ready() {
     title="$(_get_fm_field "$f" "title")"
 
     # 原子更新 frontmatter（flock 防并发心跳竞争）
+    # Note: `continue` cannot propagate out of a subshell, so we use `exit 1`
+    # inside the subshell and check the exit code in the outer shell.
     (
-      flock -n 9 || { warn "claim_review_ready: flock 竞争失败 ${f}，跳过"; continue; }
-      sed -i \
+      flock -n 9 || exit 1
+      sed -i.bak \
         -e "s/^status: review_ready/status: req_review/" \
         -e "s/^owner: unassigned/owner: huahua/" \
         "$f"
-    ) 9>"${f}.lock"
+      rm -f "${f}.bak"
+    ) 9>"${f}.lock" || { rm -f "${f}.lock"; warn "claim_review_ready: flock 竞争失败 ${f}，跳过"; continue; }
     rm -f "${f}.lock"
 
     ok "claim_review_ready: ${req_id} → req_review (owner=huahua)"

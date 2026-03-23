@@ -103,10 +103,11 @@ _notify_pandas_failure() {
 }
 
 # ── Huahua 向 Pandas 写回 ATM response ─────────────────────────────────────
-# _write_huahua_response <req_id> <pr_number> <legacy_type> <status> [blocking_reason]
+# _write_huahua_response <req_id> <pr_number> <legacy_type> <status> [summary]
 # legacy_type: review_complete | review_blocked
+# summary is always written as `summary:`; additionally written as `blocking_reason:` when status=blocked
 _write_huahua_response() {
-  local req_id="$1" pr_number="$2" legacy_type="$3" status="$4" blocking_reason="${5:-}"
+  local req_id="$1" pr_number="$2" legacy_type="$3" status="$4" summary="${5:-}"
   local date_str filename
   date_str="$(date +%Y-%m-%d)"
   filename="${date_str}-huahua-${legacy_type}-${req_id}-$$-${RANDOM}.md"
@@ -123,7 +124,8 @@ _write_huahua_response() {
     echo "req_id: ${req_id}"
     echo "pr_number: ${pr_number}"
     echo "status: ${status}"
-    [[ -n "$blocking_reason" ]] && echo "blocking_reason: ${blocking_reason}"
+    [[ -n "$summary" ]] && echo "summary: ${summary}"
+    [[ "$status" == "blocked" && -n "$summary" ]] && echo "blocking_reason: ${summary}"
   } > "${INBOX_ROOT}/for-pandas/pending/${filename}"
   ok "${legacy_type}(${status}) → for-pandas/pending/${filename}"
 }
@@ -259,7 +261,7 @@ ${pr_diff}
         return 1
       fi
       if [[ "$verdict" == "APPROVED" ]]; then
-        _write_huahua_response "$req_id" "$pr_number" "review_complete" "completed" ""
+        _write_huahua_response "$req_id" "$pr_number" "review_complete" "completed" "${summary}"
       else
         _write_huahua_response "$req_id" "$pr_number" "review_blocked" "blocked" "${summary}"
       fi
