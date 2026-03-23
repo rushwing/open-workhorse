@@ -1211,6 +1211,17 @@ _check_stall_and_keepalive() {
 
     local elapsed=$(( now - last_alive ))
     if [[ $elapsed -ge $timeout_sec ]]; then
+      # Dedup: skip if a keep-alive for this req_id is already pending or claimed
+      local agent_inbox="${INBOX_ROOT}/for-${owner}"
+      local existing_ka
+      existing_ka="$(grep -rl "keep-alive" \
+          "${agent_inbox}/pending/" "${agent_inbox}/claimed/" \
+          2>/dev/null \
+        | xargs grep -l "req_id: ${req_id}" 2>/dev/null | head -1 || true)"
+      if [[ -n "$existing_ka" ]]; then
+        info "keep-alive: ${req_id} owner=${owner} — 已有 pending/claimed keep-alive，跳过"
+        continue
+      fi
       warn "keep-alive: ${req_id} owner=${owner} stale ${elapsed}s (threshold ${timeout_sec}s) — 发送 keep-alive"
       inbox_write "$owner" "implement" "$req_id" \
         "keep-alive: resume ${req_id}（stale ${elapsed}s ≥ ${timeout_sec}s）"

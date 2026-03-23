@@ -3607,3 +3607,64 @@ test("TC-039-11: AGENT_STALL_TIMEOUT_MINUTES=30 triggers keep-alive for 45min st
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// TC-039-12: huahua-heartbeat writes runtime/huahua_alive.ts BEFORE empty-inbox exit
+test("TC-039-12: huahua-heartbeat writes runtime/huahua_alive.ts even when inbox is empty", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-12-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "failed"), { recursive: true });
+  try {
+    const HUAHUA_SCRIPT = join(PROJECT_ROOT, "scripts/huahua-heartbeat.sh");
+    const result = await runBash(
+      `bash "${HUAHUA_SCRIPT}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    // exits 0 (empty inbox → early exit)
+    assert.equal(result.code, 0, `huahua-heartbeat failed: ${result.stderr}`);
+    const tsFile = join(tmpDir, "runtime", "huahua_alive.ts");
+    assert.ok(existsSync(tsFile), "Expected runtime/huahua_alive.ts to exist even with empty inbox");
+    const content = (await readFile(tsFile, "utf8")).trim();
+    assert.match(content, /^\d{10,}$/, `Expected epoch integer. Got: ${content}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// TC-039-13: _check_stall_and_keepalive dedup — no duplicate keep-alive when one already pending
+test("TC-039-13: _check_stall_and_keepalive does NOT send duplicate keep-alive when one already pending", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-039-13-${Date.now()}`);
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+  await mkdir(join(tmpDir, "runtime"), { recursive: true });
+  // REQ in progress owned by menglan
+  await writeFile(
+    join(tmpDir, "tasks", "features", "REQ-039-dedup.md"),
+    "---\nreq_id: REQ-039-dedup\nstatus: in_progress\nowner: menglan\n---\n",
+  );
+  // Stale timestamp (90 min ago)
+  const staleTs = String(Math.floor(Date.now() / 1000) - 90 * 60);
+  await writeFile(join(tmpDir, "runtime", "menglan_alive.ts"), staleTs + "\n");
+  // Pre-existing keep-alive already in pending
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "failed"), { recursive: true });
+  await writeFile(
+    join(tmpDir, "inbox", "for-menglan", "pending", "existing-keepalive.md"),
+    "---\ntype: request\naction: implement\nreq_id: REQ-039-dedup\nsummary: keep-alive: resume REQ-039-dedup\n---\n",
+  );
+  try {
+    const result = await runBash(
+      `source "${SCRIPT}" 2>/dev/null; inbox_init; AGENT_STALL_TIMEOUT_MINUTES=60 _check_stall_and_keepalive`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0);
+    const pendingDir = join(tmpDir, "inbox", "for-menglan", "pending");
+    const files = (await readdir(pendingDir)).filter((f) => f.endsWith(".md"));
+    // Should still be exactly 1 — the pre-existing one, no new duplicate
+    assert.equal(files.length, 1, `Expected exactly 1 keep-alive (no duplicate). Found: ${files.join(", ")}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
