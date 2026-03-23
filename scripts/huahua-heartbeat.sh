@@ -185,6 +185,7 @@ _process_message() {
       review|code_review) resolved_type="code_review" ;;
       tc_design)          resolved_type="tc_design" ;;
       req_review)         resolved_type="req_review" ;;
+      implement)          resolved_type="req_review" ;;  # keep-alive resume: re-enter req_review flow
       *)
         warn "ATM request action=${action_val} — 暂无专用 handler，移至 dead-letter"
         return 1
@@ -273,8 +274,8 @@ ${pr_diff}
       local req_content=""
       [[ -f "$req_file" ]] && req_content="$(cat "$req_file")"
 
-      # REQ-039: branch_name 字段 — Huahua 在 feat/${req_id} 分支建 TC PR，与 Meng Lan 实现共用同一 PR
-      local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["PASSED","DEFECTS"]},"summary":{"type":"string"},"tc_pr_number":{"type":"string"},"branch_name":{"type":"string"}},"required":["verdict","summary"]}'
+      # branch_name is always deterministic (feat/${req_id}); not requested from Claude
+      local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["PASSED","DEFECTS"]},"summary":{"type":"string"},"tc_pr_number":{"type":"string"}},"required":["verdict","summary"]}'
       local raw_result; local claude_rc
       raw_result=$("${CLAUDE_CMD[@]}" --output-format json --json-schema "$_schema" \
         "Read harness/harness-index.md and harness/requirement-standard.md.
@@ -293,7 +294,7 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
    b. Create branch feat/${req_id} (single-PR rule, REQ-039 — Menglan will add impl commits to this same branch)
    c. Design TCs under tasks/test-cases/; update ${req_id}.md: status → test_designed, test_case_ref populated; commit
    d. Open TC PR on branch feat/${req_id}: gh pr create --fill; capture PR number as tc_pr_number
-   e. Return {\"verdict\":\"PASSED\",\"summary\":\"...\",\"tc_pr_number\":\"<N>\",\"branch_name\":\"feat/${req_id}\"}
+   e. Return {\"verdict\":\"PASSED\",\"summary\":\"...\",\"tc_pr_number\":\"<N>\"}
 4. If REQ has DEFECTS:
    a. Create tasks/bugs/BUG-NNN.md (bug_type: req_bug, related_req: [${req_id}])
    b. Block REQ: status → blocked, blocked_reason/blocked_from_status set; commit
@@ -307,7 +308,8 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
       local verdict; verdict=$(echo "$raw_result" | jq -r '.structured_output.verdict // empty' 2>/dev/null)
       local summary; summary=$(echo "$raw_result" | jq -r '.structured_output.summary // empty' 2>/dev/null)
       local tc_pr; tc_pr=$(echo "$raw_result" | jq -r '.structured_output.tc_pr_number // empty' 2>/dev/null)
-      local branch_name; branch_name=$(echo "$raw_result" | jq -r '.structured_output.branch_name // empty' 2>/dev/null)
+      # P2 fix: branch_name is always deterministic — never trust model output for this
+      local branch_name="feat/${req_id}"
       if [[ -z "$verdict" ]]; then
         warn "req_review: 无法提取 verdict"
         return 1
@@ -331,7 +333,7 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
 
 # ── 主逻辑 ────────────────────────────────────────────────────────────────────
 main() {
-  # REQ-039: 写存活时间戳（供 Pandas keep-alive watchdog 观测；空 inbox 也要更新）
+  # REQ-039: 写存活时间戳（必须在空 inbox 退出前，否则 watchdog 误判 stale）
   mkdir -p "${REPO_ROOT}/runtime"
   date +%s > "${REPO_ROOT}/runtime/huahua_alive.ts" 2>/dev/null || true
 

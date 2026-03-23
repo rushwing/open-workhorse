@@ -140,7 +140,7 @@ tg_decision() {
   _check_config || return 1
 
   local timeout="${TG_DECISION_TIMEOUT:-86400}"
-  local poll_interval=30
+  local poll_interval="${TG_DECISION_POLL_INTERVAL:-30}"
 
   # 构建 inline keyboard JSON
   local keyboard
