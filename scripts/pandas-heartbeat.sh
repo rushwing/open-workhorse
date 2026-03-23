@@ -1012,6 +1012,95 @@ _auto_worktree_clean() {
   fi
 }
 
+# ── REQ-031: Post-merge 归档自动化 ───────────────────────────────────────────
+
+# archive_merged_reqs — 扫描 status:review 的 REQ，检测对应 PR 是否已 merge，
+# 若已 merge 则更新 REQ + TC status → done，移至 tasks/archive/done/，commit + tg_notify
+# 幂等：若无 status:review 的 REQ，直接返回 0
+# 错误处理：gh 调用失败时跳过该 REQ（warn + continue），不中断心跳
+archive_merged_reqs() {
+  [[ -f "$HOLD_FLAG" ]] && { info "hold 模式，跳过 archive_merged_reqs"; return 0; }
+
+  local archived_any=false
+
+  for req_f in "${REPO_ROOT}/tasks/features/REQ-"*.md; do
+    [[ -f "$req_f" ]] || continue
+
+    local req_status pr_number
+    req_status="$(_get_fm_field "$req_f" "status")"
+    [[ "$req_status" == "review" ]] || continue
+
+    pr_number="$(_get_fm_field "$req_f" "pr_number")"
+    if [[ -z "$pr_number" ]]; then
+      warn "archive_merged_reqs: $(basename "$req_f") status=review but no pr_number — skipping"
+      continue
+    fi
+
+    # ── 检测 PR 状态 ──────────────────────────────────────────────────────────
+    local gh_out gh_state
+    if ! gh_out="$(gh pr view "$pr_number" --json state 2>&1)"; then
+      warn "archive_merged_reqs: gh pr view ${pr_number} failed for $(basename "$req_f") — skipping (${gh_out})"
+      continue
+    fi
+    gh_state="$(echo "$gh_out" | grep -o '"state":"[^"]*"' | cut -d'"' -f4 || true)"
+
+    if [[ "$gh_state" != "MERGED" ]]; then
+      info "archive_merged_reqs: $(basename "$req_f") PR #${pr_number} state=${gh_state} — not merged, skipping"
+      continue
+    fi
+
+    local req_id
+    req_id="$(_get_fm_field "$req_f" "req_id")"
+    info "archive_merged_reqs: ${req_id} PR #${pr_number} MERGED — archiving"
+
+    # ── 更新 REQ frontmatter status → done ───────────────────────────────────
+    sed -i.bak "s/^status: review/status: done/" "$req_f"
+    rm -f "${req_f}.bak"
+
+    # ── 处理关联 TC ───────────────────────────────────────────────────────────
+    local tc_refs_raw
+    tc_refs_raw="$(awk -F': ' '/^test_case_ref:/{print $2}' "$req_f" | tr -d '[]')"
+    local tc_ids=()
+    if [[ -n "$(echo "$tc_refs_raw" | tr -d ' ')" ]]; then
+      IFS=',' read -ra tc_ids <<< "$tc_refs_raw"
+    fi
+
+    local tc_id
+    for tc_id in "${tc_ids[@]}"; do
+      tc_id="$(echo "$tc_id" | tr -d ' ')"
+      [[ -z "$tc_id" ]] && continue
+      local tc_f="${REPO_ROOT}/tasks/test-cases/${tc_id}.md"
+      [[ -f "$tc_f" ]] || { warn "archive_merged_reqs: TC file not found: ${tc_f}"; continue; }
+      # 更新 TC frontmatter status → done（BUG-005 修复）
+      sed -i.bak "s/^status: .*/status: done/" "$tc_f"
+      rm -f "${tc_f}.bak"
+      mv "$tc_f" "${REPO_ROOT}/tasks/archive/done/${tc_id}.md"
+      info "archived TC: ${tc_id}"
+    done
+
+    # ── 移动 REQ 文件 ─────────────────────────────────────────────────────────
+    mv "$req_f" "${REPO_ROOT}/tasks/archive/done/${req_id}.md"
+    info "archived REQ: ${req_id}"
+
+    # ── Commit ────────────────────────────────────────────────────────────────
+    # Stage new files in archive/done/ and removed files from features/ + test-cases/
+    git -C "$REPO_ROOT" add "${REPO_ROOT}/tasks/archive/done/" 2>/dev/null || true
+    git -C "$REPO_ROOT" add -u "${REPO_ROOT}/tasks/features/" 2>/dev/null || true
+    git -C "$REPO_ROOT" add -u "${REPO_ROOT}/tasks/test-cases/" 2>/dev/null || true
+    git -C "$REPO_ROOT" commit -m "archive(${req_id}): move to tasks/archive/done/" || \
+      warn "archive_merged_reqs: git commit failed for ${req_id}"
+
+    # ── Telegram 通知 ──────────────────────────────────────────────────────────
+    tg_notify "✅ [open-workhorse] ${req_id} 已归档（PR #${pr_number} merged）" || true
+
+    archived_any=true
+  done
+
+  if [[ "$archived_any" == "false" ]]; then
+    info "archive_merged_reqs: 无待归档 REQ"
+  fi
+}
+
 # ── REQ-022: 停滞检测 ─────────────────────────────────────────────────────────
 
 stall_detection() {
@@ -1076,6 +1165,9 @@ main() {
 
   # 3.5. claim review_ready REQs → req_review（BUG-004）
   claim_review_ready
+
+  # 3.6. Post-merge 归档（REQ-031）
+  archive_merged_reqs
 
   # 4. Auto-claim（REQ-022）
   auto_claim
