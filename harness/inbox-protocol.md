@@ -93,8 +93,9 @@ $SHARED_RESOURCES_ROOT/inbox/
 
 | action | 发送方 | 接收方 | 说明 |
 |--------|--------|--------|------|
+| `req_review` | Pandas | Huahua | 需求审核 + TC 设计（初始入口）；`claim_review_ready()` 写入，Huahua `req_review` handler 同时完成需求审核与 TC 设计并在 `feat/REQ-N` 开 PR |
 | `implement` | Pandas | Menglan | TC 已完成或 tc_policy=exempt，开始实现 |
-| `tc_design` | Pandas | Huahua | 需要 TC 设计或修复 |
+| `tc_design` | Pandas | Huahua | TC 修复迭代（仅 `tc_complete` blocked 且 iter<2 时）；非初始入口 |
 | `review` | Pandas | Huahua | 需要 PR code review（canonical；`code_review` 为兼容别名，reader 端接受，writer 端只写 `review`） |
 | `bugfix` | Pandas | Menglan | 需要 Bug 修复 |
 | `fix_review` | Pandas | Menglan | 需要修复 review findings |

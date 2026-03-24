@@ -20,20 +20,27 @@ It coordinates task dispatch, TC design, code review, and HITL escalation.
 
 ```
 IDLE
-  ├─ heartbeat tick: scan tasks/features/ for status=ready + owner=unassigned → auto-claim
+  ├─ heartbeat tick (每次心跳，顺序执行，见 scripts/pandas-heartbeat.sh main()):
+  │    1. inbox_init()：确保 inbox 目录存在（幂等）
+  │    2. inbox_read_pandas()：处理 inbox/for-pandas/（最高优先级，先于任何 claim）
+  │    3. handle_telegram_commands()：处理 Daniel Telegram 指令
+  │    4. claim_review_ready()：扫描 status=review_ready + owner=unassigned
+  │         → review_ready 由 Daniel 人工设置（draft→review_ready 非 Pandas 自动推进）
+  │         → 原子 commit 转为 req_review，write inbox/for-huahua/: req_review REQ-N → TC_DESIGN
+  │    5. archive_merged_reqs()：post-merge 归档已合并 REQ
+  │    6. auto_claim()：扫描 status=test_designed 或 status=ready(tc_policy=exempt/optional)
+  │         → claim → write inbox/for-menglan/: implement REQ-N → DEV_ACTIVE
+  │    7. stall_detection()：停滞检测，告警 Daniel
+  │    8. _check_stall_and_keepalive()：keep-alive watchdog（见 §4）
+  │    9. _auto_worktree_clean()：清理已完成 REQ 的 worktree
   ├─ Telegram inbound "start REQ-N": claim specific REQ immediately
   └─ inbox/for-pandas/ message received: dispatch per message type
 
-TASK_CLAIMED
-  └─ req_check: validate REQ spec meets harness/requirement-standard.md
-     ├─ invalid → Telegram Daniel:
-     │            "REQ-N spec incomplete: <reason>. Fix before start? [Fix] [Skip]"
-     └─ valid   → write inbox/for-huahua/: "TC design REQ-N"
-
 TC_DESIGN  (Huahua working — 单PR规则 REQ-039)
-  └─ Huahua 在 feat/REQ-N 分支创建 TC + 开 PR（不再使用独立 tc/ 分支）
+  └─ Huahua req_review handler：需求审核 + TC 设计 + 在 feat/REQ-N 分支开 PR
      └─ harness.sh tc-review <PR>  ← Menglan reviews TCs
-        ├─ findings → harness.sh fix-review <PR>  (up to 2 iterations total)
+        ├─ findings (iter<2) → Pandas → write inbox/for-huahua/: tc_design REQ-N（修复迭代）
+        │  findings (iter≥2) → tg_decision 升级 Daniel
         └─ approved → tc_review 结果包含 branch_name=feat/REQ-N
                    → 该字段沿链传递：tc_review → tc_complete → implement
                    → write inbox/for-menglan/: implement REQ-N（含 branch_name）
@@ -92,19 +99,47 @@ Examples:
 - `2026-03-16-huahua-tc-done-REQ-020-PR-41.md`
 - `2026-03-16-pandas-implement-REQ-021.md`
 
-### Message body (YAML frontmatter)
+### Message envelope（ATM 格式，canonical spec: harness/inbox-protocol.md）
+
+消息使用 ATM Envelope 格式（REQ-033）。顶层 `type` 只有三个枚举值：
 
 ```yaml
 ---
-type: dev_complete | tc_complete | major_decision_needed | review_blocked | implement | tc_design | code_review
+# ── type=request（Pandas → agent）──────────────────────────────────────────
+type: request
+action: req_review | tc_design | implement | review | fix_review | bugfix
+# req_review — 初始 TC 设计入口，claim_review_ready() 写入（Pandas → Huahua）
+# tc_design  — TC 修复迭代，仅 tc_complete blocked 且 iter<2 时（Pandas → Huahua）
+# implement  — 实现分发（Pandas → Menglan）
+from: pandas
+to: huahua | menglan
 req_id: REQ-N
-pr_number: 42          # optional — present for dev_complete / tc_complete / code_review
 branch_name: feat/REQ-N  # optional — 单PR规则：tc_review→tc_complete→implement 链传递
-summary: one-line description
-status: success | blocked
-blocking_reason: ""    # populated when status=blocked
+response_required: true
+# （objective / scope / expected_output / done_criteria 见 inbox-protocol.md §2.2）
+---
+
+---
+# ── type=response（agent → Pandas）─────────────────────────────────────────
+type: response
+in_reply_to: msg_...
+status: completed | blocked | failed
+req_id: REQ-N
+pr_number: 42           # optional — dev_complete / tc_complete
+branch_name: feat/REQ-N # optional — 单PR规则传递
+---
+
+---
+# ── type=notification（agent → Pandas）──────────────────────────────────────
+type: notification
+event_type: decision_required | stall_detected
+severity: info | warn | action-required
+req_id: REQ-N
 ---
 ```
+
+> `req_review`、`tc_design` 等是 `action` 字段的值（type=request 的子字段），**不是**顶层 `type` 枚举值。
+> 完整字段规范见 `harness/inbox-protocol.md`（canonical）。
 
 Body (below frontmatter) is optional free-form context for the receiving agent.
 
@@ -123,16 +158,17 @@ OpenClaw calls `APP_COMMAND=pandas-heartbeat` on each heartbeat tick.
 
 ### pandas-heartbeat.sh responsibilities (in order)
 
-1. **Process inbox** — read all files in `inbox/for-pandas/`, handle each by `type`, delete after.
-2. **Auto-claim** — if no active task, scan `tasks/features/` for `status=ready, owner=unassigned`
-   with all `depends_on` satisfied; claim the highest-priority match.
-3. **Stall detection** — apply same logic as `dev-cycle-watchdog.sh`; escalate via Telegram if stale.
-4. **Keep-Alive Watchdog** (`_check_stall_and_keepalive`, REQ-039) — 每次心跳额外执行：
-   - 扫描 `tasks/features/` 中 `status=in_progress` 的 REQ
-   - 读取对应 agent 的存活时间戳（`runtime/menglan_alive.ts` / `runtime/huahua_alive.ts`）
-   - 若文件缺失或距今 > `AGENT_STALL_TIMEOUT_MINUTES`（默认 60 分钟），向该 agent inbox 写
-     keep-alive implement 消息（单PR路径时携带 `branch_name=feat/<REQ-N>`）
-   - 不修改 REQ 状态；恢复由 agent 自主处理
+顺序与 `scripts/pandas-heartbeat.sh main()` 对齐：
+
+1. **inbox_init** — 确保 `inbox/` 各生命周期目录存在（幂等）。
+2. **inbox_read_pandas** — 处理 `inbox/for-pandas/pending/`，原子 mv → claimed，按 `type`/`action` 路由，处理后移至 done/failed。**最高优先级，先于任何 claim 操作。**
+3. **handle_telegram_commands** — 轮询 Telegram `getUpdates`，处理 Daniel 的文本指令（`start`/`status`/`hold`/`resume` 等）。
+4. **claim_review_ready** — 扫描 `status=review_ready + owner=unassigned`；原子 commit 转为 `req_review` 并写 `inbox/for-huahua/: req_review REQ-N`。`review_ready` 由 Daniel 人工设置，Pandas 不做自动推进。
+5. **archive_merged_reqs** — 检测已合并 PR 对应的 REQ，执行 post-merge 归档。
+6. **auto_claim** — 扫描 `status=test_designed` 或 `status=ready(tc_policy=exempt/optional)`，认领并写 `inbox/for-menglan/: implement REQ-N`（见下方优先级说明）。
+7. **stall_detection** — 检测 `in_progress` 任务停滞（同 `dev-cycle-watchdog.sh` 逻辑），超时则 Telegram 告警 Daniel。
+8. **_check_stall_and_keepalive** (REQ-039) — 读取 `runtime/{agent}_alive.ts` 时间戳；若距今 > `AGENT_STALL_TIMEOUT_MINUTES`（默认 60 分钟），向停滞 agent inbox 写 keep-alive implement 消息（含 `branch_name`）；不修改 REQ 状态。
+9. **_auto_worktree_clean** — 扫描 `status=done` 的 REQ，自动移除对应 Menglan worktree。
 
 ### Auto-claim priority order
 
@@ -193,13 +229,13 @@ TC loop: Huahua designs TCs, Menglan reviews them via `harness.sh tc-review`.
 ### Flow（单PR规则 REQ-039）
 
 ```
-Pandas → inbox/for-huahua/: tc_design REQ-N
-Huahua → 在 feat/REQ-N 分支创建 TC 文件并开 PR（不再使用独立 tc/REQ-N-<slug> 分支）
-Pandas (or Daniel) → harness.sh tc-review <PR#>
-  ├─ Findings: harness.sh fix-review <PR#>  (Huahua fixes, ≤ 2 iterations)
-  └─ No findings / approved
-       → tc_review 结果包含 branch_name: feat/REQ-N
-       → 字段沿消息链传递：tc_review → tc_complete → implement
+REQ 达到 review_ready
+    └─▶ Pandas claim_review_ready() → inbox/for-huahua/: req_review REQ-N
+            └─▶ Huahua req_review handler：需求审核 + TC 设计 + 在 feat/REQ-N 开 PR
+                    └─▶ tc_review 结果包含 branch_name: feat/REQ-N
+                            └─▶ 字段沿消息链传递：tc_review → tc_complete → implement
+                    （tc_complete blocked 且 iter<2：Pandas → inbox/for-huahua/: tc_design REQ-N 修复迭代）
+
 Pandas → inbox/for-menglan/: implement REQ-N（含 branch_name）
 Menglan → harness.sh implement REQ-N（EXISTING_BRANCH=feat/REQ-N）
         → 复用已有分支，使用 gh pr edit 更新 PR 描述，不新建 PR
