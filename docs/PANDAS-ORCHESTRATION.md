@@ -20,13 +20,19 @@ It coordinates task dispatch, TC design, code review, and HITL escalation.
 
 ```
 IDLE
-  ├─ heartbeat tick (每次心跳，按顺序执行):
-  │    1. claim_review_ready()：扫描 status=review_ready + owner=unassigned
-  │         → review_ready 由 Daniel 人工设置（draft → review_ready 非 Pandas 自动推进）
+  ├─ heartbeat tick (每次心跳，顺序执行，见 scripts/pandas-heartbeat.sh main()):
+  │    1. inbox_init()：确保 inbox 目录存在（幂等）
+  │    2. inbox_read_pandas()：处理 inbox/for-pandas/（最高优先级，先于任何 claim）
+  │    3. handle_telegram_commands()：处理 Daniel Telegram 指令
+  │    4. claim_review_ready()：扫描 status=review_ready + owner=unassigned
+  │         → review_ready 由 Daniel 人工设置（draft→review_ready 非 Pandas 自动推进）
   │         → 原子 commit 转为 req_review，write inbox/for-huahua/: req_review REQ-N → TC_DESIGN
-  │    2. auto_claim()：扫描 status=test_designed 或 status=ready(tc_policy=exempt/optional)
+  │    5. archive_merged_reqs()：post-merge 归档已合并 REQ
+  │    6. auto_claim()：扫描 status=test_designed 或 status=ready(tc_policy=exempt/optional)
   │         → claim → write inbox/for-menglan/: implement REQ-N → DEV_ACTIVE
-  │    3. _check_stall_and_keepalive()：keep-alive watchdog（见 §4）
+  │    7. stall_detection()：停滞检测，告警 Daniel
+  │    8. _check_stall_and_keepalive()：keep-alive watchdog（见 §4）
+  │    9. _auto_worktree_clean()：清理已完成 REQ 的 worktree
   ├─ Telegram inbound "start REQ-N": claim specific REQ immediately
   └─ inbox/for-pandas/ message received: dispatch per message type
 
