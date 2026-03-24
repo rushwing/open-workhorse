@@ -28,12 +28,16 @@ TASK_CLAIMED
   └─ req_check: validate REQ spec meets harness/requirement-standard.md
      ├─ invalid → Telegram Daniel:
      │            "REQ-N spec incomplete: <reason>. Fix before start? [Fix] [Skip]"
-     └─ valid   → write inbox/for-huahua/: "TC design REQ-N"
+     └─ valid (tc_policy=required) → REQ 推进至 review_ready
+                                    → claim_review_ready()
+                                    → write inbox/for-huahua/: req_review REQ-N
+        (tc_policy=exempt/optional) → 跳过 TC_DESIGN，直接进入 DEV_ACTIVE
 
 TC_DESIGN  (Huahua working — 单PR规则 REQ-039)
-  └─ Huahua 在 feat/REQ-N 分支创建 TC + 开 PR（不再使用独立 tc/ 分支）
+  └─ Huahua req_review handler：需求审核 + TC 设计 + 在 feat/REQ-N 分支开 PR
      └─ harness.sh tc-review <PR>  ← Menglan reviews TCs
-        ├─ findings → harness.sh fix-review <PR>  (up to 2 iterations total)
+        ├─ findings (iter<2) → Pandas → write inbox/for-huahua/: tc_design REQ-N（修复迭代）
+        │  findings (iter≥2) → tg_decision 升级 Daniel
         └─ approved → tc_review 结果包含 branch_name=feat/REQ-N
                    → 该字段沿链传递：tc_review → tc_complete → implement
                    → write inbox/for-menglan/: implement REQ-N（含 branch_name）
@@ -96,7 +100,9 @@ Examples:
 
 ```yaml
 ---
-type: dev_complete | tc_complete | major_decision_needed | review_blocked | implement | tc_design | code_review
+type: dev_complete | tc_complete | major_decision_needed | review_blocked | implement | req_review | tc_design | code_review
+# req_review — Pandas → Huahua：需求审核 + TC 设计（初始入口，由 claim_review_ready() 写入）
+# tc_design  — Pandas → Huahua：TC 修复迭代（仅 tc_complete blocked 且 iter<2 时）
 req_id: REQ-N
 pr_number: 42          # optional — present for dev_complete / tc_complete / code_review
 branch_name: feat/REQ-N  # optional — 单PR规则：tc_review→tc_complete→implement 链传递
