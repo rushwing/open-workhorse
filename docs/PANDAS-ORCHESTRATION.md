@@ -193,13 +193,13 @@ TC loop: Huahua designs TCs, Menglan reviews them via `harness.sh tc-review`.
 ### Flow（单PR规则 REQ-039）
 
 ```
-Pandas → inbox/for-huahua/: tc_design REQ-N
-Huahua → 在 feat/REQ-N 分支创建 TC 文件并开 PR（不再使用独立 tc/REQ-N-<slug> 分支）
-Pandas (or Daniel) → harness.sh tc-review <PR#>
-  ├─ Findings: harness.sh fix-review <PR#>  (Huahua fixes, ≤ 2 iterations)
-  └─ No findings / approved
-       → tc_review 结果包含 branch_name: feat/REQ-N
-       → 字段沿消息链传递：tc_review → tc_complete → implement
+REQ 达到 review_ready
+    └─▶ Pandas claim_review_ready() → inbox/for-huahua/: req_review REQ-N
+            └─▶ Huahua req_review handler：需求审核 + TC 设计 + 在 feat/REQ-N 开 PR
+                    └─▶ tc_review 结果包含 branch_name: feat/REQ-N
+                            └─▶ 字段沿消息链传递：tc_review → tc_complete → implement
+                    （tc_complete blocked 且 iter<2：Pandas → inbox/for-huahua/: tc_design REQ-N 修复迭代）
+
 Pandas → inbox/for-menglan/: implement REQ-N（含 branch_name）
 Menglan → harness.sh implement REQ-N（EXISTING_BRANCH=feat/REQ-N）
         → 复用已有分支，使用 gh pr edit 更新 PR 描述，不新建 PR

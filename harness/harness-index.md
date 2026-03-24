@@ -2,9 +2,9 @@
 harness_id: HARNESS-INDEX
 component: process / orchestration
 owner: Engineering
-version: 0.6
+version: 0.7
 status: active
-last_reviewed: 2026-03-23
+last_reviewed: 2026-03-24
 ---
 
 # Harness Engineering — 流程总索引
@@ -119,11 +119,13 @@ Pandas orchestration loop（模板 K）：
             │  ── 【单PR规则 REQ-039 — TC 先于 implement】────────────────────────────────
             │
             ├─▶ Huahua TC 设计阶段（tc_policy=required）：
-            │       └─▶ Pandas → for-huahua/ inbox: tc_design REQ-N
-            │               └─▶ Huahua 在 feat/REQ-N 分支创建 TC + 开 PR（非独立 tc/ 分支）
-            │                       └─▶ tc_review 消息携带 branch_name=feat/REQ-N
-            │                               └─▶ 字段沿链传递：tc_review → tc_complete → implement
-            │                                       └─▶ REQ 状态推进至 test_designed
+            │       └─▶ REQ 达到 review_ready → Pandas claim_review_ready()
+            │               └─▶ Pandas → for-huahua/ inbox: req_review REQ-N
+            │                       └─▶ Huahua req_review handler：需求审核 + TC 设计 + 在 feat/REQ-N 开 PR
+            │                               └─▶ tc_review 消息携带 branch_name=feat/REQ-N
+            │                                       └─▶ 字段沿链传递：tc_review → tc_complete → implement
+            │                                               └─▶ REQ 状态推进至 test_designed
+            │                                   （tc_complete blocked 且 iter<2 时：Pandas → for-huahua/ inbox: tc_design REQ-N 修复迭代）
             │
             └─▶ harness.sh status → 扫到 status=test_designed（或 ready+exempt/optional）任务
                     └─▶ harness.sh implement <REQ-N>（Menglan 心跳以 EXISTING_BRANCH=feat/REQ-N 调用）
@@ -150,7 +152,7 @@ keep-alive watchdog（Pandas 心跳内联，每 5 分钟）：
 
 > Agents 每 5 分钟轮询各自 inbox。Pandas 写任务包至 `$SHARED_RESOURCES_ROOT/inbox/for-{agent}/`，读结果包自 `inbox/for-pandas/`。
 
-> TC 设计（`tc_policy=required`）由 Menglan 在实现前完成，或在 ready 阶段由 Daniel 人工设计。
+> TC 设计（`tc_policy=required`）：标准路径由 Huahua 在 `req_review` handler 中完成（Pandas 写 `req_review` 消息触发）；`ready` 阶段亦可由 Daniel 人工设计。
 
 ---
 
@@ -198,3 +200,4 @@ Pandas 在 session 结束或批量任务完成后将候选提升至 `project.db`
 | 0.4 | 2026-03-21 | inbox-protocol 行更新：status partial → active，ATM REQ-033–036 全部落地；frontmatter 版本同步；playbook 模板集更新为 A–L（含 K Pandas 编排、L Memory Curation）；自动化流程函数名更新为 inbox_read_pandas() |
 | 0.5 | 2026-03-21 | REQ-037 git worktree 隔离落地：harness.sh implement 自动创建 ~/workspace-menglan/open-workhorse/ worktree；新增 worktree-clean 命令；自动化流程图补充 worktree 生命周期；playbook 模板 B/K 更新 worktree 路径说明 |
 | 0.6 | 2026-03-23 | REQ-039 单PR规则 + Keep-Alive Watchdog：自动化流程图更新为单PR链路（Huahua 在 feat/REQ-N 分支建TC+开PR，branch_name 沿消息链传递至 Menglan 的 EXISTING_BRANCH）；新增 keep-alive watchdog 说明（_check_stall_and_keepalive，AGENT_STALL_TIMEOUT_MINUTES，runtime/{agent}_alive.ts 时间戳） |
+| 0.7 | 2026-03-24 | 修正 TC 设计入口消息类型：由错误的 tc_design 改为正确的 req_review（Pandas claim_review_ready() 写入）；Huahua req_review handler 同时负责需求审核 + TC 设计 + 开 PR；tc_design 消息降级为 tc_complete blocked 时的修复迭代路径；修正说明注释（TC 设计由 Huahua 完成，非 Menglan） |
