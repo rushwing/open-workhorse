@@ -158,16 +158,17 @@ OpenClaw calls `APP_COMMAND=pandas-heartbeat` on each heartbeat tick.
 
 ### pandas-heartbeat.sh responsibilities (in order)
 
-1. **Process inbox** — read all files in `inbox/for-pandas/`, handle each by `type`, delete after.
-2. **Auto-claim** — if no active task, scan `tasks/features/` for `status=ready, owner=unassigned`
-   with all `depends_on` satisfied; claim the highest-priority match.
-3. **Stall detection** — apply same logic as `dev-cycle-watchdog.sh`; escalate via Telegram if stale.
-4. **Keep-Alive Watchdog** (`_check_stall_and_keepalive`, REQ-039) — 每次心跳额外执行：
-   - 扫描 `tasks/features/` 中 `status=in_progress` 的 REQ
-   - 读取对应 agent 的存活时间戳（`runtime/menglan_alive.ts` / `runtime/huahua_alive.ts`）
-   - 若文件缺失或距今 > `AGENT_STALL_TIMEOUT_MINUTES`（默认 60 分钟），向该 agent inbox 写
-     keep-alive implement 消息（单PR路径时携带 `branch_name=feat/<REQ-N>`）
-   - 不修改 REQ 状态；恢复由 agent 自主处理
+顺序与 `scripts/pandas-heartbeat.sh main()` 对齐：
+
+1. **inbox_init** — 确保 `inbox/` 各生命周期目录存在（幂等）。
+2. **inbox_read_pandas** — 处理 `inbox/for-pandas/pending/`，原子 mv → claimed，按 `type`/`action` 路由，处理后移至 done/failed。**最高优先级，先于任何 claim 操作。**
+3. **handle_telegram_commands** — 轮询 Telegram `getUpdates`，处理 Daniel 的文本指令（`start`/`status`/`hold`/`resume` 等）。
+4. **claim_review_ready** — 扫描 `status=review_ready + owner=unassigned`；原子 commit 转为 `req_review` 并写 `inbox/for-huahua/: req_review REQ-N`。`review_ready` 由 Daniel 人工设置，Pandas 不做自动推进。
+5. **archive_merged_reqs** — 检测已合并 PR 对应的 REQ，执行 post-merge 归档。
+6. **auto_claim** — 扫描 `status=test_designed` 或 `status=ready(tc_policy=exempt/optional)`，认领并写 `inbox/for-menglan/: implement REQ-N`（见下方优先级说明）。
+7. **stall_detection** — 检测 `in_progress` 任务停滞（同 `dev-cycle-watchdog.sh` 逻辑），超时则 Telegram 告警 Daniel。
+8. **_check_stall_and_keepalive** (REQ-039) — 读取 `runtime/{agent}_alive.ts` 时间戳；若距今 > `AGENT_STALL_TIMEOUT_MINUTES`（默认 60 分钟），向停滞 agent inbox 写 keep-alive implement 消息（含 `branch_name`）；不修改 REQ 状态。
+9. **_auto_worktree_clean** — 扫描 `status=done` 的 REQ，自动移除对应 Menglan worktree。
 
 ### Auto-claim priority order
 
