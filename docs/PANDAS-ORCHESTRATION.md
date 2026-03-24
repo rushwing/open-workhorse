@@ -30,16 +30,17 @@ TASK_CLAIMED
      │            "REQ-N spec incomplete: <reason>. Fix before start? [Fix] [Skip]"
      └─ valid   → write inbox/for-huahua/: "TC design REQ-N"
 
-TC_DESIGN  (Huahua working)
-  └─ Huahua opens TC PR
+TC_DESIGN  (Huahua working — 单PR规则 REQ-039)
+  └─ Huahua 在 feat/REQ-N 分支创建 TC + 开 PR（不再使用独立 tc/ 分支）
      └─ harness.sh tc-review <PR>  ← Menglan reviews TCs
         ├─ findings → harness.sh fix-review <PR>  (up to 2 iterations total)
-        └─ approved → TC PR merged
-                   → write inbox/for-menglan/: "implement REQ-N"
+        └─ approved → tc_review 结果包含 branch_name=feat/REQ-N
+                   → 该字段沿链传递：tc_review → tc_complete → implement
+                   → write inbox/for-menglan/: implement REQ-N（含 branch_name）
 
-DEV_ACTIVE  (Menglan implementing)
-  └─ harness.sh implement REQ-N
-     └─ Menglan opens dev PR
+DEV_ACTIVE  (Menglan implementing — 单PR规则 REQ-039)
+  └─ harness.sh implement REQ-N（EXISTING_BRANCH=feat/REQ-N 时复用已有分支）
+     └─ Menglan 更新现有 PR 描述（gh pr edit），不新建 PR
         └─ write inbox/for-huahua/: "code review PR #N REQ-N"
 
 CODE_REVIEW  (Huahua reviewing)
@@ -98,6 +99,7 @@ Examples:
 type: dev_complete | tc_complete | major_decision_needed | review_blocked | implement | tc_design | code_review
 req_id: REQ-N
 pr_number: 42          # optional — present for dev_complete / tc_complete / code_review
+branch_name: feat/REQ-N  # optional — 单PR规则：tc_review→tc_complete→implement 链传递
 summary: one-line description
 status: success | blocked
 blocking_reason: ""    # populated when status=blocked
@@ -125,6 +127,12 @@ OpenClaw calls `APP_COMMAND=pandas-heartbeat` on each heartbeat tick.
 2. **Auto-claim** — if no active task, scan `tasks/features/` for `status=ready, owner=unassigned`
    with all `depends_on` satisfied; claim the highest-priority match.
 3. **Stall detection** — apply same logic as `dev-cycle-watchdog.sh`; escalate via Telegram if stale.
+4. **Keep-Alive Watchdog** (`_check_stall_and_keepalive`, REQ-039) — 每次心跳额外执行：
+   - 扫描 `tasks/features/` 中 `status=in_progress` 的 REQ
+   - 读取对应 agent 的存活时间戳（`runtime/menglan_alive.ts` / `runtime/huahua_alive.ts`）
+   - 若文件缺失或距今 > `AGENT_STALL_TIMEOUT_MINUTES`（默认 60 分钟），向该 agent inbox 写
+     keep-alive implement 消息（单PR路径时携带 `branch_name=feat/<REQ-N>`）
+   - 不修改 REQ 状态；恢复由 agent 自主处理
 
 ### Auto-claim priority order
 
@@ -182,19 +190,26 @@ reply arrives or a timeout (default: 24 h) fires, at which point it escalates ag
 
 TC loop: Huahua designs TCs, Menglan reviews them via `harness.sh tc-review`.
 
-### Flow
+### Flow（单PR规则 REQ-039）
 
 ```
 Pandas → inbox/for-huahua/: tc_design REQ-N
-Huahua → opens TC PR (branch: tc/REQ-N-<slug>)
+Huahua → 在 feat/REQ-N 分支创建 TC 文件并开 PR（不再使用独立 tc/REQ-N-<slug> 分支）
 Pandas (or Daniel) → harness.sh tc-review <PR#>
   ├─ Findings: harness.sh fix-review <PR#>  (Huahua fixes, ≤ 2 iterations)
-  └─ No findings / approved → TC PR merged
-Pandas → inbox/for-menglan/: implement REQ-N
+  └─ No findings / approved
+       → tc_review 结果包含 branch_name: feat/REQ-N
+       → 字段沿消息链传递：tc_review → tc_complete → implement
+Pandas → inbox/for-menglan/: implement REQ-N（含 branch_name）
+Menglan → harness.sh implement REQ-N（EXISTING_BRANCH=feat/REQ-N）
+        → 复用已有分支，使用 gh pr edit 更新 PR 描述，不新建 PR
 ```
 
 Maximum **2 review iterations** (initial review + 1 round of fixes).
 If unresolved after 2 iterations, Pandas escalates via `tg_decision`.
+
+> **tc_policy=exempt / optional 豁免**：无 TC 设计任务，`branch_name` 字段不存在，
+> Menglan 走正常新建分支 + `gh pr create` 路径，与 REQ-039 前行为一致。
 
 ### harness.sh tc-review — prompt contract
 
@@ -209,12 +224,12 @@ The `tc-review` subcommand fetches the TC PR and injects this prompt to Menglan:
 
 ## §8 Code Review Loop
 
-Code review loop: Huahua reviews Menglan's dev PR.
+Code review loop: Huahua reviews the PR（单PR规则下即为 §7 中 Huahua 开的同一个 PR）。
 
 ```
 Pandas → inbox/for-huahua/: code_review PR #N REQ-N
 Huahua → posts review comments on PR #N
-Menglan → harness.sh fix-review <PR#>  (fixes comments)
+Menglan → harness.sh fix-review <PR#>  (fixes comments; on same feat/REQ-N branch)
   ├─ Blocking findings remain after 2 iterations → tg_decision
   └─ No blocking findings → Huahua approves PR
 Huahua → writes inbox/for-pandas/: dev_complete REQ-N PR #N
@@ -222,6 +237,8 @@ Pandas → tg_pr_ready <url> <summary>
 ```
 
 Maximum **2 fix iterations** (matching TC loop policy).
+
+> 单PR规则下，Daniel 仅需 merge 一次（§7 中 Huahua 开的 feat/REQ-N PR）即完成整个 REQ 交付。
 
 ---
 
@@ -232,7 +249,9 @@ Maximum **2 fix iterations** (matching TC loop policy).
 | `SHARED_RESOURCES_ROOT` | `~/Dev/everything_openclaw/personas/shared-resources` | Root path for shared inbox |
 | `TELEGRAM_BOT_TOKEN` | _(required for Telegram features)_ | Bot token from @BotFather |
 | `TELEGRAM_CHAT_ID` | _(required for Telegram features)_ | Daniel's chat ID |
-| `DEV_WATCHDOG_STALE_HOURS` | `4` | Stall detection threshold |
+| `DEV_WATCHDOG_STALE_HOURS` | `4` | Stall detection threshold（dev-cycle-watchdog.sh） |
+| `AGENT_STALL_TIMEOUT_MINUTES` | `60` | Keep-alive watchdog 停滞阈值（分钟）；超过后向停滞 agent 发 keep-alive |
+| `MENGLAN_WORKTREE_ROOT` | `~/workspace-menglan/open-workhorse/` | Menglan 的 git worktree 路径 |
 
 ---
 
