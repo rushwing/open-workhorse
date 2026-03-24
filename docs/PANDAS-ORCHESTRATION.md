@@ -96,21 +96,47 @@ Examples:
 - `2026-03-16-huahua-tc-done-REQ-020-PR-41.md`
 - `2026-03-16-pandas-implement-REQ-021.md`
 
-### Message body (YAML frontmatter)
+### Message envelope（ATM 格式，canonical spec: harness/inbox-protocol.md）
+
+消息使用 ATM Envelope 格式（REQ-033）。顶层 `type` 只有三个枚举值：
 
 ```yaml
 ---
-type: dev_complete | tc_complete | major_decision_needed | review_blocked | implement | req_review | tc_design | code_review
-# req_review — Pandas → Huahua：需求审核 + TC 设计（初始入口，由 claim_review_ready() 写入）
-# tc_design  — Pandas → Huahua：TC 修复迭代（仅 tc_complete blocked 且 iter<2 时）
+# ── type=request（Pandas → agent）──────────────────────────────────────────
+type: request
+action: req_review | tc_design | implement | review | fix_review | bugfix
+# req_review — 初始 TC 设计入口，claim_review_ready() 写入（Pandas → Huahua）
+# tc_design  — TC 修复迭代，仅 tc_complete blocked 且 iter<2 时（Pandas → Huahua）
+# implement  — 实现分发（Pandas → Menglan）
+from: pandas
+to: huahua | menglan
 req_id: REQ-N
-pr_number: 42          # optional — present for dev_complete / tc_complete / code_review
 branch_name: feat/REQ-N  # optional — 单PR规则：tc_review→tc_complete→implement 链传递
-summary: one-line description
-status: success | blocked
-blocking_reason: ""    # populated when status=blocked
+response_required: true
+# （objective / scope / expected_output / done_criteria 见 inbox-protocol.md §2.2）
+---
+
+---
+# ── type=response（agent → Pandas）─────────────────────────────────────────
+type: response
+in_reply_to: msg_...
+status: completed | blocked | failed
+req_id: REQ-N
+pr_number: 42           # optional — dev_complete / tc_complete
+branch_name: feat/REQ-N # optional — 单PR规则传递
+---
+
+---
+# ── type=notification（agent → Pandas）──────────────────────────────────────
+type: notification
+event_type: decision_required | stall_detected
+severity: info | warn | action-required
+req_id: REQ-N
 ---
 ```
+
+> `req_review`、`tc_design` 等是 `action` 字段的值（type=request 的子字段），**不是**顶层 `type` 枚举值。
+> 完整字段规范见 `harness/inbox-protocol.md`（canonical）。
 
 Body (below frontmatter) is optional free-form context for the receiving agent.
 
