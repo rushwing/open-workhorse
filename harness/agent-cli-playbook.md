@@ -68,8 +68,8 @@ Steps:
 7. PR handling — check EXISTING_BRANCH (single-PR rule, REQ-039):
    - If harness.sh injected a 'NOTE: A TC PR already exists' message in your prompt:
      a) Do NOT run 'gh pr create'
-     b) Find the existing PR: gh pr list --head feat/REQ-<N> --json number,url --jq '.[0]'
-     c) Update its description: gh pr edit <number> --body '<TC design + implementation summary>'
+     b) Find the existing PR number: gh pr list --head feat/REQ-<N> --json number --jq '.[0].number'
+     c) Update its description: gh pr edit <pr-number> --body '<TC design + implementation summary>'
    - Otherwise (no existing PR): gh pr create --fill
 "
 ```

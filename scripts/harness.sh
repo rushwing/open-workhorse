@@ -333,8 +333,8 @@ cmd_implement() {
     existing_branch_note="
 NOTE: A TC PR already exists for this branch (single-PR rule, REQ-039).
 Do NOT run 'gh pr create'. Instead, after updating ${req_file} to status=review:
-  existing_pr=\$(gh pr list --head feat/${req_id} --json number,url --jq '.[0]' 2>/dev/null || echo '')
-  If found: gh pr edit <number> --body '<implementation summary with TC and impl notes>'
+  existing_pr_number=\$(gh pr list --head feat/${req_id} --json number --jq '.[0].number' 2>/dev/null || echo '')
+  If found: gh pr edit \$existing_pr_number --body '<implementation summary with TC and impl notes>'
   If not found (unexpected): gh pr create --fill
 "
   fi

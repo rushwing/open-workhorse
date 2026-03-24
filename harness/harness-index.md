@@ -115,21 +115,28 @@ PR merged to main
 
 Pandas orchestration loop（模板 K）：
     └─▶ 检查 for-pandas/ inbox 新结果包（inbox_read_pandas()，原子 mv pending→claimed）
-            └─▶ harness.sh status → 有可认领任务
-                    └─▶ harness.sh implement <REQ-N>（触发 Menglan）
-                            └─▶ worktree 创建：~/workspace-menglan/open-workhorse/ → feat/REQ-N
-                                    └─▶ 【单PR规则 REQ-039】Huahua 在同一 feat/REQ-N 分支创建 TC + 开 PR
-                                            └─▶ tc_review 消息携带 branch_name=feat/REQ-N，沿链传递至 implement
-                                                    └─▶ Menglan 以 EXISTING_BRANCH 调用 harness.sh，复用已有分支
-                                                            └─▶ Menglan 更新同一 PR 描述（不新建 PR）
-                                                                    └─▶ Pandas 写 review packet → for-huahua/ inbox
-                                                                            └─▶ Huahua（CodeX）输出 review comments
-                                                                                    └─▶ Pandas 触发 fix-review（如有 blocking findings）
-                                                                                            └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
-                                                                                                    └─▶ Daniel merge PR
-                                                                                                            └─▶ Pandas 心跳 S2：扫到 status:done → 发 Telegram 归档通知
-                                                                                                                    └─▶ _auto_worktree_clean（心跳内联，status=done 时自动移除 worktree）
-                                                                                                                            └─▶ Daniel 确认 → Pandas 执行归档（mv REQ + TC → tasks/archive/done/）
+            │
+            │  ── 【单PR规则 REQ-039 — TC 先于 implement】────────────────────────────────
+            │
+            ├─▶ Huahua TC 设计阶段（tc_policy=required）：
+            │       └─▶ Pandas → for-huahua/ inbox: tc_design REQ-N
+            │               └─▶ Huahua 在 feat/REQ-N 分支创建 TC + 开 PR（非独立 tc/ 分支）
+            │                       └─▶ tc_review 消息携带 branch_name=feat/REQ-N
+            │                               └─▶ 字段沿链传递：tc_review → tc_complete → implement
+            │                                       └─▶ REQ 状态推进至 test_designed
+            │
+            └─▶ harness.sh status → 扫到 status=test_designed（或 ready+exempt/optional）任务
+                    └─▶ harness.sh implement <REQ-N>（Menglan 心跳以 EXISTING_BRANCH=feat/REQ-N 调用）
+                            └─▶ worktree 创建：fetch 已有远端 feat/REQ-N 分支（非新建）
+                                    └─▶ Menglan 在已有分支上实现，gh pr edit 更新同一 PR（不新建 PR）
+                                            └─▶ Pandas 写 review packet → for-huahua/ inbox
+                                                    └─▶ Huahua（CodeX）输出 review comments
+                                                            └─▶ Pandas 触发 fix-review（如有 blocking findings）
+                                                                    └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
+                                                                            └─▶ Daniel merge PR（单次）
+                                                                                    └─▶ Pandas 心跳 S2：扫到 status:done → 发 Telegram 归档通知
+                                                                                            └─▶ _auto_worktree_clean（心跳内联，status=done 时自动移除 worktree）
+                                                                                                    └─▶ Daniel 确认 → Pandas 执行归档（mv REQ + TC → tasks/archive/done/）
 
 dev-cycle-watchdog（每 5h cron）：
     └─▶ 检测 in_progress 任务停滞 / PR 无 review → Telegram 告警 Daniel

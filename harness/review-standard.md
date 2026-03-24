@@ -51,7 +51,9 @@ Menglan 开 PR
 - [ ] 无遗留调试代码（`console.log` 临时调试）
 - [ ] 无硬编码密钥、测试凭证或生产配置
 - [ ] `tasks/features/REQ-xxx.md` 已更新为 `status: review`
-- [ ] PR 使用 `gh pr create --fill` 创建（不留交互提示）
+- [ ] PR 处理（依路径二选一）：
+  - 单PR规则路径（`EXISTING_BRANCH` 已设置）：`gh pr edit <number> --body '...'` 更新已有 PR（number 取自 `gh pr list --head feat/REQ-N --json number --jq '.[0].number'`）
+  - 标准路径（无 `EXISTING_BRANCH`）：`gh pr create --fill` 创建新 PR（不留交互提示）
 
 ---
 
