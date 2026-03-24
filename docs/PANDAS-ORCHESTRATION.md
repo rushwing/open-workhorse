@@ -20,18 +20,15 @@ It coordinates task dispatch, TC design, code review, and HITL escalation.
 
 ```
 IDLE
-  ├─ heartbeat tick: scan tasks/features/ for status=ready + owner=unassigned → auto-claim
+  ├─ heartbeat tick (每次心跳，按顺序执行):
+  │    1. claim_review_ready()：扫描 status=review_ready + owner=unassigned
+  │         → review_ready 由 Daniel 人工设置（draft → review_ready 非 Pandas 自动推进）
+  │         → 原子 commit 转为 req_review，write inbox/for-huahua/: req_review REQ-N → TC_DESIGN
+  │    2. auto_claim()：扫描 status=test_designed 或 status=ready(tc_policy=exempt/optional)
+  │         → claim → write inbox/for-menglan/: implement REQ-N → DEV_ACTIVE
+  │    3. _check_stall_and_keepalive()：keep-alive watchdog（见 §4）
   ├─ Telegram inbound "start REQ-N": claim specific REQ immediately
   └─ inbox/for-pandas/ message received: dispatch per message type
-
-TASK_CLAIMED
-  └─ req_check: validate REQ spec meets harness/requirement-standard.md
-     ├─ invalid → Telegram Daniel:
-     │            "REQ-N spec incomplete: <reason>. Fix before start? [Fix] [Skip]"
-     └─ valid (tc_policy=required) → REQ 推进至 review_ready
-                                    → claim_review_ready()
-                                    → write inbox/for-huahua/: req_review REQ-N
-        (tc_policy=exempt/optional) → 跳过 TC_DESIGN，直接进入 DEV_ACTIVE
 
 TC_DESIGN  (Huahua working — 单PR规则 REQ-039)
   └─ Huahua req_review handler：需求审核 + TC 设计 + 在 feat/REQ-N 分支开 PR
