@@ -565,13 +565,15 @@ driver: _check_stall_and_keepalive() → inbox_write_v2
 entrypoint: automatic (pandas-heartbeat.sh every tick)
 requires:
   - SHARED_RESOURCES_ROOT env var set in .env
-  - stalled agent id and req_id confirmed from runtime-agent-read_worker_status
+  - owner == $AGENT_CODER (default menglan) confirmed from REQ frontmatter
 returns:
   - keep-alive implement inbox message in $SHARED_RESOURCES_ROOT/inbox/for-{agent}/pending/
 side_effect: local_write
 approval_mode: task_scoped
 notes:
   - fires automatically in each pandas-heartbeat.sh tick via _check_stall_and_keepalive()
+  - current scope: only REQs with owner==$AGENT_CODER trigger keep-alive; reviewer path excluded
+  - huahua_alive.ts is written by huahua-heartbeat.sh but not yet used in recovery routing
   - message carries action=implement; if single-PR branch exists, also carries branch_name=feat/<REQ-N>
   - configurable threshold: AGENT_STALL_TIMEOUT_MINUTES in .env (default 60 min); see .env.example
 ```

@@ -659,18 +659,19 @@ family: runtime-*
 default_enabled: false
 side_effect: local_write
 inputs:
-  - stalled agent id (menglan or huahua)
+  - stalled agent id — 当前仅 $AGENT_CODER（默认 menglan）
   - req_id of the in_progress task
   - optional branch_name (for single-PR rule path)
 outputs:
   - keep-alive implement inbox message written to the agent's inbox
 use_when:
-  - _check_stall_and_keepalive() detects that an in_progress agent's alive timestamp has exceeded AGENT_STALL_TIMEOUT_MINUTES
+  - _check_stall_and_keepalive() detects that the coder agent's alive timestamp has exceeded AGENT_STALL_TIMEOUT_MINUTES
 avoid_when:
   - the agent's timestamp is fresh (stall not confirmed)
   - the REQ is not in in_progress status
+  - owner != $AGENT_CODER（reviewer agent 不走 in_progress 实现路径，不触发 keep-alive）
 notes:
-  - called automatically by pandas-heartbeat.sh _check_stall_and_keepalive() on each tick
+  - current scope: only owner==$AGENT_CODER is handled; huahua_alive.ts is written but not used in recovery routing
   - keep-alive message carries action=implement and, if a single-PR branch exists, branch_name=feat/<REQ-N>
   - does not change REQ state; recovery is the agent's responsibility on receiving the message
   - configurable via AGENT_STALL_TIMEOUT_MINUTES in .env (default 60)
