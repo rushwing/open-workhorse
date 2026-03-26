@@ -599,8 +599,9 @@ test("TC-023-02: harness.sh tc-review calls Claude with TC review prompt", async
 case "$*" in
   *"repo view"*) echo '{"nameWithOwner":"test-owner/test-repo"}' ;;
   *"pr view"*"--json reviews"*) echo '[]' ;;
-  *"pr view"*"--json title"*) echo '{"title":"TC REQ-021 add inbox","headRefName":"tc/REQ-021-inbox"}' ;;
-  *"pr view"*"--json files"*) echo '{"files":[]}' ;;
+  *"pr view"*"--json title,headRefName"*|*"pr view"*"--json title"*) echo '{"title":"TC REQ-021 add inbox","headRefName":"tc/REQ-021-inbox"}' ;;
+  *"pr view"*"--json files"*) echo '["tasks/test-cases/TC-021-01.md"]' ;;
+  *"pr diff"*) printf 'diff --git a/tasks/test-cases/TC-021-01.md b/tasks/test-cases/TC-021-01.md\\n--- /dev/null\\n+++ b/tasks/test-cases/TC-021-01.md\\n@@ -0,0 +1,5 @@\\n+---\\n+tc_id: TC-021-01\\n+req_id: REQ-021\\n+---\\n+# TC-021-01 mock\\n' ;;
   *"api"*"pulls"*"comments"*) echo '[]' ;;
   *) echo '{}' ;;
 esac

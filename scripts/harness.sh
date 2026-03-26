@@ -515,6 +515,17 @@ cmd_tc_review() {
 
   log_session "tc-review" "#$pr_num"
 
+  # Fetch full PR diff via gh (works for same-repo and fork PRs) — fail closed on error or empty
+  local pr_diff
+  pr_diff="$(gh pr diff "$pr_num" 2>/dev/null)" || {
+    err "无法获取 PR #${pr_num} diff — 检查 gh 认证和网络（tc-review 拒绝在无 diff 时执行）"
+    exit 1
+  }
+  if [[ -z "$pr_diff" ]]; then
+    err "PR #${pr_num} diff 为空 — 无 TC 内容可 review"
+    exit 1
+  fi
+
   local prompt
   prompt="Read harness/testing-standard.md.
 Do not ask clarifying questions — proceed with your best judgment at every step.
@@ -524,17 +535,22 @@ Do not ask clarifying questions — proceed with your best judgment at every ste
 ### REQ contract (acceptance criteria + test case design notes)
 ${req_contract:-"(REQ file not found — judge TCs against PR description only)"}
 
-### Top-level review summaries
-${top_comments}
+### Full PR diff (all changed files, untruncated)
+\`\`\`diff
+${pr_diff}
+\`\`\`
 
-### Inline review comments
-${inline_comments}
+### Existing review comments (may be empty if no prior review round)
+${top_comments:-"(none)"}
+
+### Inline review comments (may be empty)
+${inline_comments:-"(none)"}
 
 ## Your task
 Review TC coverage in PR #${pr_num}${req_hint:+ for ${req_hint}} against the REQ contract above.
 Each acceptance criterion must be traceable to at least one TC.
 
-For each TC, label it exactly one of:
+For each TC in the diff, label it exactly one of:
 - **adequate** — covers the stated acceptance criterion
 - **missing-branch** — acceptance criterion exists but no TC covers it
 - **redundant** — duplicates another TC without adding coverage value
@@ -542,9 +558,10 @@ For each TC, label it exactly one of:
 Rules:
 1. Report findings only — do NOT modify any TC files
 2. Do not ask clarifying questions
-3. After labelling all TCs, conclude with exactly one of:
-   - \`tc-review: APPROVED\` (all TCs adequate, no missing branches)
-   - \`tc-review: NEEDS_CHANGES\` (one or more missing-branch or other issues found)
+3. You MUST end your response with exactly one of these two lines (no trailing text):
+   \`tc-review: APPROVED\`   — when all criteria are covered (all TCs adequate, no missing branches)
+   \`tc-review: NEEDS_CHANGES\`   — when any criterion is uncovered or a TC is labelled missing-branch
+4. The conclusion line is REQUIRED even if there are no prior review comments to address
 "
 
   "${CLAUDE_CMD[@]}" "$prompt"

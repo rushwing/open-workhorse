@@ -165,6 +165,37 @@ test("TC-BUG004-M02: menglan action=tc_review without pr_number routes to failed
   }
 });
 
+// ── TC-MENGLAN-M04: iteration field propagated through tc_review → tc_complete ──
+
+test("TC-MENGLAN-M04: tc_review message with iteration=2 propagates iteration=2 in tc_complete", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-menglan-m04-${Date.now()}`);
+  await setupTmpEnv(tmpDir, "tc-review: NEEDS_CHANGES missing branch for edge case");
+
+  await writeFile(
+    join(tmpDir, "inbox", "for-menglan", "pending", "2026-03-26-tc-review-req-911.md"),
+    "---\ntype: request\naction: tc_review\nreq_id: REQ-911\npr_number: 77\niteration: 2\nbranch_name: feat/REQ-911\n---\n",
+    "utf8",
+  );
+
+  try {
+    await runBash(
+      `SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" bash "${SCRIPT}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    const pandasFiles = (await readdir(join(tmpDir, "inbox", "for-pandas", "pending")).catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    assert.ok(pandasFiles.length > 0, "tc_complete should be written to pandas inbox");
+
+    const content = await readFile(join(tmpDir, "inbox", "for-pandas", "pending", pandasFiles[0]!), "utf8");
+    assert.ok(
+      content.includes("iteration: 2"),
+      `tc_complete must carry iteration=2 for Pandas escalation logic. content:\n${content}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 // ── BUG-004 regression: TC-BUG004-M03 — harness.sh non-zero exit routes to failed/ ──
 
 test("TC-BUG004-M03: menglan tc_review harness.sh non-zero exit routes to failed/, not tc_complete", async () => {
