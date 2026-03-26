@@ -131,9 +131,9 @@ _write_huahua_response() {
 }
 
 # ── Huahua 向 Menglan 写 tc_review 请求 ────────────────────────────────────
-# _write_tc_review_to_menglan <req_id> <tc_pr_number> [branch_name]
+# _write_tc_review_to_menglan <req_id> <tc_pr_number> [branch_name] [iteration]
 _write_tc_review_to_menglan() {
-  local req_id="$1" tc_pr_number="$2" branch_name="${3:-}"
+  local req_id="$1" tc_pr_number="$2" branch_name="${3:-}" iteration="${4:-0}"
   local date_str filename
   date_str="$(date +%Y-%m-%d)"
   filename="${date_str}-huahua-tc-review-${req_id}-$$-${RANDOM}.md"
@@ -150,6 +150,7 @@ _write_tc_review_to_menglan() {
     echo "req_id: ${req_id}"
     echo "pr_number: ${tc_pr_number}"
     [[ -n "$branch_name" ]] && echo "branch_name: ${branch_name}"
+    echo "iteration: ${iteration}"
   } > "${INBOX_ROOT}/for-menglan/pending/${filename}"
   ok "tc_review → for-menglan/pending/${filename}"
 }
@@ -157,12 +158,13 @@ _write_tc_review_to_menglan() {
 # ── 单条消息处理（在 if 内调用，不触发 set -e 退出）──────────────────────────
 _process_message() {
   local msg_file="$1"
-  local type req_id pr_number summary status
+  local type req_id pr_number summary status iteration
   type="$(_get_fm_field "$msg_file" "type")"
   req_id="$(_get_fm_field "$msg_file" "req_id")"
   pr_number="$(_get_fm_field "$msg_file" "pr_number")"
   summary="$(_get_fm_field "$msg_file" "summary")"
   status="$(_get_fm_field "$msg_file" "status")"
+  iteration="$(_get_fm_field "$msg_file" "iteration")"
 
   info "处理消息: type=${type} req_id=${req_id} pr=${pr_number:-none} status=${status:-none}"
   info "summary: ${summary}"
@@ -201,7 +203,7 @@ _process_message() {
       if [[ -n "$pr_number" ]]; then
         info "tc_design (fix iteration) → harness.sh fix-review ${pr_number}"
         if bash "$REPO_ROOT/scripts/harness.sh" fix-review "$pr_number"; then
-          _write_tc_review_to_menglan "$req_id" "$pr_number" "feat/${req_id}"
+          _write_tc_review_to_menglan "$req_id" "$pr_number" "feat/${req_id}" "${iteration:-0}"
         else
           warn "fix-review exited non-zero — skipping tc_review re-dispatch"
           return 1
@@ -325,7 +327,7 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
           warn "req_review PASSED 但 tc_pr_number 为空 — 无法路由到 Menglan"
           return 1
         fi
-        _write_tc_review_to_menglan "$req_id" "$tc_pr" "$branch_name"
+        _write_tc_review_to_menglan "$req_id" "$tc_pr" "$branch_name" "0"
       else
         _write_huahua_response "$req_id" "" "review_blocked" "blocked" "${summary}"
       fi

@@ -316,3 +316,55 @@ test("TC-HUAHUA-H05: tc_design fix iteration re-dispatches tc_review to for-meng
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── TC-HUAHUA-H06: tc_design fix carries iteration into re-dispatched tc_review ──
+
+test("TC-HUAHUA-H06: tc_design fix with iteration=1 writes tc_review to for-menglan with iteration=1", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-huahua-h06-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+
+  const msgFile = join(tmpDir, "inbox", "for-huahua", "pending", "2026-03-26-tc-design-fix-REQ-912.md");
+  await writeFile(
+    msgFile,
+    "---\ntype: request\naction: tc_design\nreq_id: REQ-912\npr_number: 88\nblocking_reason: missing-branch\niteration: 1\n---\n",
+    "utf8",
+  );
+
+  const fakeHarness = join(tmpDir, "scripts", "harness.sh");
+  await mkdir(join(tmpDir, "scripts"), { recursive: true });
+  await writeFile(fakeHarness, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+  await runBash(`chmod +x "${fakeHarness}"`);
+
+  try {
+    await runBash(
+      `SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
+         source "${SCRIPT}" 2>/dev/null
+       INBOX_ROOT="${tmpDir}/inbox"
+       _process_message "${msgFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    const menglanFiles = await readdir(join(tmpDir, "inbox", "for-menglan", "pending"))
+      .catch(() => [] as string[]);
+    const tcReviewMsg = menglanFiles.find((f) => f.endsWith(".md"));
+    assert.ok(tcReviewMsg, "tc_design fix must re-dispatch tc_review to for-menglan");
+
+    const { readFile } = await import("node:fs/promises");
+    const content = await readFile(
+      join(tmpDir, "inbox", "for-menglan", "pending", tcReviewMsg!),
+      "utf8",
+    );
+    assert.ok(
+      content.includes("iteration: 1"),
+      `re-dispatched tc_review must carry iteration=1 for escalation counter. content: ${content}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});

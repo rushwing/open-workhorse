@@ -84,11 +84,12 @@ _rollback_task() {
 }
 
 # ── tc_complete 回报 Pandas ───────────────────────────────────────────────────
-# _write_tc_complete <req_id> <pr_number> <status> [blocking_reason] [branch_name]
+# _write_tc_complete <req_id> <pr_number> <status> [blocking_reason] [branch_name] [iteration]
 # 向 inbox/for-pandas/pending/ 写入 tc_complete response，供 Pandas _handle_tc_complete 处理
 # branch_name: 非空时携带共用 PR 分支名（REQ-039 单 PR 规则）
+# iteration: 当前 TC review 轮次（透传给 Pandas 用于判断是否升级决策）
 _write_tc_complete() {
-  local req_id="$1" pr_number="$2" status="$3" blocking_reason="${4:-}" branch_name="${5:-}"
+  local req_id="$1" pr_number="$2" status="$3" blocking_reason="${4:-}" branch_name="${5:-}" iteration="${6:-0}"
   local date_str filename
   date_str="$(date +%Y-%m-%d)"
   filename="${date_str}-menglan-tc-complete-${req_id}-$$-${RANDOM}.md"
@@ -107,6 +108,7 @@ _write_tc_complete() {
     echo "status: ${status}"
     [[ -n "$blocking_reason" ]] && echo "blocking_reason: ${blocking_reason}"
     [[ -n "$branch_name" ]]     && echo "branch_name: ${branch_name}"
+    echo "iteration: ${iteration}"
   } > "${INBOX_ROOT}/for-pandas/pending/${filename}"
   ok "tc_complete(${status}) → for-pandas/pending/${filename}"
 }
@@ -179,7 +181,10 @@ _process_message() {
       # REQ-039: preserve branch_name from tc_review message → forward to Pandas via tc_complete
       local tc_branch_name
       tc_branch_name="$(_get_fm_field "$msg_file" "branch_name")"
-      info "路由 tc_review → harness.sh tc-review ${pr_number}"
+      # iteration: read from message and forward to Pandas via tc_complete for escalation logic
+      local tc_iteration
+      tc_iteration="$(_get_fm_field "$msg_file" "iteration")"
+      info "路由 tc_review → harness.sh tc-review ${pr_number} (iteration=${tc_iteration:-0})"
       local review_output review_rc
       review_output="$(bash "$REPO_ROOT/scripts/harness.sh" tc-review "$pr_number" 2>&1)"
       review_rc=$?
@@ -196,7 +201,7 @@ _process_message() {
       else
         tc_blocking="$(echo "$review_output" | grep -oE 'tc-review: NEEDS_CHANGES[^\n]*' | head -1 || echo 'TC changes required — see review output')"
       fi
-      _write_tc_complete "$req_id" "$pr_number" "$tc_status" "$tc_blocking" "$tc_branch_name"
+      _write_tc_complete "$req_id" "$pr_number" "$tc_status" "$tc_blocking" "$tc_branch_name" "${tc_iteration:-0}"
       ;;
     *)
       warn "未知消息类型: ${type} — 移至 dead-letter"
