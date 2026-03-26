@@ -515,37 +515,14 @@ cmd_tc_review() {
 
   log_session "tc-review" "#$pr_num"
 
-  # Fetch PR head ref — fail closed: no content = no review
-  local head_ref
-  head_ref="$(gh pr view "$pr_num" --json headRefName --jq '.headRefName' 2>/dev/null || true)"
-  if [[ -z "$head_ref" ]]; then
-    err "无法获取 PR #${pr_num} head branch — 检查 gh 认证和网络"
+  # Fetch full PR diff via gh (works for same-repo and fork PRs) — fail closed on error or empty
+  local pr_diff
+  pr_diff="$(gh pr diff "$pr_num" 2>/dev/null)" || {
+    err "无法获取 PR #${pr_num} diff — 检查 gh 认证和网络（tc-review 拒绝在无 diff 时执行）"
     exit 1
-  fi
-  if ! git fetch origin "$head_ref" 2>/dev/null; then
-    err "git fetch origin ${head_ref} 失败 — 无法读取 TC 文件内容"
-    exit 1
-  fi
-
-  local changed_files
-  changed_files="$(gh pr view "$pr_num" --json files --jq '.files[].path' 2>/dev/null || true)"
-  if [[ -z "$changed_files" ]]; then
-    err "无法获取 PR #${pr_num} 变更文件列表 — 检查 gh 认证和网络"
-    exit 1
-  fi
-
-  # Read full content of every changed .md file from the PR head commit (no truncation)
-  local tc_file_content="" tc_files_found=0
-  while IFS= read -r fpath; do
-    [[ "$fpath" =~ \.md$ ]] || continue
-    local content
-    content="$(git show "FETCH_HEAD:${fpath}" 2>/dev/null)" || continue
-    tc_file_content+="### ${fpath}"$'\n''```markdown'$'\n'"${content}"$'\n''```'$'\n\n'
-    (( tc_files_found++ )) || true
-  done <<< "$changed_files"
-
-  if [[ $tc_files_found -eq 0 ]]; then
-    err "PR #${pr_num} 中未找到可读的 .md 文件 — 无法执行 tc-review"
+  }
+  if [[ -z "$pr_diff" ]]; then
+    err "PR #${pr_num} diff 为空 — 无 TC 内容可 review"
     exit 1
   fi
 
@@ -558,8 +535,10 @@ Do not ask clarifying questions — proceed with your best judgment at every ste
 ### REQ contract (acceptance criteria + test case design notes)
 ${req_contract:-"(REQ file not found — judge TCs against PR description only)"}
 
-### TC files changed in this PR (full content, all ${tc_files_found} file(s))
-${tc_file_content}
+### Full PR diff (all changed files, untruncated)
+\`\`\`diff
+${pr_diff}
+\`\`\`
 
 ### Existing review comments (may be empty if no prior review round)
 ${top_comments:-"(none)"}
@@ -571,7 +550,7 @@ ${inline_comments:-"(none)"}
 Review TC coverage in PR #${pr_num}${req_hint:+ for ${req_hint}} against the REQ contract above.
 Each acceptance criterion must be traceable to at least one TC.
 
-For each TC file shown above, label it exactly one of:
+For each TC in the diff, label it exactly one of:
 - **adequate** — covers the stated acceptance criterion
 - **missing-branch** — acceptance criterion exists but no TC covers it
 - **redundant** — duplicates another TC without adding coverage value
