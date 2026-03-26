@@ -31,7 +31,7 @@ fi
 if [[ -f "$REPO_ROOT/.env" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
-    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT|http_proxy|https_proxy|HTTP_PROXY|HTTPS_PROXY) ]] || continue
+    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT|TELEGRAM_|http_proxy|https_proxy|HTTP_PROXY|HTTPS_PROXY) ]] || continue
     local_var="${line%%=*}"
     [[ "${!local_var+X}" == "X" ]] && continue
     export "$line" 2>/dev/null || true
@@ -41,6 +41,12 @@ fi
 INBOX_ROOT="${SHARED_RESOURCES_ROOT:-${HOME}/Dev/everything_openclaw/personas/shared-resources}/inbox"
 INBOX="${INBOX_ROOT}/for-huahua"
 DEAD_LETTER="${INBOX_ROOT}/dead-letter"
+
+# 引入 Telegram 函数（tg_decision 用于 iter≥2 升级）
+# shellcheck source=scripts/telegram.sh
+if [[ -f "$REPO_ROOT/scripts/telegram.sh" ]]; then
+  source "$REPO_ROOT/scripts/telegram.sh" 2>/dev/null || true
+fi
 
 # ── 颜色（仅 TTY 输出时启用）────────────────────────────────────────────────
 if [[ -t 1 ]]; then
