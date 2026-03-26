@@ -625,6 +625,53 @@ exit 0
   }
 });
 
+// ── REQ-023: TC-023-06 tc-review with no conclusion line exits non-zero ──────
+
+test("TC-023-06: harness.sh tc-review exits non-zero when Claude output has no tc-review conclusion line", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-023-06-${Date.now()}`);
+  const mockBin = join(tmpDir, "bin");
+  await mkdir(mockBin, { recursive: true });
+
+  // Claude returns "No review findings" — no conclusion line
+  const mockClaude = join(mockBin, "claude");
+  await writeFile(mockClaude, '#!/usr/bin/env bash\necho "No review findings to address."\nexit 0\n', "utf8");
+  await makeExecutable(mockClaude);
+
+  const mockGh = join(mockBin, "gh");
+  await writeFile(
+    mockGh,
+    `#!/usr/bin/env bash
+case "$*" in
+  *"repo view"*) echo '{"nameWithOwner":"test-owner/test-repo"}' ;;
+  *"pr view"*"--json reviews"*) echo '[]' ;;
+  *"pr view"*"--json title"*) echo '{"title":"TC REQ-021 add inbox","headRefName":"tc/REQ-021-inbox"}' ;;
+  *"pr view"*"--json files"*) echo '["tasks/test-cases/TC-021-01.md"]' ;;
+  *"pr diff"*) printf 'diff --git a/tasks/test-cases/TC-021-01.md b/tasks/test-cases/TC-021-01.md\\n+++ b/tasks/test-cases/TC-021-01.md\\n@@ -0,0 +1,3 @@\\n+---\\n+tc_id: TC-021-01\\n+---\\n' ;;
+  *"api"*"pulls"*"comments"*) echo '[]' ;;
+  *) echo '{}' ;;
+esac
+exit 0
+`,
+    "utf8",
+  );
+  await makeExecutable(mockGh);
+
+  try {
+    const result = await runBash(
+      `PATH="${mockBin}:$PATH" bash "${join(PROJECT_ROOT, "scripts/harness.sh")}" tc-review 99 2>&1`,
+      { REPO_ROOT: PROJECT_ROOT },
+    );
+    assert.notEqual(result.code, 0,
+      `tc-review should exit non-zero when Claude omits conclusion line. stdout: ${result.stdout}`);
+    assert.ok(
+      result.stdout.includes("結論行") || result.stdout.includes("conclusion") || result.stdout.includes("worker failure") || result.stdout.includes("tc-review"),
+      `Should explain why it failed. stdout: ${result.stdout.slice(0, 500)}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 // ── REQ-023: TC-023-05 tc_complete blocked iteration=2 triggers tg_decision ──
 
 test("TC-023-05: tc_complete blocked iteration=2 triggers tg_decision, no new huahua message", async () => {
