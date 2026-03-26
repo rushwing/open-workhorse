@@ -430,6 +430,10 @@ _dispatch_msg() {
         review_blocked)
           warn "ATM response review_blocked for ${req_id}: ${blocking_reason}"
           ;;
+        req_review_complete)
+          # Huahua finished req_review and dispatched tc_review to Menglan — no further action needed
+          info "req_review_complete for ${req_id}: ${summary}"
+          ;;
         dev_complete|"")
           # dev_complete 或未知 legacy_type → 向后兼容路径
           _handle_dev_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"

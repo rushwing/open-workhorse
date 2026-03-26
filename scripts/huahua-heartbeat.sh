@@ -293,8 +293,9 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
    a. Update tasks/features/${req_id}.md: status → ready, owner → huahua; commit
    b. Create branch feat/${req_id} (single-PR rule, REQ-039 — Menglan will add impl commits to this same branch)
    c. Design TCs under tasks/test-cases/; update ${req_id}.md: status → test_designed, test_case_ref populated; commit
-   d. Open TC PR on branch feat/${req_id}: gh pr create --fill; capture PR number as tc_pr_number
-   e. Return {\"verdict\":\"PASSED\",\"summary\":\"...\",\"tc_pr_number\":\"<N>\"}
+   d. Push branch: git push -u origin feat/${req_id}
+   e. Open TC PR on branch feat/${req_id}: gh pr create --fill; capture PR number as tc_pr_number
+   f. Return {\"verdict\":\"PASSED\",\"summary\":\"...\",\"tc_pr_number\":\"<N>\"}
 4. If REQ has DEFECTS:
    a. Create tasks/bugs/BUG-NNN.md (bug_type: req_bug, related_req: [${req_id}])
    b. Block REQ: status → blocked, blocked_reason/blocked_from_status set; commit
@@ -320,6 +321,7 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
           return 1
         fi
         _write_tc_review_to_menglan "$req_id" "$tc_pr" "$branch_name"
+        _write_huahua_response "$req_id" "$tc_pr" "req_review_complete" "completed" "${summary}"
       else
         _write_huahua_response "$req_id" "" "review_blocked" "blocked" "${summary}"
       fi
