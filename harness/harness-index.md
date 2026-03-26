@@ -2,9 +2,9 @@
 harness_id: HARNESS-INDEX
 component: process / orchestration
 owner: Engineering
-version: 0.7
+version: 0.8
 status: active
-last_reviewed: 2026-03-24
+last_reviewed: 2026-03-26
 ---
 
 # Harness Engineering — 流程总索引
@@ -60,7 +60,7 @@ flowchart LR
 | 需求管理 | [requirement-standard.md](requirement-standard.md) | ✅ active |
 | 测试规范 | [testing-standard.md](testing-standard.md) | ✅ active |
 | Bug 管理 | [bug-standard.md](bug-standard.md) | ✅ active |
-| 代码审查 | [review-standard.md](review-standard.md) | ✅ active — Pandas 触发→Huahua（CodeX）review→Telegram HITL 合并 |
+| 代码审查 | [review-standard.md](review-standard.md) | ✅ active — Menglan 实现完成后直接派发 code_review 给 Huahua；Huahua APPROVED 后写 review_complete 给 Pandas → Telegram HITL 合并 |
 | CI / 质量门禁 | [ci-standard.md](ci-standard.md) | ✅ active |
 | Agent CLI 调用模板 | [agent-cli-playbook.md](agent-cli-playbook.md) | ✅ active — 模板 A–L，覆盖实现、Bug 修复、Fix Review、一致性审查、Pandas 编排（K）、Memory Curation（L） |
 | Inbox IPC 协议 | [inbox-protocol.md](inbox-protocol.md) | ✅ active — ATM Envelope 规范（REQ-033–036 全部完成）；lifecycle 目录 pending/claimed/done/failed；Thread/Correlation 追踪；Delegation 结构化；规范文件命名 |
@@ -71,7 +71,7 @@ flowchart LR
 
 | 角色 | 主导阶段 | 说明 |
 |---|---|---|
-| **pandas**（orchestrator） | 全流程协调 | 轮询任务队列、触发 Menglan 实现、通知 Huahua review、发 Telegram HITL 告警；**不读 PR diff，不发 review comments** |
+| **pandas**（orchestrator） | 全流程协调 | 轮询任务队列、触发 Menglan 实现、收 Huahua review_complete 后发 Telegram HITL 告警；**不参与 code review 循环，不读 PR diff，不发 review comments** |
 | **menglan**（claude_code） | 1–3, 6 | 认领任务、实现代码、测试自动化、Bug 修复、修复 review findings |
 | **huahua** | 5 | Code review（review owner）；使用 CodeX + GH LLM Issue Orchestrator；findings 以 PR review comments 形式输出 |
 | **human (Daniel)** | 7 | PR merge judgment（HITL gate）—— 通过 Telegram [Merge] 按钮或手动合并；不做 code review |
@@ -131,10 +131,13 @@ Pandas orchestration loop（模板 K）：
                     └─▶ harness.sh implement <REQ-N>（Menglan 心跳以 EXISTING_BRANCH=feat/REQ-N 调用）
                             └─▶ worktree 创建：fetch 已有远端 feat/REQ-N 分支（非新建）
                                     └─▶ Menglan 在已有分支上实现，gh pr edit 更新同一 PR（不新建 PR）
-                                            └─▶ Pandas 写 review packet → for-huahua/ inbox
-                                                    └─▶ Huahua（CodeX）输出 review comments
-                                                            └─▶ Pandas 触发 fix-review（如有 blocking findings）
-                                                                    └─▶ Pandas 发 Telegram tg_pr_ready → Daniel [Merge] / [Hold]
+                                            └─▶ Menglan 完成实现后直接写 code_review → for-huahua/pending/（直接循环，Pandas 不介入）
+                                                    └─▶ Huahua code_review handler：输出 review comments
+                                                            ├─▶ APPROVED → review_complete → for-pandas/pending/
+                                                            │       └─▶ Pandas 发 tg_pr_ready → Daniel [Merge] / [Hold]
+                                                            ├─▶ NEEDS_CHANGES (iter<2) → fix_review → for-menglan/pending/
+                                                            │       └─▶ Menglan fix_review → harness.sh fix-review → 重新 code_review（iter+1）
+                                                            └─▶ NEEDS_CHANGES (iter≥2) → tg_decision → Daniel 决策
                                                                             └─▶ Daniel merge PR（单次）
                                                                                     └─▶ Pandas 心跳 S2：扫到 status:done → 发 Telegram 归档通知
                                                                                             └─▶ _auto_worktree_clean（心跳内联，status=done 时自动移除 worktree）
@@ -201,3 +204,4 @@ Pandas 在 session 结束或批量任务完成后将候选提升至 `project.db`
 | 0.5 | 2026-03-21 | REQ-037 git worktree 隔离落地：harness.sh implement 自动创建 ~/workspace-menglan/open-workhorse/ worktree；新增 worktree-clean 命令；自动化流程图补充 worktree 生命周期；playbook 模板 B/K 更新 worktree 路径说明 |
 | 0.6 | 2026-03-23 | REQ-039 单PR规则 + Keep-Alive Watchdog：自动化流程图更新为单PR链路（Huahua 在 feat/REQ-N 分支建TC+开PR，branch_name 沿消息链传递至 Menglan 的 EXISTING_BRANCH）；新增 keep-alive watchdog 说明（_check_stall_and_keepalive，AGENT_STALL_TIMEOUT_MINUTES，runtime/{agent}_alive.ts 时间戳） |
 | 0.7 | 2026-03-24 | 修正 TC 设计入口消息类型：由错误的 tc_design 改为正确的 req_review（Pandas claim_review_ready() 写入）；Huahua req_review handler 同时负责需求审核 + TC 设计 + 开 PR；tc_design 消息降级为 tc_complete blocked 时的修复迭代路径；修正说明注释（TC 设计由 Huahua 完成，非 Menglan） |
+| 0.8 | 2026-03-26 | 修正 implement→code_review 直接循环设计漂移：Menglan 实现完成后直接写 code_review 给 Huahua（不经 Pandas）；Huahua NEEDS_CHANGES 时直接写 fix_review 给 Menglan（iter<2）或 tg_decision（iter≥2）；Pandas 仅在 APPROVED 后接收 review_complete → tg_pr_ready；角色表和流程图同步修正 |

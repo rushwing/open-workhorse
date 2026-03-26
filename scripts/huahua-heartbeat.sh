@@ -31,7 +31,7 @@ fi
 if [[ -f "$REPO_ROOT/.env" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
-    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT|http_proxy|https_proxy|HTTP_PROXY|HTTPS_PROXY) ]] || continue
+    [[ "$line" =~ ^(SHARED_RESOURCES_ROOT|TELEGRAM_|http_proxy|https_proxy|HTTP_PROXY|HTTPS_PROXY) ]] || continue
     local_var="${line%%=*}"
     [[ "${!local_var+X}" == "X" ]] && continue
     export "$line" 2>/dev/null || true
@@ -41,6 +41,12 @@ fi
 INBOX_ROOT="${SHARED_RESOURCES_ROOT:-${HOME}/Dev/everything_openclaw/personas/shared-resources}/inbox"
 INBOX="${INBOX_ROOT}/for-huahua"
 DEAD_LETTER="${INBOX_ROOT}/dead-letter"
+
+# 引入 Telegram 函数（tg_decision 用于 iter≥2 升级）
+# shellcheck source=scripts/telegram.sh
+if [[ -f "$REPO_ROOT/scripts/telegram.sh" ]]; then
+  source "$REPO_ROOT/scripts/telegram.sh" 2>/dev/null || true
+fi
 
 # ── 颜色（仅 TTY 输出时启用）────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -128,6 +134,32 @@ _write_huahua_response() {
     [[ "$status" == "blocked" && -n "$summary" ]] && echo "blocking_reason: ${summary}"
   } > "${INBOX_ROOT}/for-pandas/pending/${filename}"
   ok "${legacy_type}(${status}) → for-pandas/pending/${filename}"
+}
+
+# ── Huahua 向 Menglan 写 fix_review 请求 ───────────────────────────────────
+# _write_fix_review_to_menglan <req_id> <pr_number> <blocking_reason> <iteration>
+# 向 inbox/for-menglan/pending/ 写入 fix_review request，供 Menglan fix_review handler 处理
+_write_fix_review_to_menglan() {
+  local req_id="$1" pr_number="$2" blocking_reason="${3:-}" iteration="${4:-1}"
+  local date_str filename
+  date_str="$(date +%Y-%m-%d)"
+  filename="${date_str}-huahua-fix-review-${req_id}-$$-${RANDOM}.md"
+  mkdir -p "${INBOX_ROOT}/for-menglan/pending"
+  {
+    echo "---"
+    echo "type: request"
+    echo "from: huahua"
+    echo "to: menglan"
+    echo "created_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "action: fix_review"
+    echo "priority: P1"
+    echo "---"
+    echo "req_id: ${req_id}"
+    echo "pr_number: ${pr_number}"
+    echo "iteration: ${iteration}"
+    [[ -n "$blocking_reason" ]] && echo "blocking_reason: ${blocking_reason}"
+  } > "${INBOX_ROOT}/for-menglan/pending/${filename}"
+  ok "fix_review(iter=${iteration}) → for-menglan/pending/${filename}"
 }
 
 # ── Huahua 向 Menglan 写 tc_review 请求 ────────────────────────────────────
@@ -238,7 +270,14 @@ ${req_content:-"(REQ file not found at ${req_file}. Use the req_id to locate it.
       fi
       info "code_review → claude review PR #${pr_number} for ${req_id}"
       local pr_diff=""
-      pr_diff="$(gh pr diff "$pr_number" 2>/dev/null || echo "(unable to fetch diff)")"
+      pr_diff="$(gh pr diff "$pr_number" 2>/dev/null)" || {
+        warn "code_review: 无法获取 PR #${pr_number} diff — 检查 gh 认证（拒绝在无 diff 时执行）"
+        return 1
+      }
+      if [[ -z "$pr_diff" ]]; then
+        warn "code_review: PR #${pr_number} diff 为空"
+        return 1
+      fi
 
       local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["APPROVED","NEEDS_CHANGES"]},"summary":{"type":"string"}},"required":["verdict","summary"]}'
       local raw_result; local claude_rc
@@ -270,9 +309,21 @@ ${pr_diff}
         return 1
       fi
       if [[ "$verdict" == "APPROVED" ]]; then
+        # APPROVED → notify Pandas, which will tg_pr_ready Daniel
         _write_huahua_response "$req_id" "$pr_number" "review_complete" "completed" "${summary}"
       else
-        _write_huahua_response "$req_id" "$pr_number" "review_blocked" "blocked" "${summary}"
+        # NEEDS_CHANGES → direct-loop: dispatch fix_review to Menglan (Pandas not involved)
+        local iter_num
+        iter_num="$(echo "${iteration:-0}" | grep -oE '[0-9]+' || echo "0")"
+        iter_num="${iter_num:-0}"
+        if [[ $iter_num -lt 2 ]]; then
+          local next_iter=$(( iter_num + 1 ))
+          _write_fix_review_to_menglan "$req_id" "$pr_number" "${summary}" "$next_iter"
+        else
+          warn "code_review iter=${iter_num} ≥ 2 — 升级决策给 Daniel"
+          tg_decision "Code review 循环超过 2 轮 (${req_id})：${summary}。继续？" "Continue" "Escalate" || \
+            warn "tg_decision 调用失败"
+        fi
       fi
       ;;
     req_review)

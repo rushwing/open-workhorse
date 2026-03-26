@@ -428,7 +428,9 @@ _dispatch_msg() {
           _handle_review_complete "$req_id" "$pr_number" "$summary" "${status:-success}" "$blocking_reason"
           ;;
         review_blocked)
-          warn "ATM response review_blocked for ${req_id}: ${blocking_reason}"
+          # no-op: Huahua now dispatches fix_review directly to Menglan (direct-loop design).
+          # This case handles any legacy review_blocked messages from pre-fix code.
+          info "review_blocked (no-op, direct-loop): ${req_id} — ${blocking_reason}"
           ;;
         req_review_complete)
           # compat no-op: producer removed in PR #70; handler kept until in-flight messages drain
@@ -557,7 +559,9 @@ _inbox_read_legacy() {
       _handle_major_decision "$req_id" "$blocking_reason"
       ;;
     review_blocked)
-      warn "review_blocked for ${req_id}: ${blocking_reason}"
+      # no-op: Huahua now dispatches fix_review directly to Menglan (direct-loop design).
+      # This case handles any legacy review_blocked messages from pre-fix code.
+      info "review_blocked (no-op, direct-loop): ${req_id} — ${blocking_reason}"
       ;;
     *)
       warn "旧格式未知消息类型: ${type}（文件: $(basename "$msg_file")）"

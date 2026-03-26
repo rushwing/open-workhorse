@@ -242,3 +242,146 @@ test("TC-BUG004-M03: menglan tc_review harness.sh non-zero exit routes to failed
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── TC-MENGLAN-M05: implement success → code_review dispatched to Huahua ──
+
+test("TC-MENGLAN-M05: implement success + gh pr list returns PR 74 → code_review in for-huahua/pending/", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-menglan-m05-${Date.now()}`);
+  await setupTmpEnv(tmpDir, "", 0);
+  // Create for-huahua inbox directories
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+
+  const msgFile = join(tmpDir, "inbox", "for-menglan", "pending", "2026-03-26-implement-req-940.md");
+  await writeFile(
+    msgFile,
+    "---\ntype: request\naction: implement\nreq_id: REQ-940\nbranch_name: feat/REQ-940\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      // source script so bash function mocks work; then call _process_message directly
+      `gh() {
+         if [[ "$*" == *"pr list"* ]]; then
+           echo "74"
+         fi
+         return 0
+       }
+       export -f gh
+       SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
+         source "${SCRIPT}" 2>/dev/null
+       gh() {
+         if [[ "$*" == *"pr list"* ]]; then
+           echo "74"
+         fi
+         return 0
+       }
+       export -f gh
+       INBOX_ROOT="${tmpDir}/inbox"
+       _process_message "${msgFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    assert.equal(result.code, 0,
+      `_process_message should succeed. stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // code_review message written to for-huahua/pending/
+    const huahuaFiles = (await readdir(join(tmpDir, "inbox", "for-huahua", "pending")).catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    assert.ok(huahuaFiles.length > 0, `code_review should be dispatched to for-huahua/pending/. stdout: ${result.stdout}`);
+
+    const content = await readFile(join(tmpDir, "inbox", "for-huahua", "pending", huahuaFiles[0]!), "utf8");
+    assert.ok(content.includes("action: code_review"), `Message should have action: code_review. content:\n${content}`);
+    assert.ok(content.includes("pr_number: 74"), `Message should carry pr_number: 74. content:\n${content}`);
+    assert.ok(content.includes("iteration: 0"), `Message should carry iteration: 0. content:\n${content}`);
+    assert.ok(content.includes("req_id: REQ-940"), `Message should carry req_id: REQ-940. content:\n${content}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── TC-MENGLAN-M06: fix_review → harness fix-review → code_review re-dispatched ──
+
+test("TC-MENGLAN-M06: fix_review message (pr=74, iter=1) + harness exits 0 → code_review in for-huahua/pending/ with iteration=1", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-menglan-m06-${Date.now()}`);
+  await setupTmpEnv(tmpDir, "", 0);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+
+  await writeFile(
+    join(tmpDir, "inbox", "for-menglan", "pending", "2026-03-26-fix-review-req-941.md"),
+    "---\ntype: request\naction: fix_review\nreq_id: REQ-941\npr_number: 74\niteration: 1\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" bash "${SCRIPT}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    // Must not dead-letter
+    const failedMd = (await readdir(join(tmpDir, "inbox", "for-menglan", "failed")).catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    assert.equal(failedMd.length, 0, `Should not dead-letter. failed/: ${failedMd.join(", ")}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // code_review message written to for-huahua/pending/ with iteration=1
+    const huahuaFiles = (await readdir(join(tmpDir, "inbox", "for-huahua", "pending")).catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    assert.ok(huahuaFiles.length > 0, `code_review should be dispatched to for-huahua/pending/. stdout: ${result.stdout}`);
+
+    const content = await readFile(join(tmpDir, "inbox", "for-huahua", "pending", huahuaFiles[0]!), "utf8");
+    assert.ok(content.includes("action: code_review"), `Message should have action: code_review. content:\n${content}`);
+    assert.ok(content.includes("pr_number: 74"), `Message should carry pr_number: 74. content:\n${content}`);
+    assert.ok(content.includes("iteration: 1"), `Message should carry iteration: 1. content:\n${content}`);
+    assert.ok(content.includes("req_id: REQ-941"), `Message should carry req_id: REQ-941. content:\n${content}`);
+
+    // harness called with fix-review 74
+    const harnessLog = await readFile(join(tmpDir, "harness_calls.log"), "utf8").catch(() => "");
+    assert.ok(harnessLog.includes("fix-review") && harnessLog.includes("74"),
+      `harness.sh should be called with 'fix-review 74'. log: ${harnessLog}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── TC-MENGLAN-M07: implement success but no open PR → fail-closed (return 1) ──
+
+test("TC-MENGLAN-M07: implement success but gh pr list returns empty → handler returns 1 (fail-closed)", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-menglan-m07-${Date.now()}`);
+  await setupTmpEnv(tmpDir, "", 0);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+
+  const msgFile = join(tmpDir, "inbox", "for-menglan", "pending", "2026-03-26-implement-req-942.md");
+  await writeFile(
+    msgFile,
+    "---\ntype: request\naction: implement\nreq_id: REQ-942\nbranch_name: feat/REQ-942\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      // gh mock: pr list returns empty (no open PR found)
+      `gh() {
+         return 0
+       }
+       export -f gh
+       SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
+         source "${SCRIPT}" 2>/dev/null
+       gh() {
+         return 0
+       }
+       export -f gh
+       INBOX_ROOT="${tmpDir}/inbox"
+       _process_message "${msgFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    // _process_message must return 1 — no silent success when PR not found
+    assert.equal(result.code, 1,
+      `Handler must return 1 when no open PR found. code: ${result.code}\nstdout: ${result.stdout}`);
+
+    // No code_review dispatched
+    const huahuaFiles = (await readdir(join(tmpDir, "inbox", "for-huahua", "pending")).catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    assert.equal(huahuaFiles.length, 0,
+      `No code_review should be dispatched when PR not found. found: ${huahuaFiles.join(", ")}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
