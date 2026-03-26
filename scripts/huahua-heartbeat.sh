@@ -200,7 +200,12 @@ _process_message() {
       # tc_design without pr_number = design TCs from scratch and open a TC PR
       if [[ -n "$pr_number" ]]; then
         info "tc_design (fix iteration) → harness.sh fix-review ${pr_number}"
-        bash "$REPO_ROOT/scripts/harness.sh" fix-review "$pr_number"
+        if bash "$REPO_ROOT/scripts/harness.sh" fix-review "$pr_number"; then
+          _write_tc_review_to_menglan "$req_id" "$pr_number" "feat/${req_id}"
+        else
+          warn "fix-review exited non-zero — skipping tc_review re-dispatch"
+          return 1
+        fi
       else
         info "tc_design (initial) → claude -p TC design for ${req_id}"
         local req_file="tasks/features/${req_id}.md"

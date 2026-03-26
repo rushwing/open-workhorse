@@ -258,3 +258,61 @@ test("TC-HUAHUA-H04: req_review PASSED does not write to for-pandas inbox", asyn
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── TC-HUAHUA-H05: tc_design fix-review re-dispatches tc_review to Menglan ──
+
+test("TC-HUAHUA-H05: tc_design fix iteration re-dispatches tc_review to for-menglan after successful fix-review", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-huahua-h05-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+
+  // tc_design fix message (pr_number set → fix-review path)
+  const msgFile = join(tmpDir, "inbox", "for-huahua", "pending", "2026-03-26-tc-design-fix-REQ-910.md");
+  await writeFile(
+    msgFile,
+    "---\ntype: request\naction: tc_design\nreq_id: REQ-910\npr_number: 99\nblocking_reason: missing-branch\niteration: 1\n---\n",
+    "utf8",
+  );
+
+  // Fake harness.sh that exits 0 for fix-review
+  const fakeHarness = join(tmpDir, "scripts", "harness.sh");
+  await mkdir(join(tmpDir, "scripts"), { recursive: true });
+  await writeFile(fakeHarness, "#!/usr/bin/env bash\nexit 0\n", "utf8");
+  await runBash(`chmod +x "${fakeHarness}"`);
+
+  try {
+    const result = await runBash(
+      `SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
+         source "${SCRIPT}" 2>/dev/null
+       INBOX_ROOT="${tmpDir}/inbox"
+       _process_message "${msgFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    assert.equal(result.code, 0,
+      `_process_message should succeed. stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    const menglanFiles = await readdir(join(tmpDir, "inbox", "for-menglan", "pending"))
+      .catch(() => [] as string[]);
+    const tcReviewMsg = menglanFiles.find((f) => f.endsWith(".md"));
+    assert.ok(tcReviewMsg,
+      `tc_design fix must re-dispatch tc_review to for-menglan. stdout: ${result.stdout}`);
+
+    const { readFile } = await import("node:fs/promises");
+    const content = await readFile(
+      join(tmpDir, "inbox", "for-menglan", "pending", tcReviewMsg!),
+      "utf8",
+    );
+    assert.ok(content.includes("action: tc_review"),
+      `re-dispatched message must have action: tc_review. content: ${content}`);
+    assert.ok(content.includes("REQ-910"),
+      `re-dispatched message must reference REQ-910. content: ${content}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
