@@ -148,3 +148,117 @@ test("TC-BUG004-H02: huahua action=req_review does not emit 暂无专用 handler
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── req_review prompt includes git push before gh pr create ──────────────────
+
+test("TC-HUAHUA-H03: req_review prompt includes git push step before gh pr create", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-huahua-h03-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+
+  const reqId = "REQ-908";
+  await writeFile(
+    join(tmpDir, "tasks", "features", `${reqId}.md`),
+    `---\nreq_id: ${reqId}\ntitle: Push Test REQ\nstatus: req_review\nowner: huahua\nacceptance: x\n---\n`,
+    "utf8",
+  );
+
+  const msgFile = join(tmpDir, "inbox", "for-huahua", "pending", `2026-03-26-req-review-908.md`);
+  await writeFile(
+    msgFile,
+    `---\ntype: request\naction: req_review\nreq_id: ${reqId}\nsummary: review request\n---\n`,
+    "utf8",
+  );
+
+  const promptCapture = join(tmpDir, "claude_prompt.txt");
+
+  try {
+    await runBash(
+      // Capture all args passed to claude; return DEFECTS so no further routing needed
+      `claude() { printf '%s' "$*" > "${promptCapture}"; echo '{"structured_output":{"verdict":"DEFECTS","summary":"mock"}}'; return 0; }
+       export -f claude
+       SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
+         source "${SCRIPT}" 2>/dev/null
+       claude() { printf '%s' "$*" > "${promptCapture}"; echo '{"structured_output":{"verdict":"DEFECTS","summary":"mock"}}'; return 0; }
+       export -f claude
+       INBOX_ROOT="${tmpDir}/inbox"
+       _process_message "${msgFile}" || true`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const prompt = await readFile(promptCapture, "utf8").catch(() => "");
+
+    assert.ok(
+      prompt.includes("git push -u origin feat/"),
+      `req_review prompt must include git push step. captured prompt: ${prompt.slice(0, 500)}`,
+    );
+
+    const pushIdx = prompt.indexOf("git push -u origin feat/");
+    const prCreateIdx = prompt.indexOf("gh pr create");
+    assert.ok(
+      pushIdx !== -1 && prCreateIdx !== -1 && pushIdx < prCreateIdx,
+      `git push must appear before gh pr create in prompt (push@${pushIdx}, pr-create@${prCreateIdx})`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── req_review PASSED does not write back to for-pandas ──────────────────────
+
+test("TC-HUAHUA-H04: req_review PASSED does not write req_review_complete to for-pandas", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-huahua-h04-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+
+  const reqId = "REQ-909";
+  await writeFile(
+    join(tmpDir, "tasks", "features", `${reqId}.md`),
+    `---\nreq_id: ${reqId}\ntitle: No Pandas Writeback REQ\nstatus: req_review\nowner: huahua\nacceptance: x\n---\n`,
+    "utf8",
+  );
+
+  const msgFile = join(tmpDir, "inbox", "for-huahua", "pending", `2026-03-26-req-review-909.md`);
+  await writeFile(
+    msgFile,
+    `---\ntype: request\naction: req_review\nreq_id: ${reqId}\nsummary: review request\n---\n`,
+    "utf8",
+  );
+
+  try {
+    await runBash(
+      // Return PASSED with a tc_pr_number so the PASSED branch executes
+      `claude() { echo '{"structured_output":{"verdict":"PASSED","summary":"ok","tc_pr_number":"42"}}'; return 0; }
+       export -f claude
+       SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
+         source "${SCRIPT}" 2>/dev/null
+       claude() { echo '{"structured_output":{"verdict":"PASSED","summary":"ok","tc_pr_number":"42"}}'; return 0; }
+       export -f claude
+       INBOX_ROOT="${tmpDir}/inbox"
+       _process_message "${msgFile}" || true`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    const pandasFiles = await readdir(join(tmpDir, "inbox", "for-pandas", "pending"))
+      .catch(() => [] as string[]);
+
+    assert.equal(
+      pandasFiles.filter((f) => f.endsWith(".md")).length,
+      0,
+      `req_review PASSED must not write to for-pandas. found: ${pandasFiles.join(", ")}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
