@@ -368,3 +368,158 @@ test("TC-HUAHUA-H06: tc_design fix with iteration=1 writes tc_review to for-meng
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── TC-HUAHUA-H07: code_review NEEDS_CHANGES (iter=0) → fix_review to Menglan ──
+
+test("TC-HUAHUA-H07: code_review NEEDS_CHANGES (iter=0) → fix_review in for-menglan/pending/ with iteration=1; for-pandas empty", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-huahua-h07-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+
+  const msgFile = join(tmpDir, "inbox", "for-huahua", "pending", "2026-03-26-code-review-REQ-950.md");
+  await writeFile(
+    msgFile,
+    "---\ntype: request\naction: code_review\nreq_id: REQ-950\npr_number: 74\niteration: 0\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      // gh mock: return a non-empty diff for pr diff; claude mock: return NEEDS_CHANGES
+      `gh() {
+         if [[ "$*" == *"pr diff"* ]]; then
+           echo "diff --git a/src/foo.ts b/src/foo.ts"
+         fi
+         return 0
+       }
+       export -f gh
+       claude() {
+         echo '{"structured_output":{"verdict":"NEEDS_CHANGES","summary":"missing tests"}}'
+         return 0
+       }
+       export -f claude
+       SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
+         source "${SCRIPT}" 2>/dev/null
+       gh() {
+         if [[ "$*" == *"pr diff"* ]]; then
+           echo "diff --git a/src/foo.ts b/src/foo.ts"
+         fi
+         return 0
+       }
+       export -f gh
+       claude() {
+         echo '{"structured_output":{"verdict":"NEEDS_CHANGES","summary":"missing tests"}}'
+         return 0
+       }
+       export -f claude
+       INBOX_ROOT="${tmpDir}/inbox"
+       _process_message "${msgFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    assert.equal(result.code, 0,
+      `_process_message should succeed. stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // fix_review should land in for-menglan/pending/ with iteration=1
+    const { readFile } = await import("node:fs/promises");
+    const menglanFiles = (await readdir(join(tmpDir, "inbox", "for-menglan", "pending"))
+      .catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    assert.ok(menglanFiles.length > 0,
+      `fix_review should be dispatched to for-menglan/pending/. stdout: ${result.stdout}`);
+
+    const content = await readFile(join(tmpDir, "inbox", "for-menglan", "pending", menglanFiles[0]!), "utf8");
+    assert.ok(content.includes("action: fix_review"),
+      `Message should have action: fix_review. content:\n${content}`);
+    assert.ok(content.includes("iteration: 1"),
+      `Message should carry iteration=1 (0+1). content:\n${content}`);
+    assert.ok(content.includes("pr_number: 74"),
+      `Message should carry pr_number: 74. content:\n${content}`);
+    assert.ok(content.includes("req_id: REQ-950"),
+      `Message should carry req_id: REQ-950. content:\n${content}`);
+
+    // for-pandas/pending/ must remain empty
+    const pandasFiles = (await readdir(join(tmpDir, "inbox", "for-pandas", "pending"))
+      .catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    assert.equal(pandasFiles.length, 0,
+      `for-pandas must be empty on NEEDS_CHANGES (direct loop). found: ${pandasFiles.join(", ")}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── TC-HUAHUA-H08: code_review NEEDS_CHANGES (iter=2) → tg_decision, no fix_review ──
+
+test("TC-HUAHUA-H08: code_review NEEDS_CHANGES (iter=2) → tg_decision called, no fix_review in for-menglan", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-huahua-h08-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+
+  const msgFile = join(tmpDir, "inbox", "for-huahua", "pending", "2026-03-26-code-review-REQ-951.md");
+  await writeFile(
+    msgFile,
+    "---\ntype: request\naction: code_review\nreq_id: REQ-951\npr_number: 75\niteration: 2\n---\n",
+    "utf8",
+  );
+
+  const tgMarker = join(tmpDir, "tg_decision_called");
+
+  try {
+    const result = await runBash(
+      `gh() {
+         if [[ "$*" == *"pr diff"* ]]; then
+           echo "diff --git a/src/bar.ts b/src/bar.ts"
+         fi
+         return 0
+       }
+       export -f gh
+       claude() {
+         echo '{"structured_output":{"verdict":"NEEDS_CHANGES","summary":"still broken"}}'
+         return 0
+       }
+       export -f claude
+       SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
+         source "${SCRIPT}" 2>/dev/null
+       gh() {
+         if [[ "$*" == *"pr diff"* ]]; then
+           echo "diff --git a/src/bar.ts b/src/bar.ts"
+         fi
+         return 0
+       }
+       export -f gh
+       claude() {
+         echo '{"structured_output":{"verdict":"NEEDS_CHANGES","summary":"still broken"}}'
+         return 0
+       }
+       export -f claude
+       tg_decision() { touch "${tgMarker}"; return 0; }
+       export -f tg_decision
+       INBOX_ROOT="${tmpDir}/inbox"
+       _process_message "${msgFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    assert.equal(result.code, 0,
+      `_process_message should succeed. stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // tg_decision must have been called
+    const tgCalled = await access(tgMarker).then(() => true).catch(() => false);
+    assert.ok(tgCalled,
+      `tg_decision must be called when iter≥2. stdout: ${result.stdout}`);
+
+    // No fix_review in for-menglan
+    const menglanFiles = (await readdir(join(tmpDir, "inbox", "for-menglan", "pending"))
+      .catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    assert.equal(menglanFiles.length, 0,
+      `fix_review must NOT be dispatched when iter≥2. found: ${menglanFiles.join(", ")}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});

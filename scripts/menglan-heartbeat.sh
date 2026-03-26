@@ -113,6 +113,31 @@ _write_tc_complete() {
   ok "tc_complete(${status}) → for-pandas/pending/${filename}"
 }
 
+# ── code_review 派发给 Huahua ─────────────────────────────────────────────────
+# _write_code_review_to_huahua <req_id> <pr_number> <iteration>
+# 向 inbox/for-huahua/pending/ 写入 code_review request，供 Huahua code_review handler 处理
+_write_code_review_to_huahua() {
+  local req_id="$1" pr_number="$2" iteration="${3:-0}"
+  local date_str filename
+  date_str="$(date +%Y-%m-%d)"
+  filename="${date_str}-menglan-code-review-${req_id}-$$-${RANDOM}.md"
+  mkdir -p "${INBOX_ROOT}/for-huahua/pending"
+  {
+    echo "---"
+    echo "type: request"
+    echo "from: menglan"
+    echo "to: huahua"
+    echo "created_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "action: code_review"
+    echo "priority: P1"
+    echo "---"
+    echo "req_id: ${req_id}"
+    echo "pr_number: ${pr_number}"
+    echo "iteration: ${iteration}"
+  } > "${INBOX_ROOT}/for-huahua/pending/${filename}"
+  ok "code_review(iter=${iteration}) → for-huahua/pending/${filename}"
+}
+
 # ── Failsafe: 失败通知 Pandas ─────────────────────────────────────────────────
 _notify_pandas_failure() {
   local msg_basename="$1" reason="$2" req_id="$3"
@@ -146,9 +171,10 @@ _process_message() {
     local action
     action="$(_get_fm_field "$msg_file" "action")"
     case "$action" in
-      implement|fix_review) type="implement"  ;;
-      bugfix)               type="bugfix"     ;;
-      tc_review)            type="tc_review"  ;;
+      implement)  type="implement"  ;;
+      fix_review) type="fix_review" ;;
+      bugfix)     type="bugfix"     ;;
+      tc_review)  type="tc_review"  ;;
       *) warn "ATM request action=${action} 未识别 — 继续按 type 路由（将触发 unknown 分支）" ;;
     esac
     info "ATM normalize: action=${action} → type=${type}"
@@ -166,6 +192,31 @@ _process_message() {
       impl_branch_name="$(_get_fm_field "$msg_file" "branch_name")"
       info "路由 implement → FORCE=true harness.sh implement ${req_id}${impl_branch_name:+ (EXISTING_BRANCH=${impl_branch_name})}"
       FORCE=true EXISTING_BRANCH="$impl_branch_name" bash "$REPO_ROOT/scripts/harness.sh" implement "$req_id"
+      # After implement success: dispatch code_review directly to Huahua (direct-loop design)
+      local impl_pr_num
+      impl_pr_num="$(gh pr list --head "feat/${req_id}" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+      if [[ -n "$impl_pr_num" ]]; then
+        _write_code_review_to_huahua "$req_id" "$impl_pr_num" "0"
+      else
+        warn "implement 完成但未找到开放 PR (feat/${req_id}) — code_review 未派发"
+      fi
+      ;;
+    fix_review)
+      # Huahua requested fixes; Menglan applies them and re-dispatches code_review
+      local fpr_number fix_iteration
+      fpr_number="$(_get_fm_field "$msg_file" "pr_number")"
+      fix_iteration="$(_get_fm_field "$msg_file" "iteration")"
+      if [[ -z "$fpr_number" ]]; then
+        warn "fix_review 消息缺少 pr_number — 移至 dead-letter"
+        return 1
+      fi
+      info "路由 fix_review → harness.sh fix-review ${fpr_number} (iteration=${fix_iteration:-0})"
+      if bash "$REPO_ROOT/scripts/harness.sh" fix-review "$fpr_number"; then
+        _write_code_review_to_huahua "$req_id" "$fpr_number" "${fix_iteration:-0}"
+      else
+        warn "harness.sh fix-review 非零退出 — 跳过 code_review 重派"
+        return 1
+      fi
       ;;
     bugfix)
       info "路由 bugfix → harness.sh bugfix ${req_id}"
@@ -281,5 +332,8 @@ main() {
 
   info "menglan-heartbeat 完成"
 }
+
+# Guard: skip main() when script is sourced (for unit tests)
+[[ "${BASH_SOURCE[0]}" != "$0" ]] && return 0
 
 main "$@"
