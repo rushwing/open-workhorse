@@ -564,7 +564,20 @@ Rules:
 4. The conclusion line is REQUIRED even if there are no prior review comments to address
 "
 
-  "${CLAUDE_CMD[@]}" "$prompt"
+  local review_output
+  review_output="$("${CLAUDE_CMD[@]}" "$prompt")"
+  local claude_rc=$?
+  if [[ $claude_rc -ne 0 ]]; then
+    err "claude 退出 ${claude_rc} — tc-review worker failure"
+    exit 1
+  fi
+  # Fail closed: no conclusion line = non-compliant output, treat as worker failure
+  if ! echo "$review_output" | grep -qE "tc-review: (APPROVED|NEEDS_CHANGES)"; then
+    err "Claude 输出未包含 tc-review 结论行 — 视为 worker failure（拒绝假 NEEDS_CHANGES）"
+    err "output tail: $(echo "$review_output" | tail -5)"
+    exit 1
+  fi
+  echo "$review_output"
 }
 
 cmd_runbook() {
