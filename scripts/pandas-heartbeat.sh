@@ -431,8 +431,8 @@ _dispatch_msg() {
           warn "ATM response review_blocked for ${req_id}: ${blocking_reason}"
           ;;
         req_review_complete)
-          # Huahua finished req_review and dispatched tc_review to Menglan — no further action needed
-          info "req_review_complete for ${req_id}: ${summary}"
+          # compat no-op: producer removed in PR #70; handler kept until in-flight messages drain
+          info "req_review_complete ack for ${req_id} (no action)"
           ;;
         dev_complete|"")
           # dev_complete 或未知 legacy_type → 向后兼容路径

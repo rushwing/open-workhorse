@@ -3990,3 +3990,38 @@ test("TC-039-07: harness.sh implement without EXISTING_BRANCH — prompt uses gh
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── TC-PANDAS-H01: req_review_complete compat no-op does not trigger tg_pr_ready ──
+
+test("TC-PANDAS-H01: in-flight req_review_complete message does not trigger tg_pr_ready", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-pandas-h01-${Date.now()}`);
+  const inboxPandasDir = join(tmpDir, "inbox", "for-pandas");
+  await mkdir(inboxPandasDir, { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua"), { recursive: true });
+
+  // Simulate an in-flight req_review_complete message emitted by PR #69
+  await writeFile(
+    join(inboxPandasDir, "2026-03-26-huahua-req-review-complete-REQ-040.md"),
+    "---\ntype: response\nfrom: huahua\nto: pandas\ncreated_at: 2026-03-26T00:00:00Z\npriority: P1\n---\nlegacy_type: req_review_complete\nreq_id: REQ-040\npr_number: 70\nstatus: completed\nsummary: req review passed\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       source "${SCRIPT}" 2>/dev/null
+       tg_pr_ready() { echo "[mock tg_pr_ready] $*"; return 0; }
+       inbox_init
+       inbox_read_pandas`,
+      { SHARED_RESOURCES_ROOT: tmpDir },
+    );
+    assert.equal(result.code, 0, `bash failed\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
+    assert.ok(
+      !result.stdout.includes("[mock tg_pr_ready]"),
+      `req_review_complete must not trigger tg_pr_ready. stdout: ${result.stdout}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
