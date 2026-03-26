@@ -321,7 +321,6 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
           return 1
         fi
         _write_tc_review_to_menglan "$req_id" "$tc_pr" "$branch_name"
-        _write_huahua_response "$req_id" "$tc_pr" "req_review_complete" "completed" "${summary}"
       else
         _write_huahua_response "$req_id" "" "review_blocked" "blocked" "${summary}"
       fi
