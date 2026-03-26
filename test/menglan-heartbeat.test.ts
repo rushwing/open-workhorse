@@ -340,3 +340,48 @@ test("TC-MENGLAN-M06: fix_review message (pr=74, iter=1) + harness exits 0 → c
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── TC-MENGLAN-M07: implement success but no open PR → fail-closed (return 1) ──
+
+test("TC-MENGLAN-M07: implement success but gh pr list returns empty → handler returns 1 (fail-closed)", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-menglan-m07-${Date.now()}`);
+  await setupTmpEnv(tmpDir, "", 0);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+
+  const msgFile = join(tmpDir, "inbox", "for-menglan", "pending", "2026-03-26-implement-req-942.md");
+  await writeFile(
+    msgFile,
+    "---\ntype: request\naction: implement\nreq_id: REQ-942\nbranch_name: feat/REQ-942\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      // gh mock: pr list returns empty (no open PR found)
+      `gh() {
+         return 0
+       }
+       export -f gh
+       SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
+         source "${SCRIPT}" 2>/dev/null
+       gh() {
+         return 0
+       }
+       export -f gh
+       INBOX_ROOT="${tmpDir}/inbox"
+       _process_message "${msgFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    // _process_message must return 1 — no silent success when PR not found
+    assert.equal(result.code, 1,
+      `Handler must return 1 when no open PR found. code: ${result.code}\nstdout: ${result.stdout}`);
+
+    // No code_review dispatched
+    const huahuaFiles = (await readdir(join(tmpDir, "inbox", "for-huahua", "pending")).catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    assert.equal(huahuaFiles.length, 0,
+      `No code_review should be dispatched when PR not found. found: ${huahuaFiles.join(", ")}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});

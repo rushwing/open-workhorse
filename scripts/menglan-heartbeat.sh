@@ -192,14 +192,21 @@ _process_message() {
       impl_branch_name="$(_get_fm_field "$msg_file" "branch_name")"
       info "路由 implement → FORCE=true harness.sh implement ${req_id}${impl_branch_name:+ (EXISTING_BRANCH=${impl_branch_name})}"
       FORCE=true EXISTING_BRANCH="$impl_branch_name" bash "$REPO_ROOT/scripts/harness.sh" implement "$req_id"
-      # After implement success: dispatch code_review directly to Huahua (direct-loop design)
-      local impl_pr_num
-      impl_pr_num="$(gh pr list --head "feat/${req_id}" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
-      if [[ -n "$impl_pr_num" ]]; then
-        _write_code_review_to_huahua "$req_id" "$impl_pr_num" "0"
-      else
-        warn "implement 完成但未找到开放 PR (feat/${req_id}) — code_review 未派发"
+      # After implement success: dispatch code_review directly to Huahua (direct-loop design).
+      # Fail-closed: Pandas is no longer on the review-dispatch path, so a missed
+      # dispatch has no automatic retry. Return 1 so Pandas is notified to intervene.
+      local impl_pr_num impl_gh_rc
+      impl_pr_num="$(gh pr list --head "feat/${req_id}" --state open --json number --jq '.[0].number' 2>/dev/null)"
+      impl_gh_rc=$?
+      if [[ $impl_gh_rc -ne 0 ]]; then
+        warn "implement 完成但 gh pr list 失败 (exit ${impl_gh_rc}) — code_review 未派发"
+        return 1
       fi
+      if [[ -z "$impl_pr_num" ]]; then
+        warn "implement 完成但未找到开放 PR (feat/${req_id}) — code_review 未派发"
+        return 1
+      fi
+      _write_code_review_to_huahua "$req_id" "$impl_pr_num" "0"
       ;;
     fix_review)
       # Huahua requested fixes; Menglan applies them and re-dispatches code_review
