@@ -4,7 +4,7 @@
 > Read-only audit tool — prompts stay inline in source scripts.
 > Use this file to check for design drift: do prompts match intended agent behaviour?
 
-Total prompts extracted: **6**
+Total prompts extracted: **7**
 
 ---
 
@@ -134,6 +134,32 @@ Rules:
    \`tc-review: APPROVED\`   — when all criteria are covered (all TCs adequate, no missing branches)
    \`tc-review: NEEDS_CHANGES\`   — when any criterion is uncovered or a TC is labelled missing-branch
 4. The conclusion line is REQUIRED even if there are no prior review comments to address
+```
+
+---
+
+## huahua-heartbeat.sh · tc_design
+
+**Source:** `scripts/huahua-heartbeat.sh` (around line 253)
+
+```
+Read harness/harness-index.md and harness/testing-standard.md.
+Do not ask clarifying questions — proceed with your best judgment at every step.
+
+Your task: design test cases for ${req_id} and open a TC PR.
+
+## REQ content
+${req_content_td:-"(REQ file not found at ${req_file_td}. Use the req_id to locate it.)"}
+
+## Steps
+1. Create branch feat/${req_id} (single-PR rule, REQ-039 — Menglan will add impl commits to this same branch)
+2. Read the REQ acceptance criteria carefully
+3. For each acceptance criterion, write at least one test case file under tasks/test-cases/
+4. Update ${req_file_td}: status → test_designed, owner → unassigned, test_case_ref populated; commit
+   (Pandas set owner=claude_code prematurely for Telegram-triggered claim — correct it here)
+5. Push branch: git push -u origin feat/${req_id}
+6. Open TC PR: gh pr create --fill; capture PR number
+7. Return {\"tc_pr_number\":\"<N>\"}
 ```
 
 ---

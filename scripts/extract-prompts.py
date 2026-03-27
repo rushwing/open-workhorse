@@ -119,12 +119,17 @@ def extract_from_huahua(content: str) -> list[dict]:
         ...
         last line of content"
 
-    Pattern B — json-schema call:
-        raw_result=$("${CLAUDE_CMD[@]}" --output-format json --json-schema "$_schema" \\
+    Pattern B — json-schema call (variable OR inline literal schema):
+        raw_result=$(...CLAUDE_CMD... --output-format json --json-schema "$_schema" \\
           "Read harness/...
-          ...
           last line" \\
         2>&1)
+      OR (inline literal schema, e.g. tc_design initial path):
+        tc_pr_td=$(...CLAUDE_CMD... --output-format json \\
+          --json-schema '{"type":"object",...}' \\
+          "Read harness/...
+          last line" \\
+        2>/dev/null | ...)
     """
     results = []
     lines = content.split('\n')
@@ -156,8 +161,9 @@ def extract_from_huahua(content: str) -> list[dict]:
             i += 1
             continue
 
-        # Pattern B: --json-schema "$_schema" \ ... "Read harness/...
-        if re.search(r'--json-schema "\$_schema"\s*\\$', stripped):
+        # Pattern B: --json-schema (variable ref OR inline literal) on a continuation line,
+        # followed by "Read harness/... prompt string on a subsequent line.
+        if re.search(r"""--json-schema\s+(?:"\$_schema"|'[^']*')\s*\\$""", stripped):
             label = find_context_label(lines, i)
             start_lineno = i + 1
             # Skip to the next line that opens the prompt string
