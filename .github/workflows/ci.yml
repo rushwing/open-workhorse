@@ -63,3 +63,20 @@ jobs:
       - name: Check REQ frontmatter coverage
         run: bash scripts/check-req-coverage.sh
         # tasks/ 為空時 gracefully pass（初期無任務也 OK）
+
+  prompt-snapshot:
+    name: Prompt Snapshot Freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Regenerate prompt snapshot
+        run: python3 scripts/extract-prompts.py
+      - name: Fail if snapshot is stale
+        run: |
+          if ! git diff --exit-code eval/prompts-snapshot.md; then
+            echo "::error::eval/prompts-snapshot.md is stale — run 'python3 scripts/extract-prompts.py' and commit the result"
+            exit 1
+          fi
