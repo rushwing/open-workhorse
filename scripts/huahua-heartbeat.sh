@@ -262,7 +262,8 @@ ${req_content_td:-"(REQ file not found at ${req_file_td}. Use the req_id to loca
 1. Create branch feat/${req_id} (single-PR rule, REQ-039 — Menglan will add impl commits to this same branch)
 2. Read the REQ acceptance criteria carefully
 3. For each acceptance criterion, write at least one test case file under tasks/test-cases/
-4. Update ${req_file_td}: status → test_designed, test_case_ref populated; commit
+4. Update ${req_file_td}: status → test_designed, owner → unassigned, test_case_ref populated; commit
+   (Pandas set owner=claude_code prematurely for Telegram-triggered claim — correct it here)
 5. Push branch: git push -u origin feat/${req_id}
 6. Open TC PR: gh pr create --fill; capture PR number
 7. Return {\"tc_pr_number\":\"<N>\"}" \

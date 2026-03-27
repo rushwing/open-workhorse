@@ -140,7 +140,7 @@ Rules:
 
 ## huahua-heartbeat.sh · code_review
 
-**Source:** `scripts/huahua-heartbeat.sh` (around line 300)
+**Source:** `scripts/huahua-heartbeat.sh` (around line 301)
 
 ```
 Read harness/review-standard.md.
@@ -172,7 +172,7 @@ ${pr_diff}
 
 ## huahua-heartbeat.sh · req_review
 
-**Source:** `scripts/huahua-heartbeat.sh` (around line 363)
+**Source:** `scripts/huahua-heartbeat.sh` (around line 364)
 
 ```
 Read harness/harness-index.md, harness/requirement-standard.md, and harness/bug-standard.md.
