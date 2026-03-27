@@ -523,3 +523,119 @@ test("TC-HUAHUA-H08: code_review NEEDS_CHANGES (iter=2) → tg_decision called, 
     await rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── TC-HUAHUA-H09: tc_design initial (Telegram-triggered, no pr_number) ──────
+// Regression for PR #76 P1: initial path was dead-lettered; re-opened but must
+// dispatch tc_review to Menglan and prompt must correct owner to unassigned.
+
+test("TC-HUAHUA-H09: tc_design without pr_number (Telegram-triggered initial) dispatches tc_review to for-menglan and prompt corrects owner to unassigned", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-huahua-h09-${Date.now()}`);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "claimed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "done"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "failed"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-menglan", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "inbox", "for-pandas", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+
+  await writeFile(
+    join(tmpDir, "tasks", "features", "REQ-920.md"),
+    "---\nreq_id: REQ-920\ntitle: Telegram Triggered TC Design\nstatus: in_progress\nowner: claude_code\nacceptance: x\n---\n",
+    "utf8",
+  );
+
+  // tc_design message WITHOUT pr_number (Telegram-triggered initial path)
+  const msgFile = join(tmpDir, "inbox", "for-huahua", "pending", "2026-03-27-tc-design-initial-REQ-920.md");
+  await writeFile(
+    msgFile,
+    "---\ntype: request\naction: tc_design\nreq_id: REQ-920\nsummary: TC design request (Telegram)\n---\n",
+    "utf8",
+  );
+
+  const promptCapture = join(tmpDir, "claude_prompt.txt");
+
+  try {
+    const result = await runBash(
+      `claude() {
+         printf '%s' "$*" > "${promptCapture}"
+         echo '{"structured_output":{"tc_pr_number":"55"}}'
+         return 0
+       }
+       export -f claude
+       SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
+         source "${SCRIPT}" 2>/dev/null
+       claude() {
+         printf '%s' "$*" > "${promptCapture}"
+         echo '{"structured_output":{"tc_pr_number":"55"}}'
+         return 0
+       }
+       export -f claude
+       INBOX_ROOT="${tmpDir}/inbox"
+       _process_message "${msgFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    assert.equal(result.code, 0,
+      `_process_message should succeed. stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // Must dispatch tc_review to for-menglan
+    const menglanFiles = await readdir(join(tmpDir, "inbox", "for-menglan", "pending"))
+      .catch(() => [] as string[]);
+    const tcReviewMsg = menglanFiles.find((f) => f.endsWith(".md"));
+    assert.ok(tcReviewMsg,
+      `tc_design initial must dispatch tc_review to for-menglan. stdout: ${result.stdout}`);
+
+    const { readFile } = await import("node:fs/promises");
+    const msgContent = await readFile(
+      join(tmpDir, "inbox", "for-menglan", "pending", tcReviewMsg!),
+      "utf8",
+    );
+    assert.ok(msgContent.includes("action: tc_review"),
+      `dispatched message must have action: tc_review. content: ${msgContent}`);
+    assert.ok(msgContent.includes("REQ-920"),
+      `dispatched message must reference REQ-920. content: ${msgContent}`);
+    assert.ok(msgContent.includes("pr_number: 55"),
+      `dispatched message must carry tc_pr_number=55. content: ${msgContent}`);
+
+    // Prompt must instruct correcting owner to unassigned
+    const prompt = await readFile(promptCapture, "utf8").catch(() => "");
+    assert.ok(
+      prompt.includes("owner") && prompt.includes("unassigned"),
+      `tc_design initial prompt must instruct owner → unassigned to correct Pandas premature claim. prompt: ${prompt.slice(0, 600)}`,
+    );
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── TC-HUAHUA-H10: implement prompt includes git push after pr_number commit ──
+// Regression for PR #76 P2: pr_number commit stayed local without push;
+// archive_merged_reqs reads from merged remote file so push is required.
+// Static text check: cmd_implement has git pre-checks that block dynamic
+// invocation outside a real git repo; reading the source is sufficient.
+
+test("TC-HUAHUA-H10: harness.sh cmd_implement prompt source contains git push after pr_number writeback", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const HARNESS = join(PROJECT_ROOT, "scripts/harness.sh");
+  const src = await readFile(HARNESS, "utf8");
+
+  // Find the cmd_implement function body
+  const fnStart = src.indexOf("cmd_implement()");
+  const fnEnd = src.indexOf("\ncmd_bugfix()", fnStart);
+  assert.ok(fnStart !== -1, "cmd_implement function must exist in harness.sh");
+  const fnBody = src.slice(fnStart, fnEnd !== -1 ? fnEnd : undefined);
+
+  // pr_number writeback must be present
+  assert.ok(
+    fnBody.includes("pr_number"),
+    `cmd_implement prompt must include pr_number writeback step. snippet: ${fnBody.slice(0, 800)}`,
+  );
+
+  // git push must appear after pr_number in the prompt
+  const prNumIdx = fnBody.indexOf("pr_number");
+  const pushIdx = fnBody.indexOf("git push", prNumIdx);
+  assert.ok(
+    pushIdx !== -1,
+    `cmd_implement prompt must include git push AFTER pr_number writeback. pr_number@${prNumIdx}, git push@${pushIdx}`,
+  );
+});
