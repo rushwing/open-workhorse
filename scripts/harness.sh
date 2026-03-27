@@ -356,6 +356,9 @@ Steps:
 5. Before opening PR: npm run release:audit && npm run build && npm test
 6. Update ${req_file}: status=review, fill Agent Notes with implementation notes
 7. Open or update PR (see NOTE above if TC PR already exists)
+8. Write the PR number back to ${req_file} frontmatter: pr_number: <N>
+   (Pandas archive_merged_reqs depends on this field — do not skip)
+   Commit message: 'chore: set pr_number for ${req_id}'
 "
 
   "${CLAUDE_CMD[@]}" "$prompt"
@@ -451,11 +454,16 @@ ${top_comments}
 ${inline_comments}
 
 ## Your task
-Address every finding in both sections:
+Address findings per review-standard.md §Finding 分级:
+- [BLOCK] findings: MUST be fixed before merge — fix the code or doc
+- [NIT] / [SUGGEST] findings: non-blocking — fix if straightforward, or reply explaining why not
+- Untagged findings: treat as [BLOCK] (fail-safe)
+- Do not silently ignore any finding — every comment needs either a fix or an explicit reply
+
+Steps:
 1. Read the referenced file+line for each inline comment
-2. Fix the code or doc (do NOT skip any finding)
-3. If a finding is invalid, note why — do not silently ignore
-4. After all fixes are pushed:
+2. Apply fixes per the priority rules above
+3. After all fixes are pushed:
    a) Inline comments (have ID above) → reply via:
       gh api repos/${GH_REPO}/pulls/${pr_num}/comments/<id>/replies -X POST -f body='Fixed in <sha>: <summary>'
    b) Top-level review summaries → one general comment:

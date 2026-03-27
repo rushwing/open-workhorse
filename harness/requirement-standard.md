@@ -251,7 +251,8 @@ draft → review_ready → req_review → ready → in_progress → review → d
 - 不允许 frontmatter 检查未通过时迁移到 `ready`
 - 不允许 `review → done` 时 Agent Notes 中存在未关闭（`status != done`）的 Bug 外链
 - 禁止将 `review`（PR 已提，等待 merge）与 `req_review`（需求评审阶段）互换使用；
-  `review` 状态**必须**有对应 `pr_number` 字段；`req_review` 状态**不涉及** PR，Huahua 只做需求范围确认
+  `review` 状态**必须**有对应 `pr_number` 字段；
+  `req_review` 阶段由 Huahua 完成需求审核 + TC 设计 + 开 TC PR（见 harness-index.md §0.7），不是单纯的需求范围确认
 
 ### 6.4 `req_review → ready` 前置检查清单
 

@@ -231,7 +231,8 @@ _process_message() {
   case "$resolved_type" in
     tc_design)
       # tc_design with pr_number = fix findings on existing TC PR (PANDAS-ORCHESTRATION §7)
-      # tc_design without pr_number = design TCs from scratch and open a TC PR
+      # tc_design without pr_number = was old initial entry point; now dead (harness-index v0.7:
+      #   standard path is req_review → Huahua designs TC inline; tc_design is fix-iteration only)
       if [[ -n "$pr_number" ]]; then
         info "tc_design (fix iteration) → harness.sh fix-review ${pr_number}"
         if bash "$REPO_ROOT/scripts/harness.sh" fix-review "$pr_number"; then
@@ -241,25 +242,8 @@ _process_message() {
           return 1
         fi
       else
-        info "tc_design (initial) → claude -p TC design for ${req_id}"
-        local req_file="tasks/features/${req_id}.md"
-        local req_content=""
-        [[ -f "$req_file" ]] && req_content="$(cat "$req_file")"
-        "${CLAUDE_CMD[@]}" "Read harness/harness-index.md and harness/testing-standard.md.
-Do not ask clarifying questions — proceed with your best judgment at every step.
-
-Your task: design test cases for ${req_id} and open a TC PR.
-
-## REQ content
-${req_content:-"(REQ file not found at ${req_file}. Use the req_id to locate it.)"}
-
-## Steps
-1. Create branch: feat/${req_id}  (single-PR rule, REQ-039 — Menglan will add impl commits to this same branch)
-2. Read the REQ acceptance criteria carefully
-3. For each acceptance criterion, write at least one test case file under tasks/test-cases/
-4. Commit TC files with message: 'tc: ${req_id} test case design'
-5. Open PR with: gh pr create --fill
-6. Reply summary of TCs designed and the PR URL"
+        warn "tc_design without pr_number is no longer a valid entry point (harness-index v0.7) — 移至 dead-letter"
+        return 1
       fi
       ;;
     code_review)
@@ -278,24 +262,36 @@ ${req_content:-"(REQ file not found at ${req_file}. Use the req_id to locate it.
         warn "code_review: PR #${pr_number} diff 为空"
         return 1
       fi
+      local req_file_cr="tasks/features/${req_id}.md"
+      local req_content_cr=""
+      [[ -f "$req_file_cr" ]] && req_content_cr="$(cat "$req_file_cr")"
 
       local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["APPROVED","NEEDS_CHANGES"]},"summary":{"type":"string"}},"required":["verdict","summary"]}'
       local raw_result; local claude_rc
       raw_result=$("${CLAUDE_CMD[@]}" --output-format json --json-schema "$_schema" \
-        "Read harness/harness-index.md.
+        "Read harness/review-standard.md.
 Do not ask clarifying questions — proceed with your best judgment.
 
 Your task: review dev PR #${pr_number} for ${req_id}.
+
+## REQ contract (acceptance criteria)
+${req_content_cr:-"(REQ file not found — judge implementation against PR description only)"}
 
 ## Diff
 ${pr_diff}
 
 ## Steps
 1. Read the diff and any referenced files
-2. Check for: bugs, regressions, unsafe assumptions, missing tests, data integrity risks
-3. Post review using: gh pr review ${pr_number} --request-changes -b '<findings>'
-   OR: gh pr review ${pr_number} --approve -b 'LGTM'
-4. Return ONLY your structured verdict (do NOT write any inbox files — the harness handles that)." \
+2. Review against the REQ contract above and harness/review-standard.md §Review 关注点:
+   - Contractual consistency: each acceptance criterion must be traceable to the implementation
+   - Security: no command injection, no secrets in logs, env vars via .env
+   - Test quality: key branches covered, mock strategy per testing-standard.md §2.1
+   - Readability: clear naming, complex logic has why-comments
+3. Label each finding with [BLOCK] (must fix before merge) or [NIT]/[SUGGEST] (non-blocking)
+4. Post review:
+   gh pr review ${pr_number} --request-changes -b '<findings>'   (if any [BLOCK] exists)
+   OR: gh pr review ${pr_number} --approve -b 'LGTM'             (no [BLOCK] findings)
+5. Return ONLY your structured verdict (do NOT write any inbox files — the harness handles that)." \
       2>&1); claude_rc=$?
 
       if [[ $claude_rc -ne 0 ]]; then
@@ -336,7 +332,7 @@ ${pr_diff}
       local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["PASSED","DEFECTS"]},"summary":{"type":"string"},"tc_pr_number":{"type":"string"}},"required":["verdict","summary"]}'
       local raw_result; local claude_rc
       raw_result=$("${CLAUDE_CMD[@]}" --output-format json --json-schema "$_schema" \
-        "Read harness/harness-index.md and harness/requirement-standard.md.
+        "Read harness/harness-index.md, harness/requirement-standard.md, and harness/bug-standard.md.
 Do not ask clarifying questions — proceed with your best judgment.
 
 Your task: review requirements for ${req_id} and advance its status.
@@ -354,10 +350,14 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
    d. Push branch: git push -u origin feat/${req_id}
    e. Open TC PR on branch feat/${req_id}: gh pr create --fill; capture PR number as tc_pr_number
    f. Return {\"verdict\":\"PASSED\",\"summary\":\"...\",\"tc_pr_number\":\"<N>\"}
-4. If REQ has DEFECTS:
+4. If REQ has DEFECTS (follow bug-standard.md §2.2 exactly — all 6 steps):
    a. Create tasks/bugs/BUG-NNN.md (bug_type: req_bug, related_req: [${req_id}])
-   b. Block REQ: status → blocked, blocked_reason/blocked_from_status set; commit
-   c. Return {\"verdict\":\"DEFECTS\",\"summary\":\"<one-line reason>\"}" \
+   b. Append Bug external link to ${req_id}.md Agent Notes: '- BUG-NNN: <one-line summary>'
+   c. Add BUG-NNN to ${req_id}.md pending_bugs array
+   d. Read current status/owner from ${req_id}.md; write blocked_from_status: req_review and blocked_from_owner: <current owner>
+   e. Update ${req_id}.md: status → blocked, blocked_reason: bug_linked, owner → unassigned
+   f. Commit with message: 'bug-block: ${req_id} blocked by BUG-NNN'
+   g. Return {\"verdict\":\"DEFECTS\",\"summary\":\"<one-line reason>\"}" \
       2>&1); claude_rc=$?
 
       if [[ $claude_rc -ne 0 ]]; then
