@@ -230,9 +230,10 @@ _process_message() {
 
   case "$resolved_type" in
     tc_design)
-      # tc_design with pr_number = fix findings on existing TC PR (PANDAS-ORCHESTRATION §7)
-      # tc_design without pr_number = was old initial entry point; now dead (harness-index v0.7:
-      #   standard path is req_review → Huahua designs TC inline; tc_design is fix-iteration only)
+      # tc_design with pr_number    = fix findings on existing TC PR (PANDAS-ORCHESTRATION §7)
+      # tc_design without pr_number = Telegram-triggered claim: Pandas cannot route to req_review
+      #   when a REQ needs TC design but arrives via Telegram claim path (pandas-heartbeat.sh
+      #   claim_review_ready_telegram); standard automation path uses req_review instead.
       if [[ -n "$pr_number" ]]; then
         info "tc_design (fix iteration) → harness.sh fix-review ${pr_number}"
         if bash "$REPO_ROOT/scripts/harness.sh" fix-review "$pr_number"; then
@@ -242,8 +243,35 @@ _process_message() {
           return 1
         fi
       else
-        warn "tc_design without pr_number is no longer a valid entry point (harness-index v0.7) — 移至 dead-letter"
-        return 1
+        info "tc_design (Telegram-triggered initial) → claude -p TC design for ${req_id}"
+        local req_file_td="tasks/features/${req_id}.md"
+        local req_content_td=""
+        [[ -f "$req_file_td" ]] && req_content_td="$(cat "$req_file_td")"
+        local tc_pr_td
+        tc_pr_td=$("${CLAUDE_CMD[@]}" --output-format json \
+          --json-schema '{"type":"object","properties":{"tc_pr_number":{"type":"string"}},"required":["tc_pr_number"]}' \
+          "Read harness/harness-index.md and harness/testing-standard.md.
+Do not ask clarifying questions — proceed with your best judgment at every step.
+
+Your task: design test cases for ${req_id} and open a TC PR.
+
+## REQ content
+${req_content_td:-"(REQ file not found at ${req_file_td}. Use the req_id to locate it.)"}
+
+## Steps
+1. Create branch feat/${req_id} (single-PR rule, REQ-039 — Menglan will add impl commits to this same branch)
+2. Read the REQ acceptance criteria carefully
+3. For each acceptance criterion, write at least one test case file under tasks/test-cases/
+4. Update ${req_file_td}: status → test_designed, test_case_ref populated; commit
+5. Push branch: git push -u origin feat/${req_id}
+6. Open TC PR: gh pr create --fill; capture PR number
+7. Return {\"tc_pr_number\":\"<N>\"}" \
+          2>/dev/null | jq -r '.structured_output.tc_pr_number // empty' 2>/dev/null || true)
+        if [[ -z "$tc_pr_td" ]]; then
+          warn "tc_design (initial): claude failed to return tc_pr_number — 移至 dead-letter"
+          return 1
+        fi
+        _write_tc_review_to_menglan "$req_id" "$tc_pr_td" "feat/${req_id}" "0"
       fi
       ;;
     code_review)

@@ -359,6 +359,7 @@ Steps:
 8. Write the PR number back to ${req_file} frontmatter: pr_number: <N>
    (Pandas archive_merged_reqs depends on this field — do not skip)
    Commit message: 'chore: set pr_number for ${req_id}'
+   Then push: git push (so the pr_number commit reaches the remote branch)
 "
 
   "${CLAUDE_CMD[@]}" "$prompt"

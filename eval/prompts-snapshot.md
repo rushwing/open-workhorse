@@ -32,13 +32,14 @@ Steps:
 8. Write the PR number back to ${req_file} frontmatter: pr_number: <N>
    (Pandas archive_merged_reqs depends on this field — do not skip)
    Commit message: 'chore: set pr_number for ${req_id}'
+   Then push: git push (so the pr_number commit reaches the remote branch)
 ```
 
 ---
 
 ## harness.sh · cmd_bugfix
 
-**Source:** `scripts/harness.sh` (around line 408)
+**Source:** `scripts/harness.sh` (around line 409)
 
 ```
 Read harness/bug-standard.md.
@@ -59,7 +60,7 @@ Steps:
 
 ## harness.sh · cmd_fix_review
 
-**Source:** `scripts/harness.sh` (around line 446)
+**Source:** `scripts/harness.sh` (around line 447)
 
 ```
 Read harness/review-standard.md.
@@ -95,7 +96,7 @@ Do NOT merge the PR — HITL merge only.
 
 ## harness.sh · cmd_tc_review
 
-**Source:** `scripts/harness.sh` (around line 539)
+**Source:** `scripts/harness.sh` (around line 540)
 
 ```
 Read harness/testing-standard.md.
@@ -139,7 +140,7 @@ Rules:
 
 ## huahua-heartbeat.sh · code_review
 
-**Source:** `scripts/huahua-heartbeat.sh` (around line 272)
+**Source:** `scripts/huahua-heartbeat.sh` (around line 300)
 
 ```
 Read harness/review-standard.md.
@@ -171,7 +172,7 @@ ${pr_diff}
 
 ## huahua-heartbeat.sh · req_review
 
-**Source:** `scripts/huahua-heartbeat.sh` (around line 335)
+**Source:** `scripts/huahua-heartbeat.sh` (around line 363)
 
 ```
 Read harness/harness-index.md, harness/requirement-standard.md, and harness/bug-standard.md.
