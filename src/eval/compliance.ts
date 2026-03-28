@@ -85,14 +85,16 @@ export function evaluateFixture(id: string, data: BranchData): FixtureResult {
   let reviewResult: StepResult;
 
   if (!claimPass) {
-    preCommitResult = '-';
-    reviewResult = '-';
+    // ② pre-commit depends on claim commit existing — skip it
+    // ③ review checks latest REQ frontmatter independently — always evaluate
+    const reviewPass = data.reqFileContent !== null && checkReview(data.reqFileContent);
+    reviewResult = reviewPass ? '✓' : '✗';
     return {
       id,
       claim: '✗',
-      preCommit: preCommitResult,
+      preCommit: '-',
       review: reviewResult,
-      score: 0,
+      score: reviewPass ? 1 : 0,
       notRun: false,
     };
   }

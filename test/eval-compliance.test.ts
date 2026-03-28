@@ -3,19 +3,12 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, readFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
-
 import {
   evaluateFixture,
   runEval,
   renderReport,
   type BranchData,
-  type EvalResult,
 } from '../src/eval/compliance.js';
-
-const PROJECT_ROOT = process.cwd();
 
 // ---------------------------------------------------------------------------
 // Mock data helpers
@@ -119,9 +112,9 @@ describe('TC-040-02: missing claim commit → exit 1, ① ✗', () => {
 
     const e001 = result.fixtures.find(f => f.id === 'REQ-E001')!;
     assert.equal(e001.claim, '✗', 'claim should be ✗');
-    assert.equal(e001.preCommit, '-', 'preCommit should be - (skipped after claim fail)');
-    assert.equal(e001.review, '-', 'review should be - (skipped after claim fail)');
-    assert.equal(e001.score, 0);
+    assert.equal(e001.preCommit, '-', 'preCommit should be - (skipped: depends on claim commit)');
+    assert.equal(e001.review, '✓', 'review should be ✓ (evaluated independently of claim)');
+    assert.equal(e001.score, 1, 'score 1: only review passes');
 
     assert.equal(result.exitCode, 1, 'exit code should be 1');
   });
@@ -255,27 +248,14 @@ describe('TC-040-05: --update-baseline → baseline.json updated, exit 0', () =>
     assert.equal(result.regressionDetected, false, 'no regression when updating baseline');
   });
 
-  test('--update-baseline CLI flag writes baseline.json and exits 0', () => {
-    // Use a temp directory to avoid polluting eval/baseline.json
-    const tmpDir = join(PROJECT_ROOT, 'eval', '_test_tmp');
-    const baselineFile = join(tmpDir, 'baseline.json');
+  test('--update-baseline CLI flag: runEval exits 0 with 100% compliance', () => {
+    // We test the core logic directly — the CLI would write to eval/baseline.json.
+    const getData = (_id: string): BranchData => compliantData();
+    const result = runEval(['REQ-E001', 'REQ-E002', 'REQ-E003'], getData, 1.0, true);
 
-    try {
-      mkdirSync(tmpDir, { recursive: true });
-      writeFileSync(baselineFile, JSON.stringify({ compliance: 1.0 }));
-
-      // We test the core logic directly — the CLI would write to eval/baseline.json
-      // in the real project root. Here we verify the updateBaseline=true path.
-      const getData = (_id: string): BranchData => compliantData();
-      const result = runEval(['REQ-E001', 'REQ-E002', 'REQ-E003'], getData, 1.0, true);
-
-      assert.equal(result.exitCode, 0);
-      // Compliance should reflect current run
-      const expected = parseFloat(result.compliance.toFixed(4));
-      assert.equal(expected, 1.0);
-    } finally {
-      if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
-    }
+    assert.equal(result.exitCode, 0);
+    const expected = parseFloat(result.compliance.toFixed(4));
+    assert.equal(expected, 1.0);
   });
 
   test('renderReport contains "Baseline updated" when passed update confirmation', () => {
