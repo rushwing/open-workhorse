@@ -557,7 +557,7 @@ ${tc_body}
               | grep -E "^tasks/test-cases/${req_hint}-" || true)
 
     if [[ -z "$tc_files_found" ]]; then
-      warn "origin/main 上未找到 ${req_hint} 的 TC 文件（pattern: ${tc_pattern}）" >&2
+      warn "origin/main 上未找到 ${req_hint} 的 TC 文件（pattern: ${tc_pattern}）"
     fi
   fi
 
