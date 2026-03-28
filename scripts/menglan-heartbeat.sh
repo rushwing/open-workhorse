@@ -190,8 +190,24 @@ _process_message() {
       # REQ-039: if branch_name is set, pass as EXISTING_BRANCH so harness.sh reuses Huahua's TC branch
       local impl_branch_name
       impl_branch_name="$(_get_fm_field "$msg_file" "branch_name")"
-      info "路由 implement → FORCE=true harness.sh implement ${req_id}${impl_branch_name:+ (EXISTING_BRANCH=${impl_branch_name})}"
-      FORCE=true EXISTING_BRANCH="$impl_branch_name" bash "$REPO_ROOT/scripts/harness.sh" implement "$req_id"
+
+      # Fast-path: if the REQ is already in status=review (implementation done, PR open),
+      # skip re-running harness.sh implement and go straight to code_review dispatch.
+      # This handles the case where tc_complete(success) is re-delivered after a prior
+      # implement run that completed but failed to dispatch code_review (e.g. due to a
+      # heartbeat crash or the .env SHARED_RESOURCES_ROOT misconfiguration).
+      local current_status
+      current_status="$(git show "origin/main:tasks/features/${req_id}.md" 2>/dev/null \
+        | awk -F': ' '/^status:/{print $2; exit}' \
+        || _get_fm_field "$REPO_ROOT/tasks/features/${req_id}.md" "status" 2>/dev/null \
+        || echo "")"
+      if [[ "$current_status" == "review" ]]; then
+        info "${req_id} already status=review — skipping re-implement, dispatching code_review directly"
+      else
+        info "路由 implement → FORCE=true harness.sh implement ${req_id}${impl_branch_name:+ (EXISTING_BRANCH=${impl_branch_name})}"
+        FORCE=true EXISTING_BRANCH="$impl_branch_name" bash "$REPO_ROOT/scripts/harness.sh" implement "$req_id"
+      fi
+
       # After implement success: dispatch code_review directly to Huahua (direct-loop design).
       # Fail-closed: Pandas is no longer on the review-dispatch path, so a missed
       # dispatch has no automatic retry. Return 1 so Pandas is notified to intervene.
