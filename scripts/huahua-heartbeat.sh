@@ -298,28 +298,48 @@ ${req_content_td:-"(REQ file not found at ${req_file_td}. Use the req_id to loca
       local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["APPROVED","NEEDS_CHANGES"]},"summary":{"type":"string"}},"required":["verdict","summary"]}'
       local raw_result; local claude_rc
       raw_result=$("${CLAUDE_CMD[@]}" --output-format json --json-schema "$_schema" \
-        "Read harness/review-standard.md.
+        "Read harness/review-standard.md and harness/testing-standard.md.
 Do not ask clarifying questions — proceed with your best judgment.
 
 Your task: review dev PR #${pr_number} for ${req_id}.
 
-## REQ contract (acceptance criteria)
+## REQ contract
 ${req_content_cr:-"(REQ file not found — judge implementation against PR description only)"}
 
-## Diff
+## Diff (pre-fetched for reference — Step 0 below supersedes this for full context)
 ${pr_diff}
 
 ## Steps
-1. Read the diff and any referenced files
-2. Review against the REQ contract above and harness/review-standard.md §Review 关注点:
-   - Contractual consistency: each acceptance criterion must be traceable to the implementation
+
+0. MANDATORY FIRST STEP — check out the PR branch to access full file context:
+   gh pr checkout ${pr_number}
+   Do not skip this step. The diff alone is insufficient for a complete review.
+
+1. AC traceability (do this before anything else):
+   For EACH Acceptance Criterion listed in the REQ contract above:
+   a. Find the exact code location (file + line range) that satisfies it.
+   b. If you cannot find a satisfying implementation → label [BLOCK]: AC not implemented: '<criterion text>'
+   You must check every AC. Do not assume an AC is covered if you cannot locate the evidence.
+
+2. Review the full implementation against harness/review-standard.md §Review 关注点:
+   - Contractual consistency: every AC from Step 1 must be traceable
    - Security: no command injection, no secrets in logs, env vars via .env
-   - Test quality: key branches covered, mock strategy per testing-standard.md §2.1
-   - Readability: clear naming, complex logic has why-comments
-3. Label each finding with [BLOCK] (must fix before merge) or [NIT]/[SUGGEST] (non-blocking)
-4. Post review:
-   gh pr review ${pr_number} --request-changes -b '<findings>'   (if any [BLOCK] exists)
-   OR: gh pr review ${pr_number} --approve -b 'LGTM'             (no [BLOCK] findings)
+   - Test quality: key branches AND error paths covered, mock strategy per testing-standard.md §2.1
+   - Readability: clear naming, complex logic has why-comments (why, not what)
+
+3. Label every finding:
+   [BLOCK]   — must fix before merge (unimplemented AC, logic error, security issue, untested critical path)
+   [NIT]     — minor style or naming issue (non-blocking)
+   [SUGGEST] — optional improvement (non-blocking)
+   Each finding must state: what is wrong, where (file:line), what the fix requires.
+   Do not omit findings to keep the review short.
+
+4. Post the review to GitHub:
+   If any [BLOCK] exists:
+     gh pr review ${pr_number} --request-changes -b '<all findings>'
+   If zero [BLOCK] findings:
+     gh pr review ${pr_number} --approve -b 'LGTM. <brief summary of what was checked>'
+
 5. Return ONLY your structured verdict (do NOT write any inbox files — the harness handles that)." \
       2>&1); claude_rc=$?
 
