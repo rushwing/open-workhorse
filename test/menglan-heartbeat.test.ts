@@ -343,6 +343,99 @@ test("TC-MENGLAN-M06: fix_review message (pr=74, iter=1) + harness exits 0 → c
 
 // ── TC-MENGLAN-M07: implement success but no open PR → fail-closed (return 1) ──
 
+// ── TC-MENGLAN-M08: implement message when REQ already status=review → skip harness, dispatch code_review ──
+// Regression guard for: REQ already implemented (status=review, PR open) but code_review was
+// never dispatched (e.g. heartbeat ran with wrong SHARED_RESOURCES_ROOT). When implement message
+// is re-delivered, heartbeat must NOT re-run harness.sh implement; it must go straight to
+// code_review dispatch.
+
+test("TC-MENGLAN-M08: implement message + REQ already status=review → harness NOT called, code_review dispatched", async () => {
+  const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-menglan-m08-${Date.now()}`);
+  await setupTmpEnv(tmpDir, "", 0);
+  await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
+  await mkdir(join(tmpDir, "tasks", "features"), { recursive: true });
+
+  // REQ file already status=review (impl done, PR open)
+  await writeFile(
+    join(tmpDir, "tasks", "features", "REQ-943.md"),
+    "---\nreq_id: REQ-943\nstatus: review\nowner: menglan\n---\n",
+    "utf8",
+  );
+
+  const msgFile = join(tmpDir, "inbox", "for-menglan", "pending", "2026-03-28-implement-req-943.md");
+  await writeFile(
+    msgFile,
+    "---\ntype: request\naction: implement\nreq_id: REQ-943\nbranch_name: feat/REQ-943\n---\n",
+    "utf8",
+  );
+
+  try {
+    const result = await runBash(
+      `gh() {
+         if [[ "$*" == *"pr list"* ]]; then
+           echo "99"
+         fi
+         return 0
+       }
+       export -f gh
+       # Mock git show to return the REQ file content (simulates origin/main lookup)
+       git() {
+         if [[ "$*" == *"show"*"REQ-943.md"* ]]; then
+           cat "${tmpDir}/tasks/features/REQ-943.md"
+           return 0
+         fi
+         command git "$@"
+       }
+       export -f git
+       SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
+         source "${SCRIPT}" 2>/dev/null
+       gh() {
+         if [[ "$*" == *"pr list"* ]]; then
+           echo "99"
+         fi
+         return 0
+       }
+       export -f gh
+       git() {
+         if [[ "$*" == *"show"*"REQ-943.md"* ]]; then
+           cat "${tmpDir}/tasks/features/REQ-943.md"
+           return 0
+         fi
+         command git "$@"
+       }
+       export -f git
+       INBOX_ROOT="${tmpDir}/inbox"
+       _process_message "${msgFile}"`,
+      { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
+    );
+
+    assert.equal(result.code, 0,
+      `_process_message should succeed. stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+    // harness.sh should NOT have been called (skip re-implement)
+    const harnessLog = await readFile(join(tmpDir, "harness_calls.log"), "utf8").catch(() => "");
+    assert.equal(harnessLog, "",
+      `harness.sh should NOT be called when REQ is already status=review. log: ${harnessLog}`);
+
+    // code_review should be dispatched to for-huahua/pending/
+    const huahuaFiles = (await readdir(join(tmpDir, "inbox", "for-huahua", "pending")).catch(() => [] as string[])).filter((f) => f.endsWith(".md"));
+    assert.ok(huahuaFiles.length > 0,
+      `code_review should be dispatched to for-huahua/pending/. stdout: ${result.stdout}`);
+
+    const content = await readFile(join(tmpDir, "inbox", "for-huahua", "pending", huahuaFiles[0]!), "utf8");
+    assert.ok(content.includes("action: code_review"),
+      `Message should have action: code_review. content:\n${content}`);
+    assert.ok(content.includes("pr_number: 99"),
+      `Message should carry pr_number: 99. content:\n${content}`);
+    assert.ok(content.includes("req_id: REQ-943"),
+      `Message should carry req_id: REQ-943. content:\n${content}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+// ── TC-MENGLAN-M07: implement success but no open PR → fail-closed (return 1) ──
+
 test("TC-MENGLAN-M07: implement success but gh pr list returns empty → handler returns 1 (fail-closed)", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-menglan-m07-${Date.now()}`);
   await setupTmpEnv(tmpDir, "", 0);
