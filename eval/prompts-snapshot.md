@@ -96,7 +96,7 @@ Do NOT merge the PR — HITL merge only.
 
 ## harness.sh · cmd_tc_review
 
-**Source:** `scripts/harness.sh` (around line 540)
+**Source:** `scripts/harness.sh` (around line 566)
 
 ```
 Read harness/testing-standard.md.
@@ -107,9 +107,15 @@ Do not ask clarifying questions — proceed with your best judgment at every ste
 ### REQ contract (acceptance criteria + test case design notes)
 ${req_contract:-"(REQ file not found — judge TCs against PR description only)"}
 
-### Full PR diff (all changed files, untruncated)
+### Existing TC files on main (committed during tc_design phase — NOT in the PR diff)
+Note: TC files are merged to main during the test-case design phase, BEFORE the
+implementation PR is opened. The PR diff below contains only implementation code.
+You MUST evaluate TC coverage using the TC files in this section, not the PR diff.
+${existing_tc_content:-"(No TC files found on main for ${req_hint} — check tasks/test-cases/)"}
+
+### Full PR diff (implementation code only — TC files will NOT appear here)
 \`\`\`diff
-${pr_diff}
+${pr_diff:-"(empty diff — no changed files in this PR)"}
 \`\`\`
 
 ### Existing review comments (may be empty if no prior review round)
@@ -119,10 +125,15 @@ ${top_comments:-"(none)"}
 ${inline_comments:-"(none)"}
 
 ## Your task
-Review TC coverage in PR #${pr_num}${req_hint:+ for ${req_hint}} against the REQ contract above.
-Each acceptance criterion must be traceable to at least one TC.
+Review TC coverage for PR #${pr_num}${req_hint:+ (${req_hint})} against the REQ contract above.
 
-For each TC in the diff, label it exactly one of:
+IMPORTANT: The TC files are listed under "Existing TC files on main" above.
+The PR diff contains only implementation code — the absence of TC files in the diff
+does NOT mean TCs are missing. Evaluate coverage using the TC files on main.
+
+Each acceptance criterion in the REQ contract must be traceable to at least one TC.
+
+For each TC in the "Existing TC files on main" section, label it exactly one of:
 - **adequate** — covers the stated acceptance criterion
 - **missing-branch** — acceptance criterion exists but no TC covers it
 - **redundant** — duplicates another TC without adding coverage value

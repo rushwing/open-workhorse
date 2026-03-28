@@ -524,15 +524,41 @@ cmd_tc_review() {
 
   log_session "tc-review" "#$pr_num"
 
-  # Fetch full PR diff via gh (works for same-repo and fork PRs) — fail closed on error or empty
+  # Fetch full PR diff via gh (works for same-repo and fork PRs) — fail closed on error
   local pr_diff
   pr_diff="$(gh pr diff "$pr_num" 2>/dev/null)" || {
     err "无法获取 PR #${pr_num} diff — 检查 gh 认证和网络（tc-review 拒绝在无 diff 时执行）"
     exit 1
   }
-  if [[ -z "$pr_diff" ]]; then
-    err "PR #${pr_num} diff 为空 — 无 TC 内容可 review"
-    exit 1
+  # NOTE: empty diff is allowed — impl-only PRs legitimately have no TC files in their diff.
+  # TC files may already be on main (committed during tc_design phase); we load them below.
+
+  # Load existing TC files for this REQ from origin/main (committed during tc_design phase).
+  # These files are NOT in the PR diff when the PR only contains implementation code.
+  # Without this, Claude sees impl code but no TCs and always returns NEEDS_CHANGES.
+  local existing_tc_content=""
+  if [[ -n "$req_hint" ]]; then
+    local tc_pattern="tasks/test-cases/${req_hint}-*.md"
+    local tc_files_found=""
+    # Try git show from origin/main first (works even from a feature branch)
+    while IFS= read -r tc_path; do
+      local tc_body
+      tc_body="$(git show "origin/main:${tc_path}" 2>/dev/null || true)"
+      if [[ -n "$tc_body" ]]; then
+        existing_tc_content+="### ${tc_path}
+\`\`\`markdown
+${tc_body}
+\`\`\`
+
+"
+        tc_files_found="yes"
+      fi
+    done < <(git ls-tree -r --name-only origin/main -- "tasks/test-cases/" 2>/dev/null \
+              | grep -E "^tasks/test-cases/${req_hint}-" || true)
+
+    if [[ -z "$tc_files_found" ]]; then
+      warn "origin/main 上未找到 ${req_hint} 的 TC 文件（pattern: ${tc_pattern}）"
+    fi
   fi
 
   local prompt
@@ -544,9 +570,15 @@ Do not ask clarifying questions — proceed with your best judgment at every ste
 ### REQ contract (acceptance criteria + test case design notes)
 ${req_contract:-"(REQ file not found — judge TCs against PR description only)"}
 
-### Full PR diff (all changed files, untruncated)
+### Existing TC files on main (committed during tc_design phase — NOT in the PR diff)
+Note: TC files are merged to main during the test-case design phase, BEFORE the
+implementation PR is opened. The PR diff below contains only implementation code.
+You MUST evaluate TC coverage using the TC files in this section, not the PR diff.
+${existing_tc_content:-"(No TC files found on main for ${req_hint} — check tasks/test-cases/)"}
+
+### Full PR diff (implementation code only — TC files will NOT appear here)
 \`\`\`diff
-${pr_diff}
+${pr_diff:-"(empty diff — no changed files in this PR)"}
 \`\`\`
 
 ### Existing review comments (may be empty if no prior review round)
@@ -556,10 +588,15 @@ ${top_comments:-"(none)"}
 ${inline_comments:-"(none)"}
 
 ## Your task
-Review TC coverage in PR #${pr_num}${req_hint:+ for ${req_hint}} against the REQ contract above.
-Each acceptance criterion must be traceable to at least one TC.
+Review TC coverage for PR #${pr_num}${req_hint:+ (${req_hint})} against the REQ contract above.
 
-For each TC in the diff, label it exactly one of:
+IMPORTANT: The TC files are listed under "Existing TC files on main" above.
+The PR diff contains only implementation code — the absence of TC files in the diff
+does NOT mean TCs are missing. Evaluate coverage using the TC files on main.
+
+Each acceptance criterion in the REQ contract must be traceable to at least one TC.
+
+For each TC in the "Existing TC files on main" section, label it exactly one of:
 - **adequate** — covers the stated acceptance criterion
 - **missing-branch** — acceptance criterion exists but no TC covers it
 - **redundant** — duplicates another TC without adding coverage value
