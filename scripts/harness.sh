@@ -485,12 +485,14 @@ cmd_tc_review() {
   info "获取 TC PR #${pr_num} 的 review comments..."
 
   local top_comments inline_comments
-  top_comments="$(gh pr view "$pr_num" --json reviews --jq '.reviews[] | "### Review by \(.author.login) [\(.state)]\n\(.body)"' 2>/dev/null || echo "(无法获取 review，请确认 gh 已认证)")"
+  top_comments="$(gh pr view "$pr_num" --json reviews --jq '.reviews[] | "### Review by \(.author.login) [\(.state)]\n\(.body)"' 2>/dev/null \
+    || echo "(无法获取 review，请确认 gh 已认证)")"
   if [[ -z "$GH_REPO" ]]; then
     err "无法解析仓库 owner/repo，请确认 gh 已认证且当前目录是 GitHub 仓库"
     exit 1
   fi
-  inline_comments="$(gh api "repos/${GH_REPO}/pulls/${pr_num}/comments" --jq '.[] | "File: \(.path) line \(.line // .original_line)\nComment: \(.body)\nID: \(.id)"' 2>/dev/null || echo "(无法获取 inline comments)")"
+  inline_comments="$(gh api "repos/${GH_REPO}/pulls/${pr_num}/comments" --jq '.[] | "File: \(.path) line \(.line // .original_line)\nComment: \(.body)\nID: \(.id)"' 2>/dev/null \
+    || echo "(无法获取 inline comments)")"
 
   # 从三个来源依次提取 REQ id，优先级：branch name > PR title > changed files
   local pr_info req_hint=""
@@ -538,7 +540,12 @@ cmd_tc_review() {
   # Without this, Claude sees impl code but no TCs and always returns NEEDS_CHANGES.
   local existing_tc_content=""
   if [[ -n "$req_hint" ]]; then
-    local tc_pattern="tasks/test-cases/${req_hint}-*.md"
+    # TC files use the naming convention TC-<NUM>-*.md (e.g. TC-040-01.md),
+    # while req_hint is REQ-040. Extract the numeric part to build the correct pattern.
+    local req_num
+    req_num="$(echo "$req_hint" | grep -oE '[0-9]+')"
+    local tc_prefix="TC-${req_num}"
+    local tc_pattern="tasks/test-cases/${tc_prefix}-*.md"
     local tc_files_found=""
     # Try git show from origin/main first (works even from a feature branch)
     while IFS= read -r tc_path; do
@@ -554,64 +561,61 @@ ${tc_body}
         tc_files_found="yes"
       fi
     done < <(git ls-tree -r --name-only origin/main -- "tasks/test-cases/" 2>/dev/null \
-              | grep -E "^tasks/test-cases/${req_hint}-" || true)
+              | grep -E "^tasks/test-cases/${tc_prefix}-" || true)
 
     if [[ -z "$tc_files_found" ]]; then
       warn "origin/main 上未找到 ${req_hint} 的 TC 文件（pattern: ${tc_pattern}）"
     fi
   fi
 
-  local prompt
-  prompt="Read harness/testing-standard.md.
-Do not ask clarifying questions — proceed with your best judgment at every step.
+  # Build prompt in a temp file using only printf/cat — no shell string interpolation.
+  # This avoids bash interpreting backticks or $(...) inside external file content
+  # (REQ files, TC files, PR diff, review comments all contain backtick-fenced code blocks).
+  # The temp file is fed to claude via stdin (< prompt_file), never as a shell argument.
+  local prompt_file
+  prompt_file="$(mktemp /tmp/tc-review-prompt.XXXXXX)"
+  trap 'rm -f "$prompt_file"' RETURN
 
-## Pre-fetched context for TC PR #${pr_num}${req_hint:+ (${req_hint})}
-
-### REQ contract (acceptance criteria + test case design notes)
-${req_contract:-"(REQ file not found — judge TCs against PR description only)"}
-
-### Existing TC files on main (committed during tc_design phase — NOT in the PR diff)
-Note: TC files are merged to main during the test-case design phase, BEFORE the
-implementation PR is opened. The PR diff below contains only implementation code.
-You MUST evaluate TC coverage using the TC files in this section, not the PR diff.
-${existing_tc_content:-"(No TC files found on main for ${req_hint} — check tasks/test-cases/)"}
-
-### Full PR diff (implementation code only — TC files will NOT appear here)
-\`\`\`diff
-${pr_diff:-"(empty diff — no changed files in this PR)"}
-\`\`\`
-
-### Existing review comments (may be empty if no prior review round)
-${top_comments:-"(none)"}
-
-### Inline review comments (may be empty)
-${inline_comments:-"(none)"}
-
-## Your task
-Review TC coverage for PR #${pr_num}${req_hint:+ (${req_hint})} against the REQ contract above.
-
-IMPORTANT: The TC files are listed under "Existing TC files on main" above.
-The PR diff contains only implementation code — the absence of TC files in the diff
-does NOT mean TCs are missing. Evaluate coverage using the TC files on main.
-
-Each acceptance criterion in the REQ contract must be traceable to at least one TC.
-
-For each TC in the "Existing TC files on main" section, label it exactly one of:
-- **adequate** — covers the stated acceptance criterion
-- **missing-branch** — acceptance criterion exists but no TC covers it
-- **redundant** — duplicates another TC without adding coverage value
-
-Rules:
-1. Report findings only — do NOT modify any TC files
-2. Do not ask clarifying questions
-3. You MUST end your response with exactly one of these two lines (no trailing text):
-   \`tc-review: APPROVED\`   — when all criteria are covered (all TCs adequate, no missing branches)
-   \`tc-review: NEEDS_CHANGES\`   — when any criterion is uncovered or a TC is labelled missing-branch
-4. The conclusion line is REQUIRED even if there are no prior review comments to address
-"
+  {
+    printf 'Read harness/testing-standard.md.\n'
+    printf 'Do not ask clarifying questions — proceed with your best judgment at every step.\n'
+    printf '\n## Pre-fetched context for TC PR #%s%s\n' \
+      "$pr_num" "${req_hint:+ ($req_hint)}"
+    printf '\n### REQ contract (acceptance criteria + test case design notes)\n'
+    printf '%s\n' "${req_contract:-(REQ file not found — judge TCs against PR description only)}"
+    printf '\n### Existing TC files on main (committed during tc_design phase — NOT in the PR diff)\n'
+    printf 'Note: TC files are merged to main during the test-case design phase, BEFORE the\n'
+    printf 'implementation PR is opened. The PR diff below contains only implementation code.\n'
+    printf 'You MUST evaluate TC coverage using the TC files in this section, not the PR diff.\n'
+    printf '%s\n' "${existing_tc_content:-(No TC files found on main for ${req_hint} — check tasks/test-cases/)}"
+    printf '\n### Full PR diff (implementation code only — TC files will NOT appear here)\n'
+    printf '```diff\n%s\n```\n' "${pr_diff:-(empty diff — no changed files in this PR)}"
+    printf '\n### Existing review comments (may be empty if no prior review round)\n'
+    printf '%s\n' "${top_comments:-(none)}"
+    printf '\n### Inline review comments (may be empty)\n'
+    printf '%s\n' "${inline_comments:-(none)}"
+    printf '\n## Your task\n'
+    printf 'Review TC coverage for PR #%s%s against the REQ contract above.\n\n' \
+      "$pr_num" "${req_hint:+ ($req_hint)}"
+    printf 'IMPORTANT: The TC files are listed under "Existing TC files on main" above.\n'
+    printf 'The PR diff contains only implementation code — the absence of TC files in the diff\n'
+    printf 'does NOT mean TCs are missing. Evaluate coverage using the TC files on main.\n\n'
+    printf 'Each acceptance criterion in the REQ contract must be traceable to at least one TC.\n\n'
+    printf '%s\n' 'For each TC in the "Existing TC files on main" section, label it exactly one of:'
+    printf '%s\n' '- **adequate** — covers the stated acceptance criterion'
+    printf '%s\n' '- **missing-branch** — acceptance criterion exists but no TC covers it'
+    printf '%s\n' '- **redundant** — duplicates another TC without adding coverage value'
+    printf '\n%s\n' 'Rules:'
+    printf '%s\n' '1. Report findings only — do NOT modify any TC files'
+    printf '%s\n' '2. Do not ask clarifying questions'
+    printf '%s\n' '3. You MUST end your response with exactly one of these two lines (no trailing text):'
+    printf '%s\n' '   `tc-review: APPROVED`   — when all criteria are covered (all TCs adequate, no missing branches)'
+    printf '%s\n' '   `tc-review: NEEDS_CHANGES`   — when any criterion is uncovered or a TC is labelled missing-branch'
+    printf '%s\n' '4. The conclusion line is REQUIRED even if there are no prior review comments to address'
+  } > "$prompt_file"
 
   local review_output
-  review_output="$("${CLAUDE_CMD[@]}" "$prompt")"
+  review_output="$("${CLAUDE_CMD[@]}" < "$prompt_file")"
   local claude_rc=$?
   if [[ $claude_rc -ne 0 ]]; then
     err "claude 退出 ${claude_rc} — tc-review worker failure"
