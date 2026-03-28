@@ -41,7 +41,8 @@
     "bug:sync:dry": "bash scripts/sync-user-bugs.sh --dry-run",
     "harness:status": "bash scripts/harness.sh status",
     "memory:init": "bash scripts/init-memory.sh",
-    "runbook:render": "bash scripts/render-runbook.sh"
+    "runbook:render": "bash scripts/render-runbook.sh",
+    "eval:compliance": "node --import tsx src/eval/compliance.ts"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
