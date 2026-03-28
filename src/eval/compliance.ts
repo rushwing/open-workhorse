@@ -57,8 +57,7 @@ export function checkClaim(gitLog: string): boolean {
   return CLAIM_OWNER_PATTERN.test(gitLog) && CLAIM_STATUS_PATTERN.test(gitLog);
 }
 
-export function checkPreCommit(gitLog: string, claimCommitHash: string | null): boolean {
-  if (!claimCommitHash) return false;
+export function checkPreCommit(gitLog: string): boolean {
   // Split log into commits by "commit <sha>" lines
   const commits = gitLog.split(/^commit [0-9a-f]{40}/m).filter(s => s.trim().length > 0);
   // The first commit is newest (git log default order: newest first)
@@ -75,34 +74,12 @@ export function checkReview(reqFileContent: string): boolean {
   return REVIEW_STATUS_PATTERN.test(reqFileContent);
 }
 
-function extractClaimHash(gitLog: string): string | null {
-  const lines = gitLog.split('\n');
-  let currentHash: string | null = null;
-  for (const line of lines) {
-    const hashMatch = line.match(/^commit ([0-9a-f]{40})/);
-    if (hashMatch) {
-      currentHash = hashMatch[1];
-    }
-    // Check if this "block" contains the claim markers — we accumulate until next "commit" line
-  }
-  // Use a different approach: split on commit boundaries
-  const commitBlocks = gitLog.split(/(?=^commit [0-9a-f]{40})/m);
-  for (const block of commitBlocks) {
-    if (CLAIM_OWNER_PATTERN.test(block) && CLAIM_STATUS_PATTERN.test(block)) {
-      const m = block.match(/^commit ([0-9a-f]{40})/m);
-      return m ? m[1] : null;
-    }
-  }
-  return null;
-}
-
 export function evaluateFixture(id: string, data: BranchData): FixtureResult {
   if (data.gitLog === null) {
     return { id, claim: '-', preCommit: '-', review: '-', score: 0, notRun: true };
   }
 
   const claimPass = checkClaim(data.gitLog);
-  const claimHash = claimPass ? extractClaimHash(data.gitLog) : null;
 
   let preCommitResult: StepResult;
   let reviewResult: StepResult;
@@ -120,7 +97,7 @@ export function evaluateFixture(id: string, data: BranchData): FixtureResult {
     };
   }
 
-  const preCommitPass = checkPreCommit(data.gitLog, claimHash);
+  const preCommitPass = checkPreCommit(data.gitLog);
   preCommitResult = preCommitPass ? '✓' : '✗';
 
   const reviewPass = data.reqFileContent !== null && checkReview(data.reqFileContent);
@@ -211,11 +188,6 @@ export function renderReport(result: EvalResult, date: string): string {
     if (result.regressionDetected) {
       baselineLine += ' — REGRESSION DETECTED';
     }
-  }
-
-  let baselineUpdated = '';
-  if (result.exitCode === 0 && result.baselineCompliance !== null) {
-    // This will be set externally when --update-baseline runs
   }
 
   return [header, tableHeader, ...rows, complianceLine, baselineLine].join('\n');
