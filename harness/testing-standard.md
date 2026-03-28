@@ -2,9 +2,9 @@
 harness_id: TEST-001
 component: testing / verification
 owner: Engineering
-version: 0.3
+version: 0.4
 status: active
-last_reviewed: 2026-03-21
+last_reviewed: 2026-03-28
 ---
 
 # Harness Standard — 测试与验证规程
@@ -231,6 +231,7 @@ bash scripts/check-req-coverage.sh  # REQ frontmatter 校验
 | 0.1 | 2026-03-15 | 初始版本；完整重写（从 hydro-om-copilot 改写）；删去 Playwright E2E、LLM Canary、Vitest、Python/FastAPI；改为 node:test + tsx；定义四层测试（L1–L4）；smoke:ui 不进 CI |
 | 0.2 | 2026-03-16 | 多 Agent 扩展（REQ-027）：新增 §10 TC 所有权流转（Pandas→Huahua→Menglan 路径、打回规程、2 轮上限）|
 | 0.3 | 2026-03-21 | worktree 隔离（REQ-037）：新增 §2.5 Bash 脚本 L1 测试——node:test 中 source 脚本、PATH 注入 mock git binary；以 test/pandas-heartbeat.test.ts TC-037 为范例 |
+| 0.4 | 2026-03-28 | REQ-040 事后固化：新增 §10.7 tc-review 技术实现约束（TC 文件在 main 上而非 PR diff、TC 文件命名规范、prompt bash 注入防护、menglan worktree .env 要求）|
 
 ---
 
@@ -287,3 +288,38 @@ Pandas (orchestrate, status=ready)
 | TC review 通过 | `tc-approved: TC-xxx REQ-xxx by menglan` |
 | TC review 打回 | `tc-rejected: TC-xxx REQ-xxx by menglan (round N)` |
 | TC 修复后重提 | `tc-revised: TC-xxx for REQ-xxx by huahua (round N)` |
+
+### 10.7 tc-review 技术实现约束
+
+**TC 文件存放位置与 PR diff 的关系**
+
+TC 文件（`tasks/test-cases/TC-xxx-*.md`）在 `tc_design` 阶段由 Huahua 直接合入 `main`，
+**不会出现在实现 PR 的 diff 里**。实现 PR 只包含代码变更。
+
+`harness.sh tc-review` 因此必须从 `origin/main` 读取 TC 文件，而非从 PR diff 提取。
+当前实现通过 `git ls-tree + git show origin/main:<path>` 加载对应 REQ 的全部 TC 文件，
+并注入 prompt 的独立段落，明确告知 Claude "TC 文件在 main 上，PR diff 里看不到是预期行为"。
+
+**TC 文件命名规范**
+
+TC 文件名格式为 `TC-<NUM>-<seq>.md`（如 `TC-040-01.md`），其中 `<NUM>` 来自 REQ id 的数字部分。
+不是 `REQ-040-01.md`。harness 根据 REQ id 提取数字后构造正确前缀（`TC-040-*`）。
+
+**prompt 构造方式**
+
+外部内容（REQ 文件、TC 文件、PR diff、review comments）可能包含 backtick。
+若直接嵌入 bash double-quoted 字符串，backtick 会被 bash 当作命令替换执行。
+正确做法：使用 `{ printf '%s\n' ... } > tmpfile` 写 prompt 到临时文件，
+再以 stdin 重定向（`< tmpfile`）传给 claude，完全绕过 bash 字符串解析。
+
+**Menglan worktree .env 要求**
+
+`menglan-heartbeat.sh` 依赖 `SHARED_RESOURCES_ROOT` 确定 inbox 路径。
+此变量从 `workspace-menglan/open-workhorse/.env` 加载。
+worktree **不继承** pandas worktree 的 `.env`，需单独复制：
+
+```bash
+cp workspace-pandas/open-workhorse/.env workspace-menglan/open-workhorse/.env
+```
+
+缺少 `.env` 时 heartbeat 会使用错误的默认路径 `~/Dev/...`，静默退出，消息永远不被处理。
