@@ -288,6 +288,8 @@ Maximum **2 fix iterations** (matching TC loop policy).
 | `DEV_WATCHDOG_STALE_HOURS` | `4` | Stall detection threshold（dev-cycle-watchdog.sh） |
 | `AGENT_STALL_TIMEOUT_MINUTES` | `60` | Keep-alive watchdog 停滞阈值（分钟）；超过后向停滞 agent 发 keep-alive |
 | `MENGLAN_WORKTREE_ROOT` | `~/workspace-menglan/open-workhorse/` | Menglan 的 git worktree 路径 |
+| `CLAUDE_APPROVAL` | _(unset)_ | Menglan / harness 的 Claude CLI 权限参数覆盖；留空时改为 `claude -p`，默认未设置时使用 `--dangerously-skip-permissions` |
+| `CODEX_AUTO_APPROVE` | `1` | Huahua 的 Codex CLI 执行策略；未设置或非空时使用 `--dangerously-bypass-approvals-and-sandbox`，显式设为空字符串时改为 `--full-auto` |
 
 ---
 
