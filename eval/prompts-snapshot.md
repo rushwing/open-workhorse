@@ -96,7 +96,7 @@ Do NOT merge the PR — HITL merge only.
 
 ## huahua-heartbeat.sh · tc_design
 
-**Source:** `scripts/huahua-heartbeat.sh` (around line 253)
+**Source:** `scripts/huahua-heartbeat.sh` (around line 273)
 
 ```
 Read harness/harness-index.md and harness/testing-standard.md.
@@ -122,7 +122,7 @@ ${req_content_td:-"(REQ file not found at ${req_file_td}. Use the req_id to loca
 
 ## huahua-heartbeat.sh · code_review
 
-**Source:** `scripts/huahua-heartbeat.sh` (around line 301)
+**Source:** `scripts/huahua-heartbeat.sh` (around line 321)
 
 ```
 Read harness/review-standard.md and harness/testing-standard.md.
@@ -174,7 +174,7 @@ ${pr_diff}
 
 ## huahua-heartbeat.sh · req_review
 
-**Source:** `scripts/huahua-heartbeat.sh` (around line 384)
+**Source:** `scripts/huahua-heartbeat.sh` (around line 404)
 
 ```
 Read harness/harness-index.md, harness/requirement-standard.md, and harness/bug-standard.md.

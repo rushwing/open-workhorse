@@ -6,7 +6,7 @@
 #
 # 行为:
 #   inbox 为空 → 立即退出（零 token，~0.001s CPU）
-#   有消息    → 读取 type/req_id → 调用 harness.sh 或 claude -p 处理
+#   有消息    → 读取 type/req_id → 调用 harness.sh 或 codex exec 处理
 #             成功 → 删除消息
 #             失败 → 移至 dead-letter/ + 写 inbox/for-pandas/ 告警
 #
@@ -19,7 +19,7 @@ set -euo pipefail
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO_ROOT"
 
-# ── cron PATH 修复：确保 claude 和 node 可用 ──────────────────────────────────
+# ── cron PATH 修复：确保 codex 和 node 可用 ───────────────────────────────────
 export PATH="$HOME/.local/bin:$PATH"
 if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
   # shellcheck source=/dev/null
@@ -201,13 +201,33 @@ _process_message() {
   info "处理消息: type=${type} req_id=${req_id} pr=${pr_number:-none} status=${status:-none}"
   info "summary: ${summary}"
 
-  # harness.sh CLAUDE_CMD setup
-  CLAUDE_CMD=(claude --dangerously-skip-permissions -p)
-  if [[ -n "${CLAUDE_APPROVAL+x}" && -z "${CLAUDE_APPROVAL}" ]]; then
-    CLAUDE_CMD=(claude -p)
-  elif [[ -n "${CLAUDE_APPROVAL:-}" ]]; then
-    CLAUDE_CMD=(claude "$CLAUDE_APPROVAL" -p)
+  CODEX_CMD=(codex exec --cd "$REPO_ROOT" --skip-git-repo-check --color never)
+  if [[ -n "${CODEX_AUTO_APPROVE+x}" && -z "${CODEX_AUTO_APPROVE}" ]]; then
+    CODEX_CMD+=(--full-auto)
+  elif [[ -n "${CODEX_AUTO_APPROVE:-}" ]]; then
+    CODEX_CMD+=(--dangerously-bypass-approvals-and-sandbox)
+  else
+    CODEX_CMD+=(--dangerously-bypass-approvals-and-sandbox)
   fi
+
+  _run_codex_json() {
+    local schema_json="$1" prompt="$2"
+    local schema_file output_file stderr_file
+    schema_file="$(mktemp "${TMPDIR:-/tmp}/huahua-codex-schema.XXXXXX.json")"
+    output_file="$(mktemp "${TMPDIR:-/tmp}/huahua-codex-output.XXXXXX.json")"
+    stderr_file="$(mktemp "${TMPDIR:-/tmp}/huahua-codex-stderr.XXXXXX.log")"
+    printf '%s' "$schema_json" > "$schema_file"
+    if ! "${CODEX_CMD[@]}" --output-schema "$schema_file" --output-last-message "$output_file" "$prompt" \
+      >/dev/null 2>"$stderr_file"; then
+      cat "$stderr_file" >&2 || true
+      rm -f "$schema_file" "$output_file" "$stderr_file"
+      return 1
+    fi
+    cat "$output_file"
+    local cat_rc=$?
+    rm -f "$schema_file" "$output_file" "$stderr_file"
+    return $cat_rc
+  }
 
   # ATM Envelope 兼容路由：type=request → 按 action 规范化为 legacy type，统一走下方 case
   local resolved_type="$type"
@@ -243,13 +263,13 @@ _process_message() {
           return 1
         fi
       else
-        info "tc_design (Telegram-triggered initial) → claude -p TC design for ${req_id}"
+        info "tc_design (Telegram-triggered initial) → codex exec TC design for ${req_id}"
         local req_file_td="tasks/features/${req_id}.md"
         local req_content_td=""
         [[ -f "$req_file_td" ]] && req_content_td="$(cat "$req_file_td")"
         local tc_pr_td
-        tc_pr_td=$("${CLAUDE_CMD[@]}" --output-format json \
-          --json-schema '{"type":"object","properties":{"tc_pr_number":{"type":"string"}},"required":["tc_pr_number"]}' \
+        tc_pr_td=$(_run_codex_json \
+          '{"type":"object","properties":{"tc_pr_number":{"type":"string"}},"required":["tc_pr_number"]}' \
           "Read harness/harness-index.md and harness/testing-standard.md.
 Do not ask clarifying questions — proceed with your best judgment at every step.
 
@@ -267,9 +287,9 @@ ${req_content_td:-"(REQ file not found at ${req_file_td}. Use the req_id to loca
 5. Push branch: git push -u origin feat/${req_id}
 6. Open TC PR: gh pr create --fill; capture PR number
 7. Return {\"tc_pr_number\":\"<N>\"}" \
-          2>/dev/null | jq -r '.structured_output.tc_pr_number // empty' 2>/dev/null || true)
+          | jq -r '.tc_pr_number // empty' 2>/dev/null || true)
         if [[ -z "$tc_pr_td" ]]; then
-          warn "tc_design (initial): claude failed to return tc_pr_number — 移至 dead-letter"
+          warn "tc_design (initial): codex failed to return tc_pr_number — 移至 dead-letter"
           return 1
         fi
         _write_tc_review_to_menglan "$req_id" "$tc_pr_td" "feat/${req_id}" "0"
@@ -281,7 +301,7 @@ ${req_content_td:-"(REQ file not found at ${req_file_td}. Use the req_id to loca
         warn "code_review 消息缺少 pr_number — 移至 dead-letter"
         return 1
       fi
-      info "code_review → claude review PR #${pr_number} for ${req_id}"
+      info "code_review → codex review PR #${pr_number} for ${req_id}"
       local pr_diff=""
       pr_diff="$(gh pr diff "$pr_number" 2>/dev/null)" || {
         warn "code_review: 无法获取 PR #${pr_number} diff — 检查 gh 认证（拒绝在无 diff 时执行）"
@@ -296,8 +316,8 @@ ${req_content_td:-"(REQ file not found at ${req_file_td}. Use the req_id to loca
       [[ -f "$req_file_cr" ]] && req_content_cr="$(cat "$req_file_cr")"
 
       local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["APPROVED","NEEDS_CHANGES"]},"summary":{"type":"string"}},"required":["verdict","summary"]}'
-      local raw_result; local claude_rc
-      raw_result=$("${CLAUDE_CMD[@]}" --output-format json --json-schema "$_schema" \
+      local raw_result; local codex_rc
+      raw_result=$(_run_codex_json "$_schema" \
         "Read harness/review-standard.md and harness/testing-standard.md.
 Do not ask clarifying questions — proceed with your best judgment.
 
@@ -340,15 +360,15 @@ ${pr_diff}
    If zero [BLOCK] findings:
      gh pr review ${pr_number} --approve -b 'LGTM. <brief summary of what was checked>'
 
-5. Return ONLY your structured verdict (do NOT write any inbox files — the harness handles that)." \
-      2>&1); claude_rc=$?
+5. Return ONLY your structured verdict (do NOT write any inbox files — the harness handles that)."
+      ); codex_rc=$?
 
-      if [[ $claude_rc -ne 0 ]]; then
-        warn "code_review: claude exited ${claude_rc}"
+      if [[ $codex_rc -ne 0 ]]; then
+        warn "code_review: codex exited ${codex_rc}"
         return 1
       fi
-      local verdict; verdict=$(echo "$raw_result" | jq -r '.structured_output.verdict // empty' 2>/dev/null)
-      local summary; summary=$(echo "$raw_result" | jq -r '.structured_output.summary // empty' 2>/dev/null)
+      local verdict; verdict=$(echo "$raw_result" | jq -r '.verdict // empty' 2>/dev/null)
+      local summary; summary=$(echo "$raw_result" | jq -r '.summary // empty' 2>/dev/null)
       if [[ -z "$verdict" ]]; then
         warn "code_review: 无法提取 verdict（jq 失败或输出格式异常）"
         return 1
@@ -372,15 +392,15 @@ ${pr_diff}
       fi
       ;;
     req_review)
-      info "req_review → claude 需求评审 ${req_id}"
+      info "req_review → codex 需求评审 ${req_id}"
       local req_file="tasks/features/${req_id}.md"
       local req_content=""
       [[ -f "$req_file" ]] && req_content="$(cat "$req_file")"
 
-      # branch_name is always deterministic (feat/${req_id}); not requested from Claude
+      # branch_name is always deterministic (feat/${req_id}); not requested from Codex
       local _schema='{"type":"object","properties":{"verdict":{"type":"string","enum":["PASSED","DEFECTS"]},"summary":{"type":"string"},"tc_pr_number":{"type":"string"}},"required":["verdict","summary"]}'
-      local raw_result; local claude_rc
-      raw_result=$("${CLAUDE_CMD[@]}" --output-format json --json-schema "$_schema" \
+      local raw_result; local codex_rc
+      raw_result=$(_run_codex_json "$_schema" \
         "Read harness/harness-index.md, harness/requirement-standard.md, and harness/bug-standard.md.
 Do not ask clarifying questions — proceed with your best judgment.
 
@@ -406,16 +426,16 @@ ${req_content:-"(REQ file not found. Abort — return DEFECTS with summary expla
    d. Read current status/owner from ${req_id}.md; write blocked_from_status: req_review and blocked_from_owner: <current owner>
    e. Update ${req_id}.md: status → blocked, blocked_reason: bug_linked, owner → unassigned
    f. Commit with message: 'bug-block: ${req_id} blocked by BUG-NNN'
-   g. Return {\"verdict\":\"DEFECTS\",\"summary\":\"<one-line reason>\"}" \
-      2>&1); claude_rc=$?
+   g. Return {\"verdict\":\"DEFECTS\",\"summary\":\"<one-line reason>\"}"
+      ); codex_rc=$?
 
-      if [[ $claude_rc -ne 0 ]]; then
-        warn "req_review: claude exited ${claude_rc}"
+      if [[ $codex_rc -ne 0 ]]; then
+        warn "req_review: codex exited ${codex_rc}"
         return 1
       fi
-      local verdict; verdict=$(echo "$raw_result" | jq -r '.structured_output.verdict // empty' 2>/dev/null)
-      local summary; summary=$(echo "$raw_result" | jq -r '.structured_output.summary // empty' 2>/dev/null)
-      local tc_pr; tc_pr=$(echo "$raw_result" | jq -r '.structured_output.tc_pr_number // empty' 2>/dev/null)
+      local verdict; verdict=$(echo "$raw_result" | jq -r '.verdict // empty' 2>/dev/null)
+      local summary; summary=$(echo "$raw_result" | jq -r '.summary // empty' 2>/dev/null)
+      local tc_pr; tc_pr=$(echo "$raw_result" | jq -r '.tc_pr_number // empty' 2>/dev/null)
       # P2 fix: branch_name is always deterministic — never trust model output for this
       local branch_name="feat/${req_id}"
       if [[ -z "$verdict" ]]; then
