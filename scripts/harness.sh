@@ -59,19 +59,29 @@ get_field() {
   awk -F': ' "/^${field}:/{gsub(/^[[:space:]]+|[[:space:]]+$/, \"\", \$2); print \$2; exit}" "$file"
 }
 
-# 从 REQ 文件提取验收标准（仅 frontmatter acceptance 字段 + body # Acceptance Criteria 段）
+# 从 REQ 文件提取验收标准（仅 frontmatter acceptance 字段 + body Acceptance Criteria 段）
 # 用于 tc-review prompt，避免内联完整 REQ 文件（可达 8KB+）
+# 支持任意标题级别（# / ## / ###）及标题变体（Detailed 等后缀）
 _extract_acceptance() {
   local req_file="$1"
   [[ ! -f "$req_file" ]] && echo "(REQ file not found: $req_file)" && return
   awk '
-    BEGIN { fm=0; fm_done=0; in_yaml_ac=0; in_body_ac=0 }
+    function heading_level(line,    i) {
+      i = 0
+      while (substr(line, i+1, 1) == "#") i++
+      return i
+    }
+    BEGIN { fm=0; fm_done=0; in_yaml_ac=0; in_body_ac=0; ac_level=0 }
     /^---/ { fm++; if (fm==2) { fm_done=1 }; next }
     fm==1 && !fm_done && /^acceptance:/ { in_yaml_ac=1; print "## acceptance (frontmatter):"; print; next }
     fm==1 && in_yaml_ac && /^[a-z_]+:/ { in_yaml_ac=0 }
     fm==1 && in_yaml_ac { print; next }
-    fm_done && /^# Acceptance Criteria/ { in_body_ac=1; print; next }
-    fm_done && in_body_ac && /^# / { in_body_ac=0 }
+    fm_done && /^#{1,6}[[:space:]].*Acceptance Criteria/ {
+      ac_level = heading_level($0); in_body_ac=1; print; next
+    }
+    fm_done && in_body_ac && /^#/ {
+      if (heading_level($0) <= ac_level) { in_body_ac=0 }
+    }
     fm_done && in_body_ac { print }
   ' "$req_file"
 }
