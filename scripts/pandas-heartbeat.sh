@@ -1030,12 +1030,11 @@ auto_claim_specific() {
   ok "Telegram 触发认领: ${req_id}"
 
   # TC 已完成或无需 TC → 直接路由到 Menglan；否则路由到 Huahua 做 TC 设计
-  local req_body=""
-  [[ -f "$req_file" ]] && req_body="$(cat "$req_file")"
+  # req_body 不再传递：menglan-heartbeat 只用 req_id，由 agent 自行读取文件（Tiger/DeerFlow 建议）
   if [[ "$orig_status" == "test_designed" || \
         "$tc_policy" == "exempt" || "$tc_policy" == "optional" ]]; then
     inbox_write "menglan" "implement" "$req_id" "实现 ${req_id}（Telegram 触发）：${title}" \
-      "" "success" "" "" "$req_body"
+      "" "success" "" "" ""
   else
     inbox_write "huahua" "tc_design" "$req_id" "TC 设计请求（Telegram 触发）：${title}"
   fi

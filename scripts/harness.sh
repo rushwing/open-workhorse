@@ -59,6 +59,33 @@ get_field() {
   awk -F': ' "/^${field}:/{gsub(/^[[:space:]]+|[[:space:]]+$/, \"\", \$2); print \$2; exit}" "$file"
 }
 
+# 从 REQ 文件提取验收标准（仅 frontmatter acceptance 字段 + body Acceptance Criteria 段）
+# 用于 tc-review prompt，避免内联完整 REQ 文件（可达 8KB+）
+# 支持任意标题级别（# / ## / ###）及标题变体（Detailed 等后缀）
+_extract_acceptance() {
+  local req_file="$1"
+  [[ ! -f "$req_file" ]] && echo "(REQ file not found: $req_file)" && return
+  awk '
+    function heading_level(line,    i) {
+      i = 0
+      while (substr(line, i+1, 1) == "#") i++
+      return i
+    }
+    BEGIN { fm=0; fm_done=0; in_yaml_ac=0; in_body_ac=0; ac_level=0 }
+    /^---/ { fm++; if (fm==2) { fm_done=1 }; next }
+    fm==1 && !fm_done && /^acceptance:/ { in_yaml_ac=1; print "## acceptance (frontmatter):"; print; next }
+    fm==1 && in_yaml_ac && /^[a-z_]+:/ { in_yaml_ac=0 }
+    fm==1 && in_yaml_ac { print; next }
+    fm_done && /^#{1,6}[[:space:]].*Acceptance Criteria/ {
+      ac_level = heading_level($0); in_body_ac=1; print; next
+    }
+    fm_done && in_body_ac && /^#/ {
+      if (heading_level($0) <= ac_level) { in_body_ac=0 }
+    }
+    fm_done && in_body_ac { print }
+  ' "$req_file"
+}
+
 # 检查 depends_on 中所有项是否已 done
 # 返回值：0=全部完成（或无依赖），1=有未完成项
 # 副作用：打印阻塞项 warn 信息（stderr，不污染 $() 捕获）
@@ -340,7 +367,7 @@ Do NOT run 'gh pr create'. Instead, after updating ${req_file} to status=review:
   fi
 
   local prompt
-  prompt="Read CLAUDE.md and harness/harness-index.md.
+  prompt="Read harness/harness-index.md (focus on Implementation Stage and commit/PR conventions). If you need project-level env vars or runtime invariants, also read CLAUDE.md.
 Your task: implement ${req_id}.
 Do not ask clarifying questions — proceed with your best judgment at every step.
 
@@ -511,12 +538,13 @@ cmd_tc_review() {
                 | grep -oE 'REQ-[0-9]+' | head -1 || true)"
   fi
 
-  # 加载 REQ 文件内容（acceptance criteria + test case design notes）供 prompt 引用
+  # 仅提取 acceptance criteria（frontmatter acceptance 字段 + # Acceptance Criteria 段）
+  # 避免将完整 REQ 文件（可达 8KB+）内联进 prompt — Tiger/DeerFlow 建议
   local req_contract=""
   if [[ -n "$req_hint" ]]; then
     local req_file="tasks/features/${req_hint}.md"
     if [[ -f "$req_file" ]]; then
-      req_contract="$(cat "$req_file")"
+      req_contract="$(_extract_acceptance "$req_file")"
     else
       warn "REQ 文件 ${req_file} 未找到，TC review 将缺少 acceptance criteria 上下文" >&2
     fi
