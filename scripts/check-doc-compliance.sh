@@ -13,9 +13,7 @@ done < <(
     '*.md' \
     '*.mdx' \
     '*.svg' \
-    '*.html' \
-    ':!:README.md' \
-    ':!:CLAUDE.md'
+    '*.html'
 )
 
 if [ "${#DOC_FILES[@]}" -eq 0 ]; then
@@ -29,15 +27,22 @@ trap 'rm -f "$TMPFILE"' EXIT
 check_no_match() {
   local description="$1"
   local pattern="$2"
-  if grep -Pn -e "$pattern" "${DOC_FILES[@]}" >"$TMPFILE" 2>/dev/null; then
+  if grep -Ein -e "$pattern" "${DOC_FILES[@]}" >"$TMPFILE"; then
     echo "doc-compliance: failed: ${description}" >&2
     cat "$TMPFILE" >&2
     exit 1
+  else
+    local status=$?
+    if [ "$status" -eq 1 ]; then
+      return 0
+    fi
+    echo "doc-compliance: error: grep failed while checking ${description}" >&2
+    exit "$status"
   fi
 }
 
 check_no_match "disallowed product-reference wording" 'fake-claude-code'
-check_no_match "disallowed copycat wording" '\bcopycat\b'
-check_no_match "disallowed clone wording" '\bnear-clone\b|\bclone another product\b'
+check_no_match "disallowed copycat wording" '(^|[^[:alnum:]_])copycat([^[:alnum:]_]|$)'
+check_no_match "disallowed clone wording" '(^|[^[:alnum:]_])near-clone([^[:alnum:]_]|$)|clone another product'
 
 echo "doc-compliance: passed"
