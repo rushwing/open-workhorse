@@ -92,5 +92,6 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
 fi
 
 bash scripts/check-bug-coverage.sh
+bash scripts/check-doc-compliance.sh
 
 echo "release-audit: passed"

@@ -55,9 +55,9 @@ This migration will be incremental.
 We will not rewrite the system all at once.
 We will preserve working shell paths while gradually moving coordination, mailbox handling, task lifecycle, resilience logic, and tool invocation into typed Node.js services.
 
-## Borrowing Model
+## Reference Model
 
-We may borrow architecture patterns from `fake-claude-code` and other public agent systems, but only at the level of ideas and engineering principles.
+We will reference strong community best practices for agent runtime engineering and adopt only the underlying architecture ideas and engineering principles that fit `open-workhorse`.
 
 Allowed:
 
@@ -70,12 +70,12 @@ Allowed:
 
 Not allowed:
 
-- copying proprietary code
-- mirroring private module boundaries or class names
-- reusing prompts, rule tables, enums, or error text from non-open implementations
-- producing a near-clone of any closed-source product surface
+- copying implementation details from vendor-specific systems
+- mirroring product-specific module boundaries or class names
+- reusing prompts, rule tables, enums, or error text from external implementations
+- shaping the runtime around another product's surface instead of `open-workhorse` needs
 
-This ADR therefore governs an independent implementation, not a product imitation.
+This ADR therefore governs an independent implementation shaped by community best practices and the needs of `open-workhorse`.
 
 ## Target Runtime Shape
 

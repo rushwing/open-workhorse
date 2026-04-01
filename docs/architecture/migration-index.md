@@ -38,7 +38,7 @@ Phase documents hold the implementation detail, diagrams, scope, and acceptance 
 2. Keep shell entrypoints working while Node.js services take over core logic.
 3. Preserve backward compatibility for existing inbox traffic until replacement paths are proven.
 4. Treat `CAPABILITIES`, `CONNECTORS`, and `inbox-protocol` as canonical contracts.
-5. Borrow patterns, not proprietary implementations.
+5. Reference community best practices and implement the runtime in `open-workhorse` terms.
 
 ## Diagrams
 
