@@ -23,7 +23,7 @@ Phase documents hold the implementation detail, diagrams, scope, and acceptance 
 
 | Phase | Status | Focus | Notes |
 | --- | --- | --- | --- |
-| 0 | In progress | Boundary freeze and document structure | No runtime behavior change intended |
+| 0 | Complete | Boundary freeze and document structure | Delivered as docs-only groundwork with no runtime behavior change |
 | 1 | Planned | Capability and connector registry | First material Node.js runtime contract |
 | 2 | Planned | Mailbox service | Moves inbox parsing and claims into TS |
 | 3 | Planned | Task runtime | Coordinator becomes state-driven, not branch-driven |

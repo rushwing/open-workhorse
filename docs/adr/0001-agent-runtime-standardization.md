@@ -1,6 +1,6 @@
 # ADR 0001: Standardize the Agent Teams Runtime Around a Coordinator-Worker Kernel
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-04-01
 - Deciders: open-workhorse maintainers
 - Related:

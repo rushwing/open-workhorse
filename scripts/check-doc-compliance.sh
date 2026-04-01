@@ -23,16 +23,17 @@ if [ "${#DOC_FILES[@]}" -eq 0 ]; then
   exit 1
 fi
 
+TMPFILE="$(mktemp)"
+trap 'rm -f "$TMPFILE"' EXIT
+
 check_no_match() {
   local description="$1"
   local pattern="$2"
-  if grep -Pn -e "$pattern" "${DOC_FILES[@]}" >/tmp/doc-compliance-match.txt 2>/dev/null; then
+  if grep -Pn -e "$pattern" "${DOC_FILES[@]}" >"$TMPFILE" 2>/dev/null; then
     echo "doc-compliance: failed: ${description}" >&2
-    cat /tmp/doc-compliance-match.txt >&2
-    rm -f /tmp/doc-compliance-match.txt
+    cat "$TMPFILE" >&2
     exit 1
   fi
-  rm -f /tmp/doc-compliance-match.txt
 }
 
 check_no_match "disallowed product-reference wording" 'fake-claude-code'

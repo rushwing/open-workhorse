@@ -1,6 +1,6 @@
 # Phase 0: Boundary Freeze
 
-- Status: In progress
+- Status: Complete
 - Date: 2026-04-01
 - Related:
   - [ADR 0001](../../adr/0001-agent-runtime-standardization.md)
