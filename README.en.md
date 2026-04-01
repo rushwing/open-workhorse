@@ -124,6 +124,14 @@ UI_PORT=4310
 # OPENCLAW_HOME=/path/to/.openclaw
 # CODEX_HOME=/path/to/.codex
 # OPENCLAW_SUBSCRIPTION_SNAPSHOT_PATH=/path/to/subscription.json
+
+# Agent role binding:
+# Menglan = Claude CLI (implement / bugfix / fix-review)
+# Huahua  = Codex CLI (req_review / tc_design / code_review)
+# AGENT_CODER=menglan
+# AGENT_REVIEWER=huahua
+# CLAUDE_APPROVAL=
+# CODEX_AUTO_APPROVE=1
 ```
 
 ---

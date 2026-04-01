@@ -2,7 +2,7 @@
 """
 scripts/extract-prompts.py — read-only audit tool.
 
-Extracts all Claude prompts from agent shell scripts into eval/prompts-snapshot.md.
+Extracts agent prompts from shell scripts into eval/prompts-snapshot.md.
 Purpose: design-drift review — verify LLM prompts match intended agent behavior.
 
 Usage:
@@ -114,18 +114,18 @@ def extract_from_huahua(content: str) -> list[dict]:
     Two patterns:
 
     Pattern A — direct inline call:
-        "${CLAUDE_CMD[@]}" "Read harness/...
+        "${CODEX_CMD[@]}" "Read harness/...
         ...
         last line of content"
 
     Pattern B — json-schema call (variable OR inline literal schema):
-        raw_result=$(...CLAUDE_CMD... --output-format json --json-schema "$_schema" \\
+        raw_result=$(..._run_codex_json "$_schema" \\
           "Read harness/...
           last line" \\
         2>&1)
       OR (inline literal schema, e.g. tc_design initial path):
-        tc_pr_td=$(...CLAUDE_CMD... --output-format json \\
-          --json-schema '{"type":"object",...}' \\
+        tc_pr_td=$(_run_codex_json \\
+          '{"type":"object",...}' \\
           "Read harness/...
           last line" \\
         2>/dev/null | ...)
@@ -136,8 +136,8 @@ def extract_from_huahua(content: str) -> list[dict]:
     while i < len(lines):
         stripped = lines[i].rstrip()
 
-        # Pattern A: "${CLAUDE_CMD[@]}" "Read ...
-        mA = re.match(r'^\s+"\$\{CLAUDE_CMD\[@\]\}"\s+"(Read\s+.+)', stripped)
+        # Pattern A: helper call with inline prompt
+        mA = re.match(r'^\s*[A-Za-z0-9_]+=\$\(_run_codex_json\s+(?:"\$_schema"|\'[^\']*\')\s+"(Read\s+.+)', stripped)
         if mA:
             label = find_context_label(lines, i)
             first_content = mA.group(1)
@@ -160,9 +160,14 @@ def extract_from_huahua(content: str) -> list[dict]:
             i += 1
             continue
 
-        # Pattern B: --json-schema (variable ref OR inline literal) on a continuation line,
-        # followed by "Read harness/... prompt string on a subsequent line.
-        if re.search(r"""--json-schema\s+(?:"\$_schema"|'[^']*')\s*\\$""", stripped):
+        # Pattern B: helper invocation spans multiple lines:
+        #   raw_result=$(_run_codex_json "$_schema" \
+        #     "Read ..."
+        # or
+        #   tc_pr_td=$(_run_codex_json \
+        #     '{"type":"object",...}' \
+        #     "Read ..."
+        if re.search(r"""_run_codex_json(?:\s+(?:"\$_schema"|'[^']*'))?\s*\\$""", stripped):
             label = find_context_label(lines, i)
             start_lineno = i + 1
             # Skip to the next line that opens the prompt string

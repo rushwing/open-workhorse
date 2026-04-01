@@ -2,9 +2,9 @@
  * huahua-heartbeat tests — BUG-004 regression coverage
  *
  * Sources huahua-heartbeat.sh and calls _process_message() directly.
- * The `claude` binary is mocked as a bash function (same pattern as
- * tg_notify in TC-022-04) so _process_message's internal CLAUDE_CMD
- * reset is irrelevant — bash resolves `claude` to the function first.
+ * The `codex` binary is mocked as a bash function (same pattern as
+ * tg_notify in TC-022-04) so _process_message's internal CODEX_CMD
+ * reset is irrelevant — bash resolves `codex` to the function first.
  */
 
 import assert from "node:assert/strict";
@@ -40,9 +40,36 @@ async function runBash(
   });
 }
 
-// ── BUG-004 regression: TC-BUG004-H01 — req_review resolves and calls claude ──
+function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
 
-test("TC-BUG004-H01: huahua action=req_review calls claude with REQ context and does not dead-letter", async () => {
+function codexMockShell(
+  json: string,
+  options: { markerPath?: string; promptCapturePath?: string } = {},
+): string {
+  const lines = [
+    "codex() {",
+    '  local output_file="" prev="" arg=""',
+    '  for arg in "$@"; do',
+    '    if [[ "$prev" == "--output-last-message" ]]; then output_file="$arg"; fi',
+    '    prev="$arg"',
+    "  done",
+    options.markerPath ? `  touch ${shellSingleQuote(options.markerPath)}` : "",
+    options.promptCapturePath ? `  printf '%s' "\${@: -1}" > ${shellSingleQuote(options.promptCapturePath)}` : "",
+    '  if [[ -n "$output_file" ]]; then',
+    `    printf '%s' ${shellSingleQuote(json)} > "$output_file"`,
+    "  fi",
+    "  return 0",
+    "}",
+    "export -f codex",
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+// ── BUG-004 regression: TC-BUG004-H01 — req_review resolves and calls codex ──
+
+test("TC-BUG004-H01: huahua action=req_review calls codex with REQ context and does not dead-letter", async () => {
   const tmpDir = join(PROJECT_ROOT, "runtime", `zzzz-tc-bug004-h01-${Date.now()}`);
   await mkdir(join(tmpDir, "inbox", "for-huahua", "pending"), { recursive: true });
   await mkdir(join(tmpDir, "inbox", "for-huahua", "claimed"), { recursive: true });
@@ -68,17 +95,15 @@ test("TC-BUG004-H01: huahua action=req_review calls claude with REQ context and 
   );
 
   try {
-    // Mock `claude` as a bash function — set before AND after source so the
-    // function survives _process_message's internal CLAUDE_CMD reset.
-    const claudeMarker = join(tmpDir, "claude_was_called");
+    // Mock `codex` as a bash function — set before AND after source so the
+    // function survives _process_message's internal CODEX_CMD reset.
+    const codexMarker = join(tmpDir, "codex_was_called");
     const result = await runBash(
-      // Mock claude writes a marker file (subshell-safe) and returns valid structured JSON
-      `claude() { touch "${claudeMarker}"; echo '{"structured_output":{"verdict":"DEFECTS","summary":"mock test defect"}}'; return 0; }
-       export -f claude
+      // Mock codex writes a marker file (subshell-safe) and returns valid structured JSON
+      `${codexMockShell('{"verdict":"DEFECTS","summary":"mock test defect"}', { markerPath: codexMarker })}
        SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
          source "${SCRIPT}" 2>/dev/null
-       claude() { touch "${claudeMarker}"; echo '{"structured_output":{"verdict":"DEFECTS","summary":"mock test defect"}}'; return 0; }
-       export -f claude
+       ${codexMockShell('{"verdict":"DEFECTS","summary":"mock test defect"}', { markerPath: codexMarker })}
        INBOX_ROOT="${tmpDir}/inbox"
        _process_message "${msgFile}"`,
       { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
@@ -87,10 +112,10 @@ test("TC-BUG004-H01: huahua action=req_review calls claude with REQ context and 
     assert.equal(result.code, 0,
       `_process_message should succeed. stdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
-    // claude must have been invoked (marker file written by mock)
-    const markerExists = await access(claudeMarker).then(() => true).catch(() => false);
+    // codex must have been invoked (marker file written by mock)
+    const markerExists = await access(codexMarker).then(() => true).catch(() => false);
     assert.ok(markerExists,
-      `claude mock should have been called (marker file missing). stdout: ${result.stdout}`,
+      `codex mock should have been called (marker file missing). stdout: ${result.stdout}`,
     );
 
     // Must NOT dead-letter
@@ -124,12 +149,10 @@ test("TC-BUG004-H02: huahua action=req_review does not emit 暂无专用 handler
 
   try {
     const result = await runBash(
-      `claude() { return 0; }
-       export -f claude
+      `${codexMockShell('{"verdict":"DEFECTS","summary":"mock"}')}
        SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
          source "${SCRIPT}" 2>/dev/null
-       claude() { return 0; }
-       export -f claude
+       ${codexMockShell('{"verdict":"DEFECTS","summary":"mock"}')}
        INBOX_ROOT="${tmpDir}/inbox"
        _process_message "${msgFile}"`,
       { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
@@ -174,16 +197,14 @@ test("TC-HUAHUA-H03: req_review prompt includes git push step before gh pr creat
     "utf8",
   );
 
-  const promptCapture = join(tmpDir, "claude_prompt.txt");
+  const promptCapture = join(tmpDir, "codex_prompt.txt");
 
   try {
     await runBash(
-      `claude() { printf '%s' "$*" > "${promptCapture}"; echo '{"structured_output":{"verdict":"DEFECTS","summary":"mock"}}'; return 0; }
-       export -f claude
+      `${codexMockShell('{"verdict":"DEFECTS","summary":"mock"}', { promptCapturePath: promptCapture })}
        SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
          source "${SCRIPT}" 2>/dev/null
-       claude() { printf '%s' "$*" > "${promptCapture}"; echo '{"structured_output":{"verdict":"DEFECTS","summary":"mock"}}'; return 0; }
-       export -f claude
+       ${codexMockShell('{"verdict":"DEFECTS","summary":"mock"}', { promptCapturePath: promptCapture })}
        INBOX_ROOT="${tmpDir}/inbox"
        _process_message "${msgFile}" || true`,
       { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
@@ -235,12 +256,10 @@ test("TC-HUAHUA-H04: req_review PASSED does not write to for-pandas inbox", asyn
 
   try {
     await runBash(
-      `claude() { echo '{"structured_output":{"verdict":"PASSED","summary":"ok","tc_pr_number":"42"}}'; return 0; }
-       export -f claude
+      `${codexMockShell('{"verdict":"PASSED","summary":"ok","tc_pr_number":"42"}')}
        SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
          source "${SCRIPT}" 2>/dev/null
-       claude() { echo '{"structured_output":{"verdict":"PASSED","summary":"ok","tc_pr_number":"42"}}'; return 0; }
-       export -f claude
+       ${codexMockShell('{"verdict":"PASSED","summary":"ok","tc_pr_number":"42"}')}
        INBOX_ROOT="${tmpDir}/inbox"
        _process_message "${msgFile}" || true`,
       { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
@@ -389,7 +408,7 @@ test("TC-HUAHUA-H07: code_review NEEDS_CHANGES (iter=0) → fix_review in for-me
 
   try {
     const result = await runBash(
-      // gh mock: return a non-empty diff for pr diff; claude mock: return NEEDS_CHANGES
+      // gh mock: return a non-empty diff for pr diff; codex mock: return NEEDS_CHANGES
       `gh() {
          if [[ "$*" == *"pr diff"* ]]; then
            echo "diff --git a/src/foo.ts b/src/foo.ts"
@@ -397,11 +416,7 @@ test("TC-HUAHUA-H07: code_review NEEDS_CHANGES (iter=0) → fix_review in for-me
          return 0
        }
        export -f gh
-       claude() {
-         echo '{"structured_output":{"verdict":"NEEDS_CHANGES","summary":"missing tests"}}'
-         return 0
-       }
-       export -f claude
+       ${codexMockShell('{"verdict":"NEEDS_CHANGES","summary":"missing tests"}')}
        SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
          source "${SCRIPT}" 2>/dev/null
        gh() {
@@ -411,11 +426,7 @@ test("TC-HUAHUA-H07: code_review NEEDS_CHANGES (iter=0) → fix_review in for-me
          return 0
        }
        export -f gh
-       claude() {
-         echo '{"structured_output":{"verdict":"NEEDS_CHANGES","summary":"missing tests"}}'
-         return 0
-       }
-       export -f claude
+       ${codexMockShell('{"verdict":"NEEDS_CHANGES","summary":"missing tests"}')}
        INBOX_ROOT="${tmpDir}/inbox"
        _process_message "${msgFile}"`,
       { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
@@ -480,11 +491,7 @@ test("TC-HUAHUA-H08: code_review NEEDS_CHANGES (iter=2) → tg_decision called, 
          return 0
        }
        export -f gh
-       claude() {
-         echo '{"structured_output":{"verdict":"NEEDS_CHANGES","summary":"still broken"}}'
-         return 0
-       }
-       export -f claude
+       ${codexMockShell('{"verdict":"NEEDS_CHANGES","summary":"still broken"}')}
        SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
          source "${SCRIPT}" 2>/dev/null
        gh() {
@@ -494,11 +501,7 @@ test("TC-HUAHUA-H08: code_review NEEDS_CHANGES (iter=2) → tg_decision called, 
          return 0
        }
        export -f gh
-       claude() {
-         echo '{"structured_output":{"verdict":"NEEDS_CHANGES","summary":"still broken"}}'
-         return 0
-       }
-       export -f claude
+       ${codexMockShell('{"verdict":"NEEDS_CHANGES","summary":"still broken"}')}
        tg_decision() { touch "${tgMarker}"; return 0; }
        export -f tg_decision
        INBOX_ROOT="${tmpDir}/inbox"
@@ -552,24 +555,14 @@ test("TC-HUAHUA-H09: tc_design without pr_number (Telegram-triggered initial) di
     "utf8",
   );
 
-  const promptCapture = join(tmpDir, "claude_prompt.txt");
+  const promptCapture = join(tmpDir, "codex_prompt.txt");
 
   try {
     const result = await runBash(
-      `claude() {
-         printf '%s' "$*" > "${promptCapture}"
-         echo '{"structured_output":{"tc_pr_number":"55"}}'
-         return 0
-       }
-       export -f claude
+      `${codexMockShell('{"tc_pr_number":"55"}', { promptCapturePath: promptCapture })}
        SHARED_RESOURCES_ROOT="${tmpDir}" REPO_ROOT="${tmpDir}" \
          source "${SCRIPT}" 2>/dev/null
-       claude() {
-         printf '%s' "$*" > "${promptCapture}"
-         echo '{"structured_output":{"tc_pr_number":"55"}}'
-         return 0
-       }
-       export -f claude
+       ${codexMockShell('{"tc_pr_number":"55"}', { promptCapturePath: promptCapture })}
        INBOX_ROOT="${tmpDir}/inbox"
        _process_message "${msgFile}"`,
       { SHARED_RESOURCES_ROOT: tmpDir, REPO_ROOT: tmpDir },
