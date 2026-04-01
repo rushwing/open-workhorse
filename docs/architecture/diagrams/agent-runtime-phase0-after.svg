@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1280" viewBox="0 0 1800 1280" role="img" aria-labelledby="arch-title arch-desc">
+  <title id="arch-title">open-workhorse - Phase 0 After</title>
+  <desc id="arch-desc">Phase 0 target architecture after boundary freeze, where the control plane, coordinator, workers, and runtime kernel contracts are separated conceptually before implementation-heavy migrations begin.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#eef2f7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#dbeafe"/>
+      <stop offset="100%" stop-color="#bfdbfe"/>
+    </linearGradient>
+    <linearGradient id="portalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#dbeafe"/>
+      <stop offset="100%" stop-color="#93c5fd"/>
+    </linearGradient>
+    <linearGradient id="runtimeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ede9fe"/>
+      <stop offset="100%" stop-color="#c4b5fd"/>
+    </linearGradient>
+    <linearGradient id="agentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f8fafc"/>
+    </linearGradient>
+    <linearGradient id="repoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ecfeff"/>
+      <stop offset="100%" stop-color="#cffafe"/>
+    </linearGradient>
+    <linearGradient id="dataGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f0fdf4"/>
+      <stop offset="100%" stop-color="#bbf7d0"/>
+    </linearGradient>
+    <linearGradient id="monitorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef3c7"/>
+      <stop offset="100%" stop-color="#fde68a"/>
+    </linearGradient>
+    <linearGradient id="extGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="100%" stop-color="#fed7aa"/>
+    </linearGradient>
+    <style>
+      .arch-title { font: 700 32px 'Helvetica Neue', Arial, sans-serif; fill: #0f172a; }
+      .arch-subtitle { font: 500 16px 'Helvetica Neue', Arial, sans-serif; fill: #1e293b; }
+      .arch-meta { font: 500 14px 'Helvetica Neue', Arial, sans-serif; fill: #334155; }
+      .sec-title { font: 700 18px 'Helvetica Neue', Arial, sans-serif; fill: #0f172a; letter-spacing: 0.4px; }
+      .sec-caption { font: 500 13px 'Helvetica Neue', Arial, sans-serif; fill: #334155; }
+      .box-title { font: 700 20px 'Helvetica Neue', Arial, sans-serif; fill: #0f172a; }
+      .box-body { font: 500 13px 'Helvetica Neue', Arial, sans-serif; fill: #1e293b; }
+      .pill { font: 700 11px 'Helvetica Neue', Arial, sans-serif; fill: #0f172a; letter-spacing: 0.8px; }
+      .flow-label { font: 500 12px 'Helvetica Neue', Arial, sans-serif; fill: #475569; }
+      .divider { stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 6 6; }
+      .connector { stroke: #475569; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .soft-conn { stroke: #64748b; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .async-conn { stroke: #94a3b8; stroke-width: 1.5; fill: none; stroke-dasharray: 6 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1280" fill="url(#bg)"/>
+  <rect x="40" y="28" width="1720" height="92" rx="24" fill="url(#headerGrad)" filter="url(#shadow)"/>
+  <text x="74" y="73" class="arch-title">open-workhorse - Agent Runtime Phase 0 After</text>
+  <text x="74" y="100" class="arch-subtitle">Boundary freeze complete: the team now shares a clear runtime topology, ownership model, and migration seams for later phases.</text>
+  <text x="1360" y="73" class="arch-meta">source: /Users/danielwong/Dev/open-workhorse</text>
+  <text x="1360" y="100" class="arch-meta">generated: 2026-04-01</text>
+
+  <text x="60" y="182" class="sec-title">1. Explicit Runtime Topology</text>
+  <text x="60" y="204" class="sec-caption">Phase 0 does not rewrite the system yet. It names the planes, freezes ownership, and turns drift-prone seams into intentional interfaces.</text>
+
+  <rect x="60" y="236" width="405" height="182" rx="22" fill="url(#portalGrad)" stroke="#93c5fd" stroke-width="2" filter="url(#shadow)"/>
+  <text x="262.5" y="280" text-anchor="middle" class="box-title">Control Plane</text>
+  <text x="88" y="312" class="box-body">• Dashboard, API, replay, and docs are treated as operator surfaces</text>
+  <text x="88" y="338" class="box-body">• They observe and steer the runtime, but are not the kernel center</text>
+  <text x="88" y="364" class="box-body">• This preserves UI value while removing architectural ambiguity</text>
+  <rect x="88" y="378" width="115" height="28" rx="14" fill="#dbeafe"/><text x="145.5" y="397" text-anchor="middle" class="pill">OBSERVE</text>
+  <rect x="213" y="378" width="104" height="28" rx="14" fill="#dbeafe"/><text x="265" y="397" text-anchor="middle" class="pill">REPLAY</text>
+  <rect x="327" y="378" width="98" height="28" rx="14" fill="#dbeafe"/><text x="376" y="397" text-anchor="middle" class="pill">DECIDE</text>
+
+  <rect x="485" y="236" width="405" height="182" rx="22" fill="url(#runtimeGrad)" stroke="#a78bfa" stroke-width="2" filter="url(#shadow)"/>
+  <text x="687.5" y="280" text-anchor="middle" class="box-title">Orchestration Plane</text>
+  <text x="513" y="312" class="box-body">• Pandas is explicitly frozen as coordinator only</text>
+  <text x="513" y="338" class="box-body">• Intake, routing, handoff, reconciliation, escalation live here</text>
+  <text x="513" y="364" class="box-body">• Specialist execution is no longer a hidden fallback responsibility</text>
+  <rect x="513" y="378" width="120" height="28" rx="14" fill="#ede9fe"/><text x="573" y="397" text-anchor="middle" class="pill">PANDAS</text>
+  <rect x="643" y="378" width="121" height="28" rx="14" fill="#ede9fe"/><text x="703.5" y="397" text-anchor="middle" class="pill">COORDINATOR</text>
+  <rect x="774" y="378" width="88" height="28" rx="14" fill="#ede9fe"/><text x="818" y="397" text-anchor="middle" class="pill">LAWFUL</text>
+
+  <rect x="910" y="236" width="405" height="182" rx="22" fill="url(#agentGrad)" stroke="#bfdbfe" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1112.5" y="280" text-anchor="middle" class="box-title">Execution Plane</text>
+  <text x="938" y="312" class="box-body">• Menglan and Huahua are explicitly frozen as worker runtimes</text>
+  <text x="938" y="338" class="box-body">• Their job is bounded execution, evidence, and result packets</text>
+  <text x="938" y="364" class="box-body">• This boundary unlocks typed worker runtimes in later phases</text>
+  <rect x="938" y="378" width="118" height="28" rx="14" fill="#eff6ff"/><text x="997" y="397" text-anchor="middle" class="pill">MENGLAN</text>
+  <rect x="1066" y="378" width="110" height="28" rx="14" fill="#eff6ff"/><text x="1121" y="397" text-anchor="middle" class="pill">HUAHUA</text>
+  <rect x="1186" y="378" width="91" height="28" rx="14" fill="#eff6ff"/><text x="1231.5" y="397" text-anchor="middle" class="pill">WORKERS</text>
+
+  <rect x="1335" y="236" width="405" height="182" rx="22" fill="url(#monitorGrad)" stroke="#fbbf24" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1537.5" y="280" text-anchor="middle" class="box-title">Resilience Plane</text>
+  <text x="1363" y="312" class="box-body">• Lock, heartbeat, watchdog, keepalive, and evidence are grouped together</text>
+  <text x="1363" y="338" class="box-body">• The team now shares one vocabulary for runtime liveness and recovery</text>
+  <text x="1363" y="364" class="box-body">• This prepares the move from worker-centric to task-centric resilience</text>
+  <rect x="1363" y="378" width="112" height="28" rx="14" fill="#fef3c7"/><text x="1419" y="397" text-anchor="middle" class="pill">LEASES</text>
+  <rect x="1485" y="378" width="126" height="28" rx="14" fill="#fef3c7"/><text x="1548" y="397" text-anchor="middle" class="pill">HEARTBEATS</text>
+  <rect x="1621" y="378" width="91" height="28" rx="14" fill="#fef3c7"/><text x="1666.5" y="397" text-anchor="middle" class="pill">HEAL</text>
+
+  <path d="M 687.5 418 C 687.5 460 1112.5 460 1112.5 418" class="connector"/>
+  <text x="878" y="452" class="flow-label">dispatch and result ownership</text>
+  <path d="M 1112.5 418 C 1112.5 468 1537.5 468 1537.5 418" class="soft-conn"/>
+  <text x="1290" y="462" class="flow-label">execution reports into resilience</text>
+
+  <line x1="60" y1="480" x2="1740" y2="480" class="divider"/>
+
+  <text x="60" y="534" class="sec-title">2. Frozen Kernel Contracts</text>
+  <text x="60" y="556" class="sec-caption">Phase 0 upgrades core docs from scattered knowledge into named kernel contracts that later phases will machine-enforce.</text>
+
+  <rect x="60" y="588" width="540" height="204" rx="22" fill="url(#repoGrad)" stroke="#67e8f9" stroke-width="2" filter="url(#shadow)"/>
+  <text x="330" y="632" text-anchor="middle" class="box-title">Capability Contract</text>
+  <text x="88" y="664" class="box-body">• `CAPABILITIES.md` is frozen as the semantic contract for what agents may do</text>
+  <text x="88" y="690" class="box-body">• The team agrees this is the input to a future executable registry, not just reference prose</text>
+  <text x="88" y="716" class="box-body">• Capability names, side effects, and ownership stop drifting between prompts and scripts</text>
+  <rect x="88" y="752" width="126" height="28" rx="14" fill="#cffafe"/><text x="151" y="771" text-anchor="middle" class="pill">SEMANTIC API</text>
+  <rect x="224" y="752" width="110" height="28" rx="14" fill="#cffafe"/><text x="279" y="771" text-anchor="middle" class="pill">STABLE IDS</text>
+  <rect x="344" y="752" width="143" height="28" rx="14" fill="#cffafe"/><text x="415.5" y="771" text-anchor="middle" class="pill">PHASE 1 INPUT</text>
+
+  <rect x="630" y="588" width="540" height="204" rx="22" fill="url(#dataGrad)" stroke="#4ade80" stroke-width="2" filter="url(#shadow)"/>
+  <text x="900" y="632" text-anchor="middle" class="box-title">Connector Contract</text>
+  <text x="658" y="664" class="box-body">• `CONNECTORS.md` is frozen as the runtime binding map for approved execution surfaces</text>
+  <text x="658" y="690" class="box-body">• Backend, driver, side effect, and approval semantics are now shared architecture terms</text>
+  <text x="658" y="716" class="box-body">• This creates the seam for a unified invocation pipeline in later phases</text>
+  <rect x="658" y="752" width="116" height="28" rx="14" fill="#dcfce7"/><text x="716" y="771" text-anchor="middle" class="pill">BINDINGS</text>
+  <rect x="784" y="752" width="132" height="28" rx="14" fill="#dcfce7"/><text x="850" y="771" text-anchor="middle" class="pill">SIDE EFFECTS</text>
+  <rect x="926" y="752" width="142" height="28" rx="14" fill="#dcfce7"/><text x="997" y="771" text-anchor="middle" class="pill">APPROVAL MODES</text>
+
+  <rect x="1200" y="588" width="540" height="204" rx="22" fill="url(#monitorGrad)" stroke="#fbbf24" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1470" y="632" text-anchor="middle" class="box-title">Mailbox Contract</text>
+  <text x="1228" y="664" class="box-body">• `inbox-protocol.md` is frozen as the canonical IPC contract, not an implementation side note</text>
+  <text x="1228" y="690" class="box-body">• Envelope, lifecycle dirs, thread id, and correlation id become explicit kernel assets</text>
+  <text x="1228" y="716" class="box-body">• This creates the seam for the mailbox service planned in Phase 2</text>
+  <rect x="1228" y="752" width="119" height="28" rx="14" fill="#fef3c7"/><text x="1287.5" y="771" text-anchor="middle" class="pill">ENVELOPE</text>
+  <rect x="1357" y="752" width="118" height="28" rx="14" fill="#fef3c7"/><text x="1416" y="771" text-anchor="middle" class="pill">THREADING</text>
+  <rect x="1485" y="752" width="148" height="28" rx="14" fill="#fef3c7"/><text x="1559" y="771" text-anchor="middle" class="pill">CLAIM LIFECYCLE</text>
+
+  <path d="M 330 792 C 330 848 900 848 900 792" class="connector"/>
+  <text x="603" y="842" class="flow-label">capabilities map to connectors</text>
+  <path d="M 900 792 C 900 846 1470 846 1470 792" class="connector"/>
+  <text x="1184" y="840" class="flow-label">connectors emit mailbox traffic</text>
+
+  <line x1="60" y1="854" x2="1740" y2="854" class="divider"/>
+
+  <text x="60" y="908" class="sec-title">3. Migration Seams Opened By Phase 0</text>
+  <text x="60" y="930" class="sec-caption">The architecture is still implemented with current scripts, but future phases now have stable seams instead of implicit folklore.</text>
+
+  <rect x="60" y="962" width="540" height="214" rx="22" fill="url(#agentGrad)" stroke="#bfdbfe" stroke-width="2" filter="url(#shadow)"/>
+  <text x="330" y="1006" text-anchor="middle" class="box-title">Phase 1 To Phase 3</text>
+  <text x="88" y="1040" class="box-body">• Capability registry can be generated without first rewriting the whole runtime</text>
+  <text x="88" y="1066" class="box-body">• Mailbox parsing and claim logic can move into TypeScript without changing protocol semantics</text>
+  <text x="88" y="1092" class="box-body">• Task runtime can be introduced on top of already-frozen coordinator and worker boundaries</text>
+  <rect x="88" y="1136" width="126" height="28" rx="14" fill="#eff6ff"/><text x="151" y="1155" text-anchor="middle" class="pill">REGISTRY</text>
+  <rect x="224" y="1136" width="122" height="28" rx="14" fill="#eff6ff"/><text x="285" y="1155" text-anchor="middle" class="pill">MAILBOX</text>
+  <rect x="356" y="1136" width="116" height="28" rx="14" fill="#eff6ff"/><text x="414" y="1155" text-anchor="middle" class="pill">TASK TYPE</text>
+
+  <rect x="630" y="962" width="540" height="214" rx="22" fill="url(#extGrad)" stroke="#fb923c" stroke-width="2" filter="url(#shadow)"/>
+  <text x="900" y="1006" text-anchor="middle" class="box-title">Phase 4 To Phase 6</text>
+  <text x="658" y="1040" class="box-body">• Shell workers can be thinned into launchers while business logic moves into worker runtimes</text>
+  <text x="658" y="1066" class="box-body">• Invocation pipeline can standardize worktree, inbox, GitHub, memory, and frontmatter operations</text>
+  <text x="658" y="1092" class="box-body">• Approval and side-effect policies now have a stable place to live</text>
+  <rect x="658" y="1136" width="118" height="28" rx="14" fill="#ffedd5"/><text x="717" y="1155" text-anchor="middle" class="pill">WORKERS</text>
+  <rect x="786" y="1136" width="132" height="28" rx="14" fill="#ffedd5"/><text x="852" y="1155" text-anchor="middle" class="pill">INVOCATION</text>
+  <rect x="928" y="1136" width="121" height="28" rx="14" fill="#ffedd5"/><text x="988.5" y="1155" text-anchor="middle" class="pill">POLICY GATE</text>
+
+  <rect x="1200" y="962" width="540" height="214" rx="22" fill="url(#runtimeGrad)" stroke="#a78bfa" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1470" y="1006" text-anchor="middle" class="box-title">Phase 5 To Phase 7</text>
+  <text x="1228" y="1040" class="box-body">• Resilience can shift from worker-only liveness to task-instance leases and heartbeats</text>
+  <text x="1228" y="1066" class="box-body">• Recovery can classify resume, retry, requeue, and escalate as different actions</text>
+  <text x="1228" y="1092" class="box-body">• Dashboard and replay can expose the real runtime rather than just final outcomes</text>
+  <rect x="1228" y="1136" width="112" height="28" rx="14" fill="#ede9fe"/><text x="1284" y="1155" text-anchor="middle" class="pill">LEASED TASKS</text>
+  <rect x="1350" y="1136" width="118" height="28" rx="14" fill="#ede9fe"/><text x="1409" y="1155" text-anchor="middle" class="pill">RECOVERY</text>
+  <rect x="1478" y="1136" width="136" height="28" rx="14" fill="#ede9fe"/><text x="1546" y="1155" text-anchor="middle" class="pill">OBSERVABILITY</text>
+
+  <path d="M 330 1176 C 330 1216 900 1216 900 1176" class="async-conn"/>
+  <path d="M 900 1176 C 900 1216 1470 1216 1470 1176" class="async-conn"/>
+</svg>

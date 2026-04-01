@@ -99,6 +99,11 @@ After reading harness-index.md, note:
 - **Memory initialization**: `npm run memory:init` must be run before Pandas can curate
   long-term knowledge. Requires sqlite3 and everything_openclaw at ~/workspace-pandas/everything_openclaw.
 
+Agent runtime migration docs live in `docs/architecture/`:
+- `docs/architecture/migration-index.md` — staged migration overview
+- `docs/architecture/phases/phase-0-boundary-freeze.md` — current boundary freeze scope
+- `docs/adr/0001-agent-runtime-standardization.md` — umbrella architecture decision
+
 ## Pi Deployment
 
 See `docs/SETUP.md` for the full step-by-step guide.

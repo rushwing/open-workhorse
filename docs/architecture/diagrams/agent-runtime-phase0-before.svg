@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1280" viewBox="0 0 1800 1280" role="img" aria-labelledby="arch-title arch-desc">
+  <title id="arch-title">open-workhorse - Phase 0 Before</title>
+  <desc id="arch-desc">Current agent teams architecture before Phase 0 boundary freeze, with coordination logic split across shell scripts, markdown contracts, mailbox files, and worker recovery artifacts.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#eef2f7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fef3c7"/>
+      <stop offset="100%" stop-color="#fde68a"/>
+    </linearGradient>
+    <linearGradient id="portalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#dbeafe"/>
+      <stop offset="100%" stop-color="#93c5fd"/>
+    </linearGradient>
+    <linearGradient id="agentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f8fafc"/>
+    </linearGradient>
+    <linearGradient id="runtimeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ede9fe"/>
+      <stop offset="100%" stop-color="#c4b5fd"/>
+    </linearGradient>
+    <linearGradient id="repoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ecfeff"/>
+      <stop offset="100%" stop-color="#cffafe"/>
+    </linearGradient>
+    <linearGradient id="dataGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f0fdf4"/>
+      <stop offset="100%" stop-color="#bbf7d0"/>
+    </linearGradient>
+    <linearGradient id="monitorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef3c7"/>
+      <stop offset="100%" stop-color="#fde68a"/>
+    </linearGradient>
+    <style>
+      .arch-title { font: 700 32px 'Helvetica Neue', Arial, sans-serif; fill: #0f172a; }
+      .arch-subtitle { font: 500 16px 'Helvetica Neue', Arial, sans-serif; fill: #1e293b; }
+      .arch-meta { font: 500 14px 'Helvetica Neue', Arial, sans-serif; fill: #334155; }
+      .sec-title { font: 700 18px 'Helvetica Neue', Arial, sans-serif; fill: #0f172a; letter-spacing: 0.4px; }
+      .sec-caption { font: 500 13px 'Helvetica Neue', Arial, sans-serif; fill: #334155; }
+      .box-title { font: 700 20px 'Helvetica Neue', Arial, sans-serif; fill: #0f172a; }
+      .box-body { font: 500 13px 'Helvetica Neue', Arial, sans-serif; fill: #1e293b; }
+      .box-small { font: 500 12px 'Helvetica Neue', Arial, sans-serif; fill: #334155; }
+      .pill { font: 700 11px 'Helvetica Neue', Arial, sans-serif; fill: #0f172a; letter-spacing: 0.8px; }
+      .flow-label { font: 500 12px 'Helvetica Neue', Arial, sans-serif; fill: #475569; }
+      .divider { stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 6 6; }
+      .connector { stroke: #475569; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .soft-conn { stroke: #64748b; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .async-conn { stroke: #94a3b8; stroke-width: 1.5; fill: none; stroke-dasharray: 6 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1280" fill="url(#bg)"/>
+  <rect x="40" y="28" width="1720" height="92" rx="24" fill="url(#headerGrad)" filter="url(#shadow)"/>
+  <text x="74" y="73" class="arch-title">open-workhorse - Agent Runtime Phase 0 Before</text>
+  <text x="74" y="100" class="arch-subtitle">Current state: logic is effective, but spread across scripts, markdown contracts, inbox files, and worker-level recovery.</text>
+  <text x="1360" y="73" class="arch-meta">source: /Users/danielwong/Dev/open-workhorse</text>
+  <text x="1360" y="100" class="arch-meta">generated: 2026-04-01</text>
+
+  <text x="60" y="182" class="sec-title">1. Entry And Runtime Surfaces</text>
+  <text x="60" y="204" class="sec-caption">Monitor, UI, cron heartbeats, and harness triggers all act on the same delivery system from different surfaces.</text>
+
+  <rect x="60" y="236" width="405" height="182" rx="22" fill="url(#portalGrad)" stroke="#93c5fd" stroke-width="2" filter="url(#shadow)"/>
+  <text x="262.5" y="280" text-anchor="middle" class="box-title">Control Plane</text>
+  <text x="88" y="312" class="box-body">• `src/index.ts` dispatches monitor, command, and UI modes</text>
+  <text x="88" y="338" class="box-body">• `src/ui/server.ts` serves dashboard, API, replay, docs</text>
+  <text x="88" y="364" class="box-body">• Good visibility, but not the runtime kernel itself</text>
+  <rect x="88" y="378" width="95" height="28" rx="14" fill="#dbeafe"/><text x="135.5" y="397" text-anchor="middle" class="pill">HTTP/UI</text>
+  <rect x="193" y="378" width="110" height="28" rx="14" fill="#dbeafe"/><text x="248" y="397" text-anchor="middle" class="pill">MONITOR</text>
+  <rect x="313" y="378" width="92" height="28" rx="14" fill="#dbeafe"/><text x="359" y="397" text-anchor="middle" class="pill">SNAPSHOT</text>
+
+  <rect x="485" y="236" width="405" height="182" rx="22" fill="url(#runtimeGrad)" stroke="#a78bfa" stroke-width="2" filter="url(#shadow)"/>
+  <text x="687.5" y="280" text-anchor="middle" class="box-title">Pandas Coordinator</text>
+  <text x="513" y="312" class="box-body">• `pandas-heartbeat.sh` handles inbox, Telegram, auto-claim, stall logic</text>
+  <text x="513" y="338" class="box-body">• Orchestration policy is mixed with transport and fs operations</text>
+  <text x="513" y="364" class="box-body">• Capability contracts exist, but are not runtime-enforced</text>
+  <rect x="513" y="378" width="112" height="28" rx="14" fill="#ede9fe"/><text x="569" y="397" text-anchor="middle" class="pill">ROUTING</text>
+  <rect x="635" y="378" width="118" height="28" rx="14" fill="#ede9fe"/><text x="694" y="397" text-anchor="middle" class="pill">HANDOFFS</text>
+  <rect x="763" y="378" width="99" height="28" rx="14" fill="#ede9fe"/><text x="812.5" y="397" text-anchor="middle" class="pill">INBOX IO</text>
+
+  <rect x="910" y="236" width="405" height="182" rx="22" fill="url(#agentGrad)" stroke="#bfdbfe" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1112.5" y="280" text-anchor="middle" class="box-title">Specialist Workers</text>
+  <text x="938" y="312" class="box-body">• `menglan-heartbeat.sh` runs implement / bugfix / fix-review</text>
+  <text x="938" y="338" class="box-body">• `huahua-heartbeat.sh` runs req review / tc design / code review</text>
+  <text x="938" y="364" class="box-body">• Specialist logic returns packets, but lifecycle is script-shaped</text>
+  <rect x="938" y="378" width="118" height="28" rx="14" fill="#eff6ff"/><text x="997" y="397" text-anchor="middle" class="pill">MENGLAN</text>
+  <rect x="1066" y="378" width="110" height="28" rx="14" fill="#eff6ff"/><text x="1121" y="397" text-anchor="middle" class="pill">HUAHUA</text>
+  <rect x="1186" y="378" width="101" height="28" rx="14" fill="#eff6ff"/><text x="1236.5" y="397" text-anchor="middle" class="pill">CODEX/CC</text>
+
+  <rect x="1335" y="236" width="405" height="182" rx="22" fill="url(#monitorGrad)" stroke="#fbbf24" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1537.5" y="280" text-anchor="middle" class="box-title">Harness Trigger Layer</text>
+  <text x="1363" y="312" class="box-body">• `harness.sh` owns claim, worktree, branch, and prompt dispatch</text>
+  <text x="1363" y="338" class="box-body">• Shell is the execution fabric for most high-value actions</text>
+  <text x="1363" y="364" class="box-body">• Powerful, but hard to type-check or replay uniformly</text>
+  <rect x="1363" y="378" width="108" height="28" rx="14" fill="#fef3c7"/><text x="1417" y="397" text-anchor="middle" class="pill">WORKTREE</text>
+  <rect x="1481" y="378" width="95" height="28" rx="14" fill="#fef3c7"/><text x="1528.5" y="397" text-anchor="middle" class="pill">CLAUDE</text>
+  <rect x="1586" y="378" width="95" height="28" rx="14" fill="#fef3c7"/><text x="1633.5" y="397" text-anchor="middle" class="pill">CODEX</text>
+
+  <path d="M 687.5 418 C 687.5 460 1112.5 460 1112.5 418" class="soft-conn"/>
+  <text x="892" y="452" class="flow-label">dispatch + result loop</text>
+  <path d="M 1112.5 418 C 1112.5 468 1537.5 468 1537.5 418" class="soft-conn"/>
+  <text x="1314" y="462" class="flow-label">execute specialist work</text>
+
+  <line x1="60" y1="480" x2="1740" y2="480" class="divider"/>
+
+  <text x="60" y="534" class="sec-title">2. Contracts, State, And Shared Artifacts</text>
+  <text x="60" y="556" class="sec-caption">The delivery pipeline depends on strong conventions, but many of them live as documents and file semantics rather than runtime modules.</text>
+
+  <rect x="60" y="588" width="540" height="204" rx="22" fill="url(#repoGrad)" stroke="#67e8f9" stroke-width="2" filter="url(#shadow)"/>
+  <text x="330" y="632" text-anchor="middle" class="box-title">Workflow Source Of Truth</text>
+  <text x="88" y="664" class="box-body">• `tasks/features`, `tasks/bugs`, `tasks/test-cases` carry state as markdown frontmatter</text>
+  <text x="88" y="690" class="box-body">• Claim / handoff / pending_bugs / branch_name are operational routing signals</text>
+  <text x="88" y="716" class="box-body">• Lawful transitions are documented well, but validated by convention-heavy scripts</text>
+  <rect x="88" y="752" width="110" height="28" rx="14" fill="#cffafe"/><text x="143" y="771" text-anchor="middle" class="pill">REQ/BUG/TC</text>
+  <rect x="208" y="752" width="132" height="28" rx="14" fill="#cffafe"/><text x="274" y="771" text-anchor="middle" class="pill">STATE-AS-LOCK</text>
+  <rect x="350" y="752" width="142" height="28" rx="14" fill="#cffafe"/><text x="421" y="771" text-anchor="middle" class="pill">FRONTMATTER</text>
+
+  <rect x="630" y="588" width="540" height="204" rx="22" fill="url(#dataGrad)" stroke="#4ade80" stroke-width="2" filter="url(#shadow)"/>
+  <text x="900" y="632" text-anchor="middle" class="box-title">Mailbox And Shared Resources</text>
+  <text x="658" y="664" class="box-body">• ATM envelope is specified in docs and partially implemented across scripts</text>
+  <text x="658" y="690" class="box-body">• pending / claimed / done / failed directories enforce consumption lifecycle</text>
+  <text x="658" y="716" class="box-body">• Thread and correlation exist, but parsing, routing, and compatibility are decentralized</text>
+  <rect x="658" y="752" width="122" height="28" rx="14" fill="#dcfce7"/><text x="719" y="771" text-anchor="middle" class="pill">ATM ENVELOPE</text>
+  <rect x="790" y="752" width="115" height="28" rx="14" fill="#dcfce7"/><text x="847.5" y="771" text-anchor="middle" class="pill">THREADING</text>
+  <rect x="915" y="752" width="160" height="28" rx="14" fill="#dcfce7"/><text x="995" y="771" text-anchor="middle" class="pill">SHARED INBOX FS</text>
+
+  <rect x="1200" y="588" width="540" height="204" rx="22" fill="url(#monitorGrad)" stroke="#fbbf24" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1470" y="632" text-anchor="middle" class="box-title">Recovery And Runtime Evidence</text>
+  <text x="1228" y="664" class="box-body">• `run.lock`, heartbeat json, recovery logs, DoD evidence, watchdog reports</text>
+  <text x="1228" y="690" class="box-body">• Recovery is mainly worker-centric: restart process, release lock, send keepalive</text>
+  <text x="1228" y="716" class="box-body">• Task-level ownership and replay are still implicit rather than first-class runtime concepts</text>
+  <rect x="1228" y="752" width="94" height="28" rx="14" fill="#fef3c7"/><text x="1275" y="771" text-anchor="middle" class="pill">LEASES</text>
+  <rect x="1332" y="752" width="112" height="28" rx="14" fill="#fef3c7"/><text x="1388" y="771" text-anchor="middle" class="pill">HEARTBEAT</text>
+  <rect x="1454" y="752" width="138" height="28" rx="14" fill="#fef3c7"/><text x="1523" y="771" text-anchor="middle" class="pill">AUTO-HEAL</text>
+
+  <path d="M 330 588 C 330 540 900 540 900 588" class="connector"/>
+  <text x="600" y="544" class="flow-label">workflow state drives packets</text>
+  <path d="M 900 792 C 900 846 1470 846 1470 792" class="connector"/>
+  <text x="1178" y="840" class="flow-label">mailbox and evidence feed recovery</text>
+
+  <line x1="60" y1="854" x2="1740" y2="854" class="divider"/>
+
+  <text x="60" y="908" class="sec-title">3. Current Architectural Pain Points</text>
+  <text x="60" y="930" class="sec-caption">Phase 0 exists to freeze these seams before larger runtime migration starts.</text>
+
+  <rect x="60" y="962" width="830" height="214" rx="22" fill="url(#agentGrad)" stroke="#bfdbfe" stroke-width="2" filter="url(#shadow)"/>
+  <text x="475" y="1006" text-anchor="middle" class="box-title">What Works Today</text>
+  <text x="88" y="1040" class="box-body">• Strong role design: Pandas / Huahua / Menglan already map cleanly to coordinator and specialists</text>
+  <text x="88" y="1066" class="box-body">• Strong contracts: capabilities, connectors, inbox protocol, and workflow standards are already documented</text>
+  <text x="88" y="1092" class="box-body">• Strong resilience instincts: lock, heartbeat, watchdog, and keepalive are already present</text>
+  <text x="88" y="1118" class="box-body">• Strong observability substrate: runtime files, audit logs, and dashboard surfaces already exist</text>
+  <rect x="88" y="1136" width="102" height="28" rx="14" fill="#eff6ff"/><text x="139" y="1155" text-anchor="middle" class="pill">GOOD BONES</text>
+
+  <rect x="910" y="962" width="830" height="214" rx="22" fill="url(#extGrad)" stroke="#fb923c" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1325" y="1006" text-anchor="middle" class="box-title">Why Phase 0 Is Needed</text>
+  <text x="938" y="1040" class="box-body">• Contracts are mostly human-readable, not yet enforceable runtime registries</text>
+  <text x="938" y="1066" class="box-body">• Mailbox behavior and routing live across multiple scripts with compatibility logic duplicated</text>
+  <text x="938" y="1092" class="box-body">• Recovery focuses on worker liveness more than task-instance ownership and replay</text>
+  <text x="938" y="1118" class="box-body">• High-value actions still flow through script-shaped execution rather than one invocation pipeline</text>
+  <rect x="938" y="1136" width="132" height="28" rx="14" fill="#ffedd5"/><text x="1004" y="1155" text-anchor="middle" class="pill">BOUNDARY DRIFT</text>
+  <rect x="1080" y="1136" width="122" height="28" rx="14" fill="#ffedd5"/><text x="1141" y="1155" text-anchor="middle" class="pill">SCRIPT HEAVY</text>
+  <rect x="1212" y="1136" width="152" height="28" rx="14" fill="#ffedd5"/><text x="1288" y="1155" text-anchor="middle" class="pill">TASKS NOT FIRST-CLASS</text>
+</svg>
