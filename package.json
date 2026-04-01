@@ -17,6 +17,7 @@
     "test": "node --import tsx --test --test-concurrency=4 test/**/*.test.ts",
     "build": "tsc -p tsconfig.json",
     "release:audit": "bash scripts/release-audit.sh",
+    "docs:check": "bash scripts/check-doc-compliance.sh",
     "validate:task-store": "node --import tsx scripts/validate-task-store.ts",
     "validate:budget": "node --import tsx scripts/validate-budget-compute.ts",
     "validate": "npm run validate:task-store && npm run validate:budget",
