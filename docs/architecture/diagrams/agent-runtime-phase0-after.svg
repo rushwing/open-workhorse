@@ -66,7 +66,7 @@
   <rect x="40" y="28" width="1720" height="92" rx="24" fill="url(#headerGrad)" filter="url(#shadow)"/>
   <text x="74" y="73" class="arch-title">open-workhorse - Agent Runtime Phase 0 After</text>
   <text x="74" y="100" class="arch-subtitle">Boundary freeze complete: the team now shares a clear runtime topology, ownership model, and migration seams for later phases.</text>
-  <text x="1360" y="73" class="arch-meta">source: /Users/danielwong/Dev/open-workhorse</text>
+  <text x="1360" y="73" class="arch-meta">source: docs/architecture</text>
   <text x="1360" y="100" class="arch-meta">generated: 2026-04-01</text>
 
   <text x="60" y="182" class="sec-title">1. Explicit Runtime Topology</text>
