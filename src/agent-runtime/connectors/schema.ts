@@ -29,3 +29,20 @@ export interface RawConnectorDefinition {
   notes?: unknown;
 }
 
+const BACKEND_PATTERN = /^[a-z][a-z0-9_-]*$/;
+
+export function assertConnectorBackend(value: unknown, context: string): string {
+  if (typeof value !== 'string') {
+    throw new Error(`${context}: backend must be a string`);
+  }
+
+  const backend = value.trim();
+  if (backend === '') {
+    throw new Error(`${context}: backend must be a non-empty string`);
+  }
+  if (!BACKEND_PATTERN.test(backend)) {
+    throw new Error(`${context}: invalid backend "${backend}"`);
+  }
+
+  return backend;
+}

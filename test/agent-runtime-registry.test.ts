@@ -10,6 +10,9 @@ import {
   loadCapabilityRegistry,
 } from '../src/agent-runtime/capabilities/registry.js';
 import {
+  assertConnectorBackend,
+} from '../src/agent-runtime/connectors/schema.js';
+import {
   getConnectorDefinition,
   loadConnectorRegistry,
 } from '../src/agent-runtime/connectors/registry.js';
@@ -45,6 +48,14 @@ describe('agent runtime capability registry', () => {
 });
 
 describe('agent runtime connector registry', () => {
+  test('backend names must remain binding-id safe', () => {
+    assert.equal(assertConnectorBackend('cli', 'test'), 'cli');
+    assert.throws(
+      () => assertConnectorBackend('direct user message', 'test'),
+      /invalid backend/,
+    );
+  });
+
   test('loads connector definitions and links them to capabilities', () => {
     const capabilityRegistry = loadCapabilityRegistry(process.cwd());
     const connectorRegistry = loadConnectorRegistry(process.cwd(), capabilityRegistry);

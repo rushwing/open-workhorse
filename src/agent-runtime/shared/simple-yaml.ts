@@ -21,8 +21,9 @@ export function parseSimpleYaml(yaml: string): Record<string, unknown> {
     const rawValue = line.slice(colonIdx + 1).trimStart();
 
     // This helper intentionally supports only the YAML subset used in current
-    // harness spec blocks. Folded block scalars (`>`) are supported, but
-    // literal block scalars (`|`) are not yet implemented.
+    // harness spec blocks. Folded block scalars (`>`) are supported as a
+    // forward-compatible path, although the current harness registry docs do
+    // not use them. Literal block scalars (`|`) are not yet implemented.
     if (rawValue.trimEnd() === '>') {
       i++;
       const parts: string[] = [];

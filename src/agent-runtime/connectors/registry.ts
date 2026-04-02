@@ -6,17 +6,23 @@ import {
   assertLegacyCapabilityId,
 } from '../capabilities/schema.js';
 import {
+  assertConnectorBackend,
+  type ConnectorDefinition,
+  type RawConnectorDefinition,
+} from './schema.js';
+import {
   getCapabilityDefinition,
   loadCapabilityRegistry,
   type CapabilityRegistry,
 } from '../capabilities/registry.js';
 import { registerUnique } from '../shared/registry-map.js';
 import { normalizeStringList, parseSimpleYaml } from '../shared/simple-yaml.js';
-import type { ConnectorDefinition, RawConnectorDefinition } from './schema.js';
 
 export interface ConnectorRegistry {
   entries: ConnectorDefinition[];
   byBindingId: Map<string, ConnectorDefinition>;
+  // This map intentionally supports lookup by both legacy capability ids and
+  // canonical capability ids, so the key count is expected to be 2x entries.
   byCapabilityId: Map<string, ConnectorDefinition>;
 }
 
@@ -45,9 +51,7 @@ export function loadConnectorRegistry(
     if (!capability) {
       throw new Error(`${context}: missing capability definition for ${capabilityLegacyId}`);
     }
-    if (typeof parsed.backend !== 'string' || parsed.backend.trim() === '') {
-      throw new Error(`${context}: backend must be a non-empty string`);
-    }
+    const backend = assertConnectorBackend(parsed.backend, context);
     if (typeof parsed.driver !== 'string' || parsed.driver.trim() === '') {
       throw new Error(`${context}: driver must be a non-empty string`);
     }
@@ -59,11 +63,11 @@ export function loadConnectorRegistry(
     }
 
     entries.push({
-      bindingId: `connector.${String(parsed.backend).trim()}.${capability.canonicalId}`,
+      bindingId: `connector.${backend}.${capability.canonicalId}`,
       capabilityLegacyId,
       capabilityCanonicalId: capability.canonicalId,
       capability,
-      backend: String(parsed.backend).trim(),
+      backend,
       driver: String(parsed.driver).trim(),
       entrypoint: String(parsed.entrypoint).trim(),
       requires: normalizeStringList(parsed.requires),
