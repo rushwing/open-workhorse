@@ -17,7 +17,10 @@ import {
 describe('agent runtime capability registry', () => {
   test('loads capability definitions from CAPABILITIES.md', () => {
     const registry = loadCapabilityRegistry(process.cwd());
-    assert.ok(registry.entries.length > 20);
+    assert.ok(
+      registry.entries.length > 20,
+      'expected at least 21 capabilities to load from CAPABILITIES.md',
+    );
 
     const capability = getCapabilityDefinition(registry, 'workflow-task-transition_state');
     assert.ok(capability);
@@ -45,7 +48,10 @@ describe('agent runtime connector registry', () => {
   test('loads connector definitions and links them to capabilities', () => {
     const capabilityRegistry = loadCapabilityRegistry(process.cwd());
     const connectorRegistry = loadConnectorRegistry(process.cwd(), capabilityRegistry);
-    assert.ok(connectorRegistry.entries.length > 20);
+    assert.ok(
+      connectorRegistry.entries.length > 20,
+      'expected at least 21 connectors to load from CONNECTORS.md',
+    );
 
     const connector = getConnectorDefinition(connectorRegistry, 'gh-pr-read_metadata');
     assert.ok(connector);
@@ -62,4 +68,3 @@ describe('agent runtime connector registry', () => {
     assert.equal(connector?.approvalMode, 'human_required');
   });
 });
-

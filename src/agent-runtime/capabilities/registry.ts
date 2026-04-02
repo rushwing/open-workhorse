@@ -11,6 +11,7 @@ import {
   type RawCapabilityDefinition,
 } from './schema.js';
 import { normalizeStringList, parseSimpleYaml } from '../shared/simple-yaml.js';
+import { registerUnique } from '../shared/registry-map.js';
 
 export interface CapabilityRegistry {
   entries: CapabilityDefinition[];
@@ -91,16 +92,4 @@ export function getCapabilityDefinition(
   id: string,
 ): CapabilityDefinition | undefined {
   return registry.byLookupKey.get(id);
-}
-
-function registerUnique<T>(
-  map: Map<string, T>,
-  key: string,
-  value: T,
-  label: string,
-): void {
-  if (map.has(key)) {
-    throw new Error(`Duplicate ${label}: ${key}`);
-  }
-  map.set(key, value);
 }

@@ -1,6 +1,6 @@
 # Phase 1: Capability And Connector Registry
 
-- Status: In progress
+- Status: Complete
 - Date: 2026-04-02
 - Related:
   - [ADR 0001](../../adr/0001-agent-runtime-standardization.md)
@@ -52,6 +52,7 @@ Why this is the chosen seam:
 - it preserves compatibility with `everything_openclaw`-linked harness docs
 - it gives the runtime a more uniform lookup format
 - it avoids a flag-day rename across prompts, scripts, and standards
+- Phase 1 keeps one active connector binding per capability id; future fan-out must be an explicit design change
 
 ## Deliverables
 
@@ -78,4 +79,3 @@ Phase 1 is considered complete when:
 ## Follow-on Work
 
 Phase 2 should build the mailbox service on top of these registries so inbox actions can reference capability and connector definitions instead of embedding workflow behavior directly in shell logic.
-

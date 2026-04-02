@@ -10,6 +10,7 @@ import {
   loadCapabilityRegistry,
   type CapabilityRegistry,
 } from '../capabilities/registry.js';
+import { registerUnique } from '../shared/registry-map.js';
 import { normalizeStringList, parseSimpleYaml } from '../shared/simple-yaml.js';
 import type { ConnectorDefinition, RawConnectorDefinition } from './schema.js';
 
@@ -84,6 +85,9 @@ export function loadConnectorRegistry(
 
   for (const entry of entries) {
     registerUnique(byBindingId, entry.bindingId, entry, 'connector binding id');
+    // Phase 1 intentionally models one active connector binding per capability.
+    // If later phases need multiple bindings per capability, this map should
+    // become a fan-out structure rather than silently overwriting entries.
     registerUnique(byCapabilityId, entry.capabilityLegacyId, entry, 'connector capability');
     registerUnique(byCapabilityId, entry.capabilityCanonicalId, entry, 'connector capability');
   }
@@ -96,16 +100,4 @@ export function getConnectorDefinition(
   capabilityId: string,
 ): ConnectorDefinition | undefined {
   return registry.byCapabilityId.get(capabilityId);
-}
-
-function registerUnique<T>(
-  map: Map<string, T>,
-  key: string,
-  value: T,
-  label: string,
-): void {
-  if (map.has(key)) {
-    throw new Error(`Duplicate ${label}: ${key}`);
-  }
-  map.set(key, value);
 }

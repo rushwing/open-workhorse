@@ -20,6 +20,9 @@ export function parseSimpleYaml(yaml: string): Record<string, unknown> {
     const key = line.slice(0, colonIdx).trim();
     const rawValue = line.slice(colonIdx + 1).trimStart();
 
+    // This helper intentionally supports only the YAML subset used in current
+    // harness spec blocks. Folded block scalars (`>`) are supported, but
+    // literal block scalars (`|`) are not yet implemented.
     if (rawValue.trimEnd() === '>') {
       i++;
       const parts: string[] = [];
@@ -98,4 +101,3 @@ export function normalizeStringList(value: unknown): string[] {
   }
   return [String(value)];
 }
-
