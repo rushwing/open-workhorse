@@ -65,8 +65,33 @@ export function parseSimpleYaml(yaml: string): Record<string, unknown> {
       i++;
       const items: string[] = [];
       while (i < lines.length && (lines[i] ?? '').trimStart().startsWith('- ')) {
-        items.push((lines[i] ?? '').trimStart().slice(2).trim());
+        const itemLine = lines[i] ?? '';
+        const itemIndent = countIndent(itemLine);
+        let item = itemLine.trimStart().slice(2).trim();
         i++;
+
+        while (i < lines.length) {
+          const continuationLine = lines[i] ?? '';
+          if (continuationLine.trim() === '') {
+            i++;
+            continue;
+          }
+
+          const continuationIndent = countIndent(continuationLine);
+          const trimmedContinuation = continuationLine.trimStart();
+
+          if (trimmedContinuation.startsWith('- ') && continuationIndent === itemIndent) {
+            break;
+          }
+          if (continuationIndent <= itemIndent) {
+            break;
+          }
+
+          item = `${item} ${continuationLine.trim()}`.trim();
+          i++;
+        }
+
+        items.push(item);
       }
       result[key] = items;
       continue;
@@ -94,6 +119,14 @@ function parseScalar(value: string): unknown {
   if (/^-?\d+\.\d+$/.test(value)) return parseFloat(value);
 
   return value;
+}
+
+function countIndent(value: string): number {
+  let count = 0;
+  while (count < value.length && value[count] === ' ') {
+    count++;
+  }
+  return count;
 }
 
 export function normalizeStringList(value: unknown): string[] {

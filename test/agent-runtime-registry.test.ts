@@ -130,4 +130,17 @@ describe('agent runtime connector registry', () => {
     assert.ok(connector);
     assert.equal(connector?.approvalMode, 'human_required');
   });
+
+  test('multiline list notes in CONNECTORS.md are preserved without truncation', () => {
+    const capabilityRegistry = loadCapabilityRegistry(process.cwd());
+    const connectorRegistry = loadConnectorRegistry(process.cwd(), capabilityRegistry);
+    const connector = getConnectorDefinition(connectorRegistry, 'agent-inbox-read_result_packet');
+
+    assert.ok(connector);
+    assert.deepEqual(connector?.notes, [
+      'specialist success paths return here; inbox_read_pandas() dispatches by legacy_type',
+      'ATM response routing: legacy_type=review_complete → _handle_review_complete; legacy_type=tc_complete → _handle_tc_complete; legacy_type=dev_complete → _handle_dev_complete',
+      'check for-pandas/ inbox before scanning task queue in each loop iteration',
+    ]);
+  });
 });

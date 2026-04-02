@@ -25,4 +25,21 @@ describe('parseSimpleYaml', () => {
       /Unsupported literal block scalar/,
     );
   });
+
+  test('parses block-list continuation lines into the preceding item', () => {
+    const parsed = parseSimpleYaml(`notes:
+  - first item
+  - second item first line;
+    second item second line
+  - third item
+`);
+
+    assert.deepEqual(parsed, {
+      notes: [
+        'first item',
+        'second item first line; second item second line',
+        'third item',
+      ],
+    });
+  });
 });
