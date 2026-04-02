@@ -1,5 +1,5 @@
-import { loadCapabilityRegistry } from '../src/agent-runtime/capabilities/registry.js';
-import { loadConnectorRegistry } from '../src/agent-runtime/connectors/registry.js';
+import { loadCapabilityRegistry } from '../src/agent-runtime/capabilities/registry';
+import { loadConnectorRegistry } from '../src/agent-runtime/connectors/registry';
 
 function main(): void {
   const capabilities = loadCapabilityRegistry(process.cwd());
@@ -21,4 +21,3 @@ try {
   console.error(`agent-runtime-registry: failed: ${message}`);
   process.exit(1);
 }
-

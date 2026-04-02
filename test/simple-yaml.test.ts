@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseSimpleYaml } from '../src/agent-runtime/shared/simple-yaml.js';
+import { parseSimpleYaml } from '../src/agent-runtime/shared/simple-yaml';
 
 describe('parseSimpleYaml', () => {
   test('parses folded block scalars using >', () => {

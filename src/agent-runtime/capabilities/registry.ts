@@ -9,9 +9,9 @@ import {
   capabilityIdToCanonicalId,
   type CapabilityDefinition,
   type RawCapabilityDefinition,
-} from './schema.js';
-import { normalizeStringList, parseSimpleYaml } from '../shared/simple-yaml.js';
-import { registerUnique } from '../shared/registry-map.js';
+} from './schema';
+import { normalizeStringList, parseSimpleYaml } from '../shared/simple-yaml';
+import { registerUnique } from '../shared/registry-map';
 
 export interface CapabilityRegistry {
   entries: CapabilityDefinition[];

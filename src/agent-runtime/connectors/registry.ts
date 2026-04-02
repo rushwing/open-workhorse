@@ -4,19 +4,19 @@ import { join } from 'node:path';
 import {
   assertCapabilitySideEffect,
   assertLegacyCapabilityId,
-} from '../capabilities/schema.js';
+} from '../capabilities/schema';
 import {
   assertConnectorBackend,
   type ConnectorDefinition,
   type RawConnectorDefinition,
-} from './schema.js';
+} from './schema';
 import {
   getCapabilityDefinition,
   loadCapabilityRegistry,
   type CapabilityRegistry,
-} from '../capabilities/registry.js';
-import { registerUnique } from '../shared/registry-map.js';
-import { normalizeStringList, parseSimpleYaml } from '../shared/simple-yaml.js';
+} from '../capabilities/registry';
+import { registerUnique } from '../shared/registry-map';
+import { normalizeStringList, parseSimpleYaml } from '../shared/simple-yaml';
 
 export interface ConnectorRegistry {
   entries: ConnectorDefinition[];

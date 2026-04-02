@@ -1,4 +1,4 @@
-import type { CapabilityDefinition, CapabilitySideEffect } from '../capabilities/schema.js';
+import type { CapabilityDefinition, CapabilitySideEffect } from '../capabilities/schema';
 
 export interface ConnectorDefinition {
   bindingId: string;

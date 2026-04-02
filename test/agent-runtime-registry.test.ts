@@ -7,18 +7,18 @@ import { tmpdir } from 'node:os';
 import {
   capabilityFamilyToCanonicalFamily,
   capabilityIdToCanonicalId,
-} from '../src/agent-runtime/capabilities/schema.js';
+} from '../src/agent-runtime/capabilities/schema';
 import {
   getCapabilityDefinition,
   loadCapabilityRegistry,
-} from '../src/agent-runtime/capabilities/registry.js';
+} from '../src/agent-runtime/capabilities/registry';
 import {
   assertConnectorBackend,
-} from '../src/agent-runtime/connectors/schema.js';
+} from '../src/agent-runtime/connectors/schema';
 import {
   getConnectorDefinition,
   loadConnectorRegistry,
-} from '../src/agent-runtime/connectors/registry.js';
+} from '../src/agent-runtime/connectors/registry';
 
 describe('agent runtime capability registry', () => {
   let fixtureRoot: string;
