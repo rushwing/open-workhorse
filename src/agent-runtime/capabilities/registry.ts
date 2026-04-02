@@ -46,7 +46,7 @@ export function loadCapabilityRegistry(projectRoot = process.cwd()): CapabilityR
     const entry: CapabilityDefinition = {
       legacyId,
       canonicalId: capabilityIdToCanonicalId(legacyId),
-      aliases: [legacyId],
+      aliases: normalizeStringList(parsed.aliases),
       legacyFamily,
       canonicalFamily: capabilityFamilyToCanonicalFamily(legacyFamily),
       defaultEnabled: parsed.default_enabled,

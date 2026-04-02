@@ -41,6 +41,7 @@ export interface RawCapabilityDefinition {
   family: unknown;
   default_enabled: unknown;
   side_effect: unknown;
+  aliases?: unknown;
   inputs?: unknown;
   outputs?: unknown;
   use_when?: unknown;
@@ -68,4 +69,3 @@ export function assertLegacyCapabilityFamily(value: unknown, context: string): s
   }
   return value;
 }
-

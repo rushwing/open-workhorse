@@ -1,5 +1,8 @@
-import { describe, test } from 'node:test';
+import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 import {
   capabilityFamilyToCanonicalFamily,
@@ -18,6 +21,45 @@ import {
 } from '../src/agent-runtime/connectors/registry.js';
 
 describe('agent runtime capability registry', () => {
+  let fixtureRoot: string;
+
+  before(async () => {
+    fixtureRoot = await mkdtemp(join(tmpdir(), 'agent-runtime-registry-'));
+    await mkdir(join(fixtureRoot, 'harness'), { recursive: true });
+    await writeFile(
+      join(fixtureRoot, 'harness', 'CAPABILITIES.md'),
+      `# Fixture
+
+### \`ctx-request-read_human_intent\`
+
+\`\`\`yaml
+capability: ctx-request-read_human_intent
+family: ctx-*
+default_enabled: true
+side_effect: none
+aliases:
+  - ctx.request.readHumanIntent
+  - human-intent-read
+inputs:
+  - human request
+outputs:
+  - routing intent
+use_when:
+  - intake
+avoid_when:
+  - already classified
+notes:
+  - fixture
+\`\`\`
+`,
+      'utf8',
+    );
+  });
+
+  after(async () => {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  });
+
   test('loads capability definitions from CAPABILITIES.md', () => {
     const registry = loadCapabilityRegistry(process.cwd());
     assert.ok(
@@ -38,6 +80,16 @@ describe('agent runtime capability registry', () => {
     const byCanonical = getCapabilityDefinition(registry, 'agent.inbox.read_result_packet');
     assert.ok(byLegacy);
     assert.equal(byLegacy, byCanonical);
+  });
+
+  test('explicit aliases from markdown are loaded into the lookup map', () => {
+    const registry = loadCapabilityRegistry(fixtureRoot);
+    const byAlias = getCapabilityDefinition(registry, 'ctx.request.readHumanIntent');
+    const byLegacy = getCapabilityDefinition(registry, 'ctx-request-read_human_intent');
+
+    assert.ok(byAlias);
+    assert.equal(byAlias, byLegacy);
+    assert.deepEqual(byLegacy?.aliases, ['ctx.request.readHumanIntent', 'human-intent-read']);
   });
 
   test('canonical naming is derived from the legacy three-part format', () => {
