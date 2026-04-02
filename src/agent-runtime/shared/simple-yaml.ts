@@ -23,7 +23,8 @@ export function parseSimpleYaml(yaml: string): Record<string, unknown> {
     // This helper intentionally supports only the YAML subset used in current
     // harness spec blocks. Folded block scalars (`>`) are supported as a
     // forward-compatible path, although the current harness registry docs do
-    // not use them. Literal block scalars (`|`) are not yet implemented.
+    // not use them. Literal block scalars (`|`) fail explicitly so future
+    // harness edits do not silently misparse.
     if (rawValue.trimEnd() === '>') {
       i++;
       const parts: string[] = [];
@@ -33,6 +34,10 @@ export function parseSimpleYaml(yaml: string): Record<string, unknown> {
       }
       result[key] = parts.join(' ').trim();
       continue;
+    }
+
+    if (rawValue.trimEnd() === '|') {
+      throw new Error(`Unsupported literal block scalar for key "${key}"`);
     }
 
     if (rawValue.trimEnd().startsWith('[')) {
