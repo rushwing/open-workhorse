@@ -54,6 +54,7 @@ Before any merge to main, run:
 
 ```bash
 npm run release:audit  # checks for hardcoded paths/tokens, required files
+npm run validate
 npm run build
 npm test
 npm run smoke:ui
@@ -72,7 +73,7 @@ After reading this file, read `harness/harness-index.md` for the full developmen
 Key rules:
 - All active work items live in `tasks/` — read them before starting any implementation
 - Claim a task with a single commit (`owner=claude_code`, `status=in_progress`) before writing code
-- Run all pre-commit checks before opening a PR: `npm run release:audit && npm run build && npm test`
+- Run all pre-commit checks before opening a PR: `npm run release:audit && npm run validate && npm run build && npm test`
 - All PRs require Daniel (HITL) approval — no auto-merge
 
 ```bash
