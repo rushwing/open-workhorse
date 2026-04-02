@@ -37,6 +37,8 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
+      - name: Run validation
+        run: npm run validate
       - name: Run tests
         run: npm test
 

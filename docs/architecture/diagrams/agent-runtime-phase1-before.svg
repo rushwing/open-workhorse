@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Runtime Phase 1 Before</title>
+  <desc id="desc">Before Phase 1, capabilities and connectors exist only as markdown contracts while shell scripts and future runtime code have no executable registry to rely on.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#eef2ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="980" fill="url(#bg)"/>
+  <text x="60" y="72" font-size="30" font-family="Helvetica, Arial, sans-serif" font-weight="700" fill="#0f172a">open-workhorse - Agent Runtime Phase 1 Before</text>
+  <text x="60" y="108" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">Contracts exist, but only as prose. Runtime code and shell flows cannot load one typed registry.</text>
+
+  <rect x="60" y="170" width="440" height="250" rx="24" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
+  <text x="88" y="220" font-size="24" font-family="Helvetica, Arial, sans-serif" font-weight="700" fill="#0f172a">Harness Contracts</text>
+  <text x="88" y="262" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- CAPABILITIES.md defines semantic capability names</text>
+  <text x="88" y="294" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- CONNECTORS.md defines backend / driver bindings</text>
+  <text x="88" y="326" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- Great for humans, but not loadable runtime artifacts</text>
+
+  <rect x="580" y="170" width="440" height="250" rx="24" fill="#ffffff" stroke="#c4b5fd" stroke-width="2"/>
+  <text x="608" y="220" font-size="24" font-family="Helvetica, Arial, sans-serif" font-weight="700" fill="#0f172a">Shell And Agent Logic</text>
+  <text x="608" y="262" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- pandas-heartbeat.sh and peers rely on doc knowledge indirectly</text>
+  <text x="608" y="294" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- No typed lookup for capability policy or connector metadata</text>
+  <text x="608" y="326" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- Future Node runtime has no stable registry seam yet</text>
+
+  <rect x="1100" y="170" width="440" height="250" rx="24" fill="#ffffff" stroke="#fca5a5" stroke-width="2"/>
+  <text x="1128" y="220" font-size="24" font-family="Helvetica, Arial, sans-serif" font-weight="700" fill="#0f172a">Risk Surface</text>
+  <text x="1128" y="262" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- Naming drift between docs and code</text>
+  <text x="1128" y="294" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- Validation remains grep-based only</text>
+  <text x="1128" y="326" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- Phase 2+ cannot depend on typed metadata</text>
+
+  <line x1="500" y1="295" x2="580" y2="295" stroke="#64748b" stroke-width="3"/>
+  <line x1="1020" y1="295" x2="1100" y2="295" stroke="#64748b" stroke-width="3"/>
+
+  <rect x="120" y="520" width="1360" height="300" rx="26" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="150" y="570" font-size="24" font-family="Helvetica, Arial, sans-serif" font-weight="700" fill="#0f172a">Missing Runtime Layer</text>
+  <text x="150" y="618" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">Phase 1 exists to insert a registry seam between human-readable contracts and runtime execution.</text>
+  <text x="150" y="650" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">That seam will preserve existing legacy ids while introducing canonical runtime ids and validation hooks.</text>
+</svg>

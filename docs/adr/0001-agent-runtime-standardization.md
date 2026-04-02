@@ -134,6 +134,7 @@ Primary navigation:
 
 - [Migration Index](../architecture/migration-index.md)
 - [Phase 0: Boundary Freeze](../architecture/phases/phase-0-boundary-freeze.md)
+- [Phase 1: Capability And Connector Registry](../architecture/phases/phase-1-capability-registry.md)
 
 Phase summary:
 
