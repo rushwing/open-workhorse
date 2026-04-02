@@ -11,7 +11,7 @@ Phase documents hold the implementation detail, diagrams, scope, and acceptance 
 | --- | --- |
 | [ADR 0001](../adr/0001-agent-runtime-standardization.md) | Long-lived architecture decision and migration umbrella |
 | [Phase 0](phases/phase-0-boundary-freeze.md) | Freeze terminology, boundaries, seams, and delivery rules |
-| `phases/phase-1-capability-registry.md` | Planned: executable capability and connector registry |
+| [Phase 1](phases/phase-1-capability-registry.md) | Executable capability and connector registry |
 | `phases/phase-2-mailbox-service.md` | Planned: Node.js mailbox service |
 | `phases/phase-3-task-runtime.md` | Planned: typed task lifecycle and coordinator runtime |
 | `phases/phase-4-worker-runtime.md` | Planned: worker runtimes and shell thinning |
@@ -24,7 +24,7 @@ Phase documents hold the implementation detail, diagrams, scope, and acceptance 
 | Phase | Status | Focus | Notes |
 | --- | --- | --- | --- |
 | 0 | Complete | Boundary freeze and document structure | Delivered as docs-only groundwork with no runtime behavior change |
-| 1 | Planned | Capability and connector registry | First material Node.js runtime contract |
+| 1 | In progress | Capability and connector registry | First material Node.js runtime contract |
 | 2 | Planned | Mailbox service | Moves inbox parsing and claims into TS |
 | 3 | Planned | Task runtime | Coordinator becomes state-driven, not branch-driven |
 | 4 | Planned | Worker runtime | Shell scripts shrink to launchers/adapters |
@@ -52,6 +52,11 @@ Future phases should follow the same structure:
 - `phaseX-before.svg`
 - `phaseX-after.svg`
 - one implementation note under `phases/`
+
+Phase 1 comparison diagrams:
+
+- [Before](diagrams/agent-runtime-phase1-before.svg)
+- [After](diagrams/agent-runtime-phase1-after.svg)
 
 ## How To Use This Folder
 

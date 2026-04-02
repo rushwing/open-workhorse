@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Runtime Phase 1 After</title>
+  <desc id="desc">After Phase 1, markdown contracts feed a typed capability and connector registry that Node validation and later runtime phases can consume.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#ecfeff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="980" fill="url(#bg)"/>
+  <text x="60" y="72" font-size="30" font-family="Helvetica, Arial, sans-serif" font-weight="700" fill="#0f172a">open-workhorse - Agent Runtime Phase 1 After</text>
+  <text x="60" y="108" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">Markdown remains the contract source, but a typed registry now gives the runtime canonical ids, aliases, and validation.</text>
+
+  <rect x="60" y="170" width="400" height="240" rx="24" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
+  <text x="88" y="220" font-size="24" font-family="Helvetica, Arial, sans-serif" font-weight="700" fill="#0f172a">Harness Contracts</text>
+  <text x="88" y="262" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- CAPABILITIES.md stays human-editable</text>
+  <text x="88" y="294" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- CONNECTORS.md stays tied to repo/runtime reality</text>
+
+  <rect x="520" y="150" width="560" height="280" rx="24" fill="#ffffff" stroke="#34d399" stroke-width="2"/>
+  <text x="548" y="200" font-size="24" font-family="Helvetica, Arial, sans-serif" font-weight="700" fill="#0f172a">Phase 1 Registry Layer</text>
+  <text x="548" y="242" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- schema.ts defines typed capability / connector shapes</text>
+  <text x="548" y="274" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- registry.ts loads markdown spec blocks into Node objects</text>
+  <text x="548" y="306" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- canonical ids use dot format, while legacy ids remain aliases</text>
+  <text x="548" y="338" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- validation script and tests verify drift before later phases land</text>
+
+  <rect x="1140" y="170" width="400" height="240" rx="24" fill="#ffffff" stroke="#c4b5fd" stroke-width="2"/>
+  <text x="1168" y="220" font-size="24" font-family="Helvetica, Arial, sans-serif" font-weight="700" fill="#0f172a">Consumers</text>
+  <text x="1168" y="262" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- future mailbox service</text>
+  <text x="1168" y="294" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- future task runtime and invocation policy</text>
+  <text x="1168" y="326" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">- shell-to-Node migration seams</text>
+
+  <line x1="460" y1="290" x2="520" y2="290" stroke="#64748b" stroke-width="3"/>
+  <line x1="1080" y1="290" x2="1140" y2="290" stroke="#64748b" stroke-width="3"/>
+
+  <rect x="100" y="520" width="1400" height="300" rx="26" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="132" y="570" font-size="24" font-family="Helvetica, Arial, sans-serif" font-weight="700" fill="#0f172a">Key Outcome</text>
+  <text x="132" y="618" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">The runtime now has one executable contract seam for capability and connector metadata without forcing a flag-day rename in existing docs or shell scripts.</text>
+  <text x="132" y="650" font-size="18" font-family="Helvetica, Arial, sans-serif" fill="#334155">This is the dependency layer that Phase 2 and later runtime modules can build on.</text>
+</svg>
